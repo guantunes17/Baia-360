@@ -17,6 +17,7 @@ import { CapOperacional } from '@/pages/CapOperacional'
 import { Estoque } from '@/pages/Estoque'
 import { FatDistribuicao } from '@/pages/FatDistribuicao'
 import { FatArmazenagem } from '@/pages/FatArmazenagem'
+import { DashboardPage } from '@/pages/DashboardPage'
 
 const API = 'http://localhost:5000'
 
@@ -141,6 +142,8 @@ function Dashboard({ usuario, onLogout }: { usuario: Usuario, onLogout: () => vo
         return <FatDistribuicao />
         case 'fat_arm':
         return <FatArmazenagem />
+        case 'dashboard':
+        return <DashboardPage />
       default:
         return (
           <div className="p-8">
