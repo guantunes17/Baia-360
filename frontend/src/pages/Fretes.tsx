@@ -131,8 +131,8 @@ export function Fretes() {
     style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
   />
   <DicaExtracao linhas={[
-    'ℹ️ Abas RESCOM e PORTADORES são detectadas automaticamente.',
-    '📋 Exportar do sistema: Relatório → Embarques → Exportar como Excel (.xlsx)',
+    '📋 No ESL: Transportes → Emissão de Fretes',
+    'ℹ️ Exportar a planilha inteira filtrada pelo mês de referência.',
     '📋 Nome da aba: geralmente EMBARQUES MM.AA (ex: EMBARQUES 02.26)',
   ]} />
   </div>

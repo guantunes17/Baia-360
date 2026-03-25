@@ -40,28 +40,63 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
 
       <SidebarContent style={{ background: '#13161f' }}>
 
-        {/* Home e Dashboard */}
+        {/* Home + Assistente */}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {[
-                { key: 'home',      label: '🏠  Home' },
-                { key: 'dashboard', label: '📈  Dashboard' },
-              ].map(item => (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton
-                    isActive={paginaAtiva === item.key}
-                    onClick={() => onNavegar(item.key)}
-                    className="font-semibold cursor-pointer"
-                    style={{
-                      color: paginaAtiva === item.key ? '#e2e8f0' : '#8892a4',
-                      background: paginaAtiva === item.key ? '#1e2235' : 'transparent',
-                    }}
+              {/* Home */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={paginaAtiva === 'home'}
+                  onClick={() => onNavegar('home')}
+                  className="font-semibold cursor-pointer"
+                  style={{
+                    color: paginaAtiva === 'home' ? '#e2e8f0' : '#8892a4',
+                    background: paginaAtiva === 'home' ? '#1e2235' : 'transparent',
+                  }}
+                >
+                  🏠  Home
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* Assistente IA — placeholder */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={paginaAtiva === 'assistente'}
+                  onClick={() => onNavegar('assistente')}
+                  className="font-semibold cursor-pointer"
+                  style={{
+                    color: paginaAtiva === 'assistente' ? '#e2e8f0' : '#8892a4',
+                    background: paginaAtiva === 'assistente' ? '#1e2235' : 'transparent',
+                    opacity: 0.5,
+                    cursor: 'not-allowed',
+                  }}
+                  title="Em desenvolvimento"
+                >
+                  🤖  Assistente
+                  <span
+                    className="ml-auto text-xs rounded px-1.5 py-0.5"
+                    style={{ background: '#1e2235', color: '#4f8ef7', fontSize: '10px' }}
                   >
-                    {item.label}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+                    em breve
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* Dashboard */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={paginaAtiva === 'dashboard'}
+                  onClick={() => onNavegar('dashboard')}
+                  className="font-semibold cursor-pointer"
+                  style={{
+                    color: paginaAtiva === 'dashboard' ? '#e2e8f0' : '#8892a4',
+                    background: paginaAtiva === 'dashboard' ? '#1e2235' : 'transparent',
+                  }}
+                >
+                  📈  Dashboard
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -122,31 +157,31 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
           </SidebarGroupContent>
         </SidebarGroup>
 
-<SidebarSeparator style={{ background: '#2d3148' }} />
+        <SidebarSeparator style={{ background: '#2d3148' }} />
 
-{/* Admin */}
-<SidebarGroup>
-  <SidebarGroupLabel style={{ color: '#8892a4', fontWeight: 700 }}>
-    ⚙️ Administração
-  </SidebarGroupLabel>
-  <SidebarGroupContent>
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          isActive={paginaAtiva === 'usuarios'}
-          onClick={() => onNavegar('usuarios')}
-          className="cursor-pointer text-sm"
-          style={{
-            color: paginaAtiva === 'usuarios' ? '#e2e8f0' : '#8892a4',
-            background: paginaAtiva === 'usuarios' ? '#1e2235' : 'transparent',
-          }}
-        >
-          👥  Usuários
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </SidebarMenu>
-  </SidebarGroupContent>
-</SidebarGroup>
+        {/* Admin */}
+        <SidebarGroup>
+          <SidebarGroupLabel style={{ color: '#8892a4', fontWeight: 700 }}>
+            ⚙️ Administração
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={paginaAtiva === 'usuarios'}
+                  onClick={() => onNavegar('usuarios')}
+                  className="cursor-pointer text-sm"
+                  style={{
+                    color: paginaAtiva === 'usuarios' ? '#e2e8f0' : '#8892a4',
+                    background: paginaAtiva === 'usuarios' ? '#1e2235' : 'transparent',
+                  }}
+                >
+                  👥  Usuários
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
       </SidebarContent>
 

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DicaExtracao } from '@/components/DicaExtracao'
 
 const API = 'http://localhost:5000'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -114,6 +115,11 @@ export function FatArmazenagem() {
             {arquivoMov && (
               <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivoMov.name}</p>
             )}
+            <DicaExtracao linhas={[
+              '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
+              '⚙️ Ticar a opção Kardex 2, filtrar pelo período de referência.',
+              'ℹ️ Mesmo arquivo usado para atualizar o DB do módulo de Estoque — consolidar com 1 aba por depositante.'
+            ]} />
           </div>
 
           <div className="space-y-2">
@@ -129,6 +135,11 @@ export function FatArmazenagem() {
             {arquivoVol && (
               <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivoVol.name}</p>
             )}
+            <DicaExtracao linhas={[
+              '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
+              '⚙️ Ticar a opção Kardex, filtrar pelo período de referência e família/grupo.',
+              'ℹ️ O arquivo deve ter uma aba por cliente/família com o volume m³ diário.'
+            ]} />
           </div>
 
           <div className="space-y-2">

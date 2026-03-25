@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { DicaExtracao } from '@/components/DicaExtracao'
 
 const API = 'http://localhost:5000'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -21,17 +22,14 @@ export function Estoque() {
   const [dbInfo, setDbInfo]         = useState<DbInfo | null>(null)
   const [loadingDb, setLoadingDb]   = useState(true)
 
-  // Carga inicial
   const [arquivoCarga, setArquivoCarga]   = useState<File | null>(null)
   const [loadingCarga, setLoadingCarga]   = useState(false)
   const [logsCarga, setLogsCarga]         = useState<string[]>([])
 
-  // Atualizar com movimentação
   const [arquivoMov, setArquivoMov]     = useState<File | null>(null)
   const [loadingMov, setLoadingMov]     = useState(false)
   const [logsMov, setLogsMov]           = useState<string[]>([])
 
-  // Gerar relatório
   const [arquivoPico, setArquivoPico]   = useState<File | null>(null)
   const [diasOcioso, setDiasOcioso]     = useState('120')
   const [mesRef, setMesRef]             = useState('')
@@ -159,7 +157,6 @@ export function Estoque() {
 
   return (
     <div className="p-8 max-w-3xl">
-      {/* Cabeçalho */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold" style={{ color: '#e2e8f0' }}>📋 Estoque</h1>
         <p className="text-sm mt-1" style={{ color: '#8892a4' }}>
@@ -223,6 +220,11 @@ export function Estoque() {
                 {logsCarga.map((l, i) => <p key={i}>{l}</p>)}
               </div>
             )}
+            <DicaExtracao linhas={[
+              '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
+              '⚙️ Ticar a opção Kardex 2, filtrar pelo período de referência.',
+              'ℹ️ Extrair 1 relatório por depositante e consolidar em um único arquivo com uma aba por depositante.',
+            ]} />
           </div>
 
           {/* Atualizar com Movimentação */}
@@ -251,6 +253,10 @@ export function Estoque() {
                 {logsMov.map((l, i) => <p key={i}>{l}</p>)}
               </div>
             )}
+            <DicaExtracao linhas={[
+              '📋 No ESL: Estoque → Movimentação → Exportar período (.xlsx)',
+              'ℹ️ Use o mesmo período do mês de referência do relatório.',
+            ]} />
           </div>
         </CardContent>
       </Card>
@@ -299,6 +305,12 @@ export function Estoque() {
               />
             </div>
           </div>
+
+          <DicaExtracao linhas={[
+            '📋 No ESL: Estoque → Relatórios → Pico de Estoque',
+            '⚙️ Ticar a opção Analítico Dia, filtrar pelo período de referência.',
+            'ℹ️ O arquivo deve ser consolidado com o pico de cada depositante em uma aba.',
+          ]} />
         </CardContent>
       </Card>
 
@@ -329,7 +341,6 @@ export function Estoque() {
         )}
       </div>
 
-      {/* Log */}
       {logs.length > 0 && (
         <Card className="border" style={{ background: '#0f1117', borderColor: '#2d3148' }}>
           <CardContent className="p-4">

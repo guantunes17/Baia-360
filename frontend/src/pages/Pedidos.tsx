@@ -104,8 +104,8 @@ export function Pedidos() {
     style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
   />
   <DicaExtracao linhas={[
-    'ℹ️ A aba de dados é detectada automaticamente.',
-    '📋 Exportar do sistema: Relatório → Pedidos → Exportar como Excel (.xlsx)',
+    'ℹ️ No ESL: Estoque → Movimentação → Ordem de Saída',
+    '📋 Exportar a planilha completa filtrada pelo mês de referência.',
   ]} />
   {arquivo && (
     <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivo.name}</p>

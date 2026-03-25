@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DicaExtracao } from '@/components/DicaExtracao'
 
 const API = 'http://localhost:5000'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -123,6 +124,12 @@ export function FatDistribuicao() {
               ℹ️ Formato: Mês/Ano (ex: 02-2026)
             </p>
           </div>
+
+          <DicaExtracao linhas={[
+            '📋 No ESL: Transportes → Emissão de Fretes',
+            'ℹ️ Filtrar pelo período de referência e exportar.',
+            '⚠️ O arquivo deve conter a coluna Cliente Faturado para separação por aba.',
+          ]} />
         </CardContent>
       </Card>
 
@@ -160,7 +167,9 @@ export function FatDistribuicao() {
             </p>
             <div className="space-y-0 max-h-64 overflow-y-auto">
               {logs.map((linha, i) => (
-                <p key={i} className="text-xs font-mono" style={{ color: '#4f8ef7' }}>{linha}</p>
+                <p key={i} className="text-xs font-mono" style={{ color: '#4f8ef7' }}>
+                  {linha}
+                </p>
               ))}
             </div>
           </CardContent>

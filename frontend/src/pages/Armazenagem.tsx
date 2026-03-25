@@ -125,8 +125,8 @@ export function Armazenagem() {
             </p>
           </div>
           <DicaExtracao linhas={[
-            '📋 Exportar do sistema: Financeiro → Armazenagem → Exportar como Excel (.xlsx)',
-            'ℹ️ O arquivo deve conter coluna Emissão e Valor Principal.',
+            '📋 No ESL: Financeiro → Lançamentos → Contas a Pagar / Receber',
+            '⚙️ Ticar a opção Contas a Receber, filtrar a Natureza por Armazenagem e inserir o período de referência.',
           ]} />
         </CardContent>
       </Card>

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DicaExtracao } from '@/components/DicaExtracao'
 
 const API = 'http://localhost:5000'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -127,31 +128,38 @@ export function CapOperacional() {
               ℹ️ Formato: MM-AAAA (ex: 02-2026)
             </p>
           </div>
+
           <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label style={{ color: '#8892a4' }}>Limiar Média (SKUs/OS)</Label>
-            <Input
+            <div className="space-y-2">
+              <Label style={{ color: '#8892a4' }}>Limiar Média (SKUs/OS)</Label>
+              <Input
                 type="number"
                 value={limiarMedia}
                 onChange={e => setLimiarMedia(e.target.value)}
                 min="1" step="0.5"
                 style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-            />
-         </div>
-         <div className="space-y-2">
-            <Label style={{ color: '#8892a4' }}>Limiar Alta (SKUs/OS)</Label>
-            <Input
+              />
+            </div>
+            <div className="space-y-2">
+              <Label style={{ color: '#8892a4' }}>Limiar Alta (SKUs/OS)</Label>
+              <Input
                 type="number"
                 value={limiarAlta}
                 onChange={e => setLimiarAlta(e.target.value)}
                 min="1" step="0.5"
                 style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-            />
-        </div>
-        </div>
-        <p className="text-xs" style={{ color: '#8892a4' }}>
-         ℹ️ Baixa &lt; {limiarMedia} SKUs/OS | Média {limiarMedia}–{limiarAlta} | Alta ≥ {limiarAlta}
-        </p>
+              />
+            </div>
+          </div>
+          <p className="text-xs" style={{ color: '#8892a4' }}>
+            ℹ️ Baixa &lt; {limiarMedia} SKUs/OS | Média {limiarMedia}–{limiarAlta} | Alta ≥ {limiarAlta}
+          </p>
+
+          <DicaExtracao linhas={[
+            '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
+            '⚙️ Ticar a opção Kardex, filtrar pelo período de referência.',
+            'ℹ️ O arquivo deve conter as colunas de OS, SKU e depositante.',
+          ]} />
         </CardContent>
       </Card>
 

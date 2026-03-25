@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DicaExtracao } from '@/components/DicaExtracao'
 
 const API = 'http://localhost:5000'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -123,6 +124,12 @@ export function Recebimentos() {
               ℹ️ Formato: Mês/Ano (ex: 02-2026)
             </p>
           </div>
+
+          <DicaExtracao linhas={[
+            '📋 No ESL: Estoque → Movimentação → NF de Entrada',
+            'ℹ️ Filtrar pelo período de referência e exportar.',
+            '⚠️ Ajustes e Manuseios são filtrados automaticamente pelo sistema.',
+          ]} />
         </CardContent>
       </Card>
 
