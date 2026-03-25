@@ -14,6 +14,7 @@ import { Armazenagem } from '@/pages/Armazenagem'
 import { Pedidos } from '@/pages/Pedidos'
 import { Recebimentos } from '@/pages/Recebimentos'
 import { CapOperacional } from '@/pages/CapOperacional'
+import { Estoque } from '@/pages/Estoque'
 
 const API = 'http://localhost:5000'
 
@@ -132,6 +133,8 @@ function Dashboard({ usuario, onLogout }: { usuario: Usuario, onLogout: () => vo
         return <Recebimentos />
         case 'cap_operacional':
         return <CapOperacional />
+        case 'estoque':
+        return <Estoque />
       default:
         return (
           <div className="p-8">

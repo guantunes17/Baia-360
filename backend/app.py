@@ -539,6 +539,164 @@ def processar_cap_operacional_route():
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
+import json
+
+DB_ESTOQUE_PATH_WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'estoque_db.json')
+os.makedirs(os.path.dirname(DB_ESTOQUE_PATH_WEB), exist_ok=True)
+
+@app.route('/api/modulos/estoque/db/info', methods=['GET'])
+@jwt_required()
+def estoque_db_info():
+    try:
+        if not os.path.exists(DB_ESTOQUE_PATH_WEB):
+            return jsonify({'total_skus': 0, 'ultima': None, 'clientes': []}), 200
+        with open(DB_ESTOQUE_PATH_WEB, 'r', encoding='utf-8') as f:
+            db = json.load(f)
+        total  = sum(len(skus) for skus in db.values())
+        datas  = []
+        for skus in db.values():
+            for sku in skus.values():
+                if sku.get('atualizado'):
+                    datas.append(sku['atualizado'])
+        ultima = max(datas) if datas else None
+        return jsonify({'total_skus': total, 'ultima': ultima, 'clientes': list(db.keys())}), 200
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/modulos/estoque/db/carga', methods=['POST'])
+@jwt_required()
+def estoque_db_carga():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo = request.files['arquivo']
+    tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp.name)
+    tmp.close()
+
+    logs = []
+    def log(msg): logs.append(msg)
+
+    try:
+        spec = importlib.util.spec_from_file_location(
+            'central',
+            os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         'modules', 'central_relatorios.py'))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        mod.DB_ESTOQUE_PATH = DB_ESTOQUE_PATH_WEB
+        db = mod._carregar_estoque_xlsx(tmp.name, log)
+        if db:
+            mod._salvar_db_estoque(db)
+            total = sum(len(s) for s in db.values())
+            return jsonify({'msg': f'Carga inicial concluída — {total} SKUs', 'logs': logs}), 200
+        return jsonify({'erro': 'Falha na carga', 'logs': logs}), 400
+    except Exception as e:
+        return jsonify({'erro': str(e), 'logs': logs}), 500
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+
+@app.route('/api/modulos/estoque/db/atualizar', methods=['POST'])
+@jwt_required()
+def estoque_db_atualizar():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo = request.files['arquivo']
+    tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp.name)
+    tmp.close()
+
+    logs = []
+    def log(msg): logs.append(msg)
+
+    try:
+        spec = importlib.util.spec_from_file_location(
+            'central',
+            os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         'modules', 'central_relatorios.py'))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        mod.DB_ESTOQUE_PATH = DB_ESTOQUE_PATH_WEB
+        mod._atualizar_db_com_movimentacao(tmp.name, log)
+        return jsonify({'msg': 'DB atualizado com sucesso', 'logs': logs}), 200
+    except Exception as e:
+        return jsonify({'erro': str(e), 'logs': logs}), 500
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+
+@app.route('/api/modulos/estoque/gerar', methods=['POST'])
+@jwt_required()
+def processar_estoque_route():
+    if 'arquivo_pico' not in request.files:
+        return jsonify({'erro': 'Arquivo de pico não enviado'}), 400
+
+    arquivo_pico = request.files['arquivo_pico']
+    dias_ocioso  = int(request.form.get('dias_ocioso', 120))
+    mes_ref      = request.form.get('mes_ref', '').strip()
+
+    tmp_pico  = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo_pico.save(tmp_pico.name)
+    tmp_pico.close()
+
+    tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    tmp_saida.close()
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+
+    def log(msg):
+        jobs[job_id]['logs'].append(msg)
+
+    def executar():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                'central',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'modules', 'central_relatorios.py'))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            mod.DB_ESTOQUE_PATH = DB_ESTOQUE_PATH_WEB
+            mod._caminho_saida  = lambda *args, **kwargs: tmp_saida.name
+
+            resultado = mod.processar_estoque(
+                '',           # arquivo_estoque vazio — usa DB interno
+                tmp_pico.name,
+                '',           # arquivo_movimentacao vazio
+                dias_ocioso,
+                log,
+                _saida_override=tmp_saida.name)
+
+            if resultado:
+                jobs[job_id]['status']  = 'concluido'
+                jobs[job_id]['arquivo'] = tmp_saida.name
+                jobs[job_id]['nome']    = f'relatorio_estoque_{mes_ref}.xlsx'
+            else:
+                jobs[job_id]['status'] = 'erro'
+                jobs[job_id]['erro']   = 'Processamento falhou'
+        except Exception as e:
+            jobs[job_id]['status'] = 'erro'
+            jobs[job_id]['erro']   = str(e)
+        finally:
+            try:
+                os.unlink(tmp_pico.name)
+            except Exception:
+                pass
+
+    threading.Thread(target=executar, daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)
