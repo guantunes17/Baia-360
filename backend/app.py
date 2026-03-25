@@ -308,9 +308,176 @@ def download_resultado(job_id):
     return send_file(
         job['arquivo'],
         as_attachment=True,
-        download_name='relatorio_fretes.xlsx',
+        download_name=job.get('nome', 'relatorio.xlsx'),
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+@app.route('/api/modulos/armazenagem', methods=['POST'])
+@jwt_required()
+def processar_armazenagem_route():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo   = request.files['arquivo']
+    mes_filtro = request.form.get('mes_filtro', '').strip()
+
+    if not mes_filtro:
+        return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
+
+    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
+
+    tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp_entrada.name)
+    tmp_entrada.close()
+
+    tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    tmp_saida.close()
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+
+    def log(msg):
+        jobs[job_id]['logs'].append(msg)
+
+    def executar():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                'central',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'modules', 'central_relatorios.py'))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            resultado = mod.processar_armazenagem(
+                tmp_entrada.name, mes_filtro, log,
+                _saida_override=tmp_saida.name)
+
+            if resultado:
+                jobs[job_id]['status']  = 'concluido'
+                jobs[job_id]['arquivo'] = tmp_saida.name
+                jobs[job_id]['nome']    = f'relatorio_armazenagem_{mes_filtro}.xlsx'
+            else:
+                jobs[job_id]['status'] = 'erro'
+                jobs[job_id]['erro']   = 'Processamento falhou'
+        except Exception as e:
+            jobs[job_id]['status'] = 'erro'
+            jobs[job_id]['erro']   = str(e)
+        finally:
+            os.unlink(tmp_entrada.name)
+
+    threading.Thread(target=executar, daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
+
+@app.route('/api/modulos/pedidos', methods=['POST'])
+@jwt_required()
+def processar_pedidos_route():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo = request.files['arquivo']
+
+    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
+
+    tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp_entrada.name)
+    tmp_entrada.close()
+
+    tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    tmp_saida.close()
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+
+    def log(msg):
+        jobs[job_id]['logs'].append(msg)
+
+    def executar():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                'central',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'modules', 'central_relatorios.py'))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            resultado = mod.processar_pedidos(
+                tmp_entrada.name, log,
+                _saida_override=tmp_saida.name)
+
+            if resultado:
+                jobs[job_id]['status']  = 'concluido'
+                jobs[job_id]['arquivo'] = tmp_saida.name
+                jobs[job_id]['nome']    = 'relatorio_pedidos.xlsx'
+            else:
+                jobs[job_id]['status'] = 'erro'
+                jobs[job_id]['erro']   = 'Processamento falhou'
+        except Exception as e:
+            jobs[job_id]['status'] = 'erro'
+            jobs[job_id]['erro']   = str(e)
+        finally:
+            os.unlink(tmp_entrada.name)
+
+    threading.Thread(target=executar, daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
+
+@app.route('/api/modulos/recebimentos', methods=['POST'])
+@jwt_required()
+def processar_recebimentos_route():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo = request.files['arquivo']
+    mes_ref = request.form.get('mes_ref', '').strip()
+
+    if not mes_ref:
+        return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
+
+    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
+
+    tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp_entrada.name)
+    tmp_entrada.close()
+
+    tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    tmp_saida.close()
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+
+    def log(msg):
+        jobs[job_id]['logs'].append(msg)
+
+    def executar():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                'central',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'modules', 'central_relatorios.py'))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            mod._caminho_saida = lambda *args, **kwargs: tmp_saida.name
+
+            resultado = mod.run_recebimentos(
+                tmp_entrada.name, mes_ref, log)
+
+            jobs[job_id]['status']  = 'concluido'
+            jobs[job_id]['arquivo'] = tmp_saida.name
+            jobs[job_id]['nome']    = f'relatorio_recebimentos_{mes_ref}.xlsx'
+        except Exception as e:
+            jobs[job_id]['status'] = 'erro'
+            jobs[job_id]['erro']   = str(e)
+        finally:
+            try:
+                os.unlink(tmp_entrada.name)
+            except Exception:
+                pass
+
+    threading.Thread(target=executar, daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)

@@ -10,6 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Usuarios } from '@/pages/Usuarios'
 import { Fretes } from '@/pages/Fretes'
+import { Armazenagem } from '@/pages/Armazenagem'
+import { Pedidos } from '@/pages/Pedidos'
+import { Recebimentos } from '@/pages/Recebimentos'
 
 const API = 'http://localhost:5000'
 
@@ -120,6 +123,12 @@ function Dashboard({ usuario, onLogout }: { usuario: Usuario, onLogout: () => vo
         return <Usuarios />
         case 'fretes':
         return <Fretes />
+        case 'armazenagem':
+        return <Armazenagem />
+        case 'pedidos':
+        return <Pedidos />
+        case 'recebimentos':
+        return <Recebimentos />
       default:
         return (
           <div className="p-8">
