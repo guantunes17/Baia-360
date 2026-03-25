@@ -2,27 +2,20 @@
 __pycache__/
 *.py[cod]
 *.pyo
+venv/
 .env
 
-# Virtual environment
-backend/venv/
-venv/
-
-# Banco de dados local
+# Banco de dados
 *.db
 *.sqlite3
 
 # Node
 node_modules/
-frontend/node_modules/
+dist/
+dist-ssr/
 
-# Build
-frontend/dist/
-frontend/build/
+# Logs
+*.log
 
 # OS
 .DS_Store
-Thumbs.db
-
-# VS Code
-.vscode/
