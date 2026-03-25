@@ -122,6 +122,32 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
           </SidebarGroupContent>
         </SidebarGroup>
 
+<SidebarSeparator style={{ background: '#2d3148' }} />
+
+{/* Admin */}
+<SidebarGroup>
+  <SidebarGroupLabel style={{ color: '#8892a4', fontWeight: 700 }}>
+    ⚙️ Administração
+  </SidebarGroupLabel>
+  <SidebarGroupContent>
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={paginaAtiva === 'usuarios'}
+          onClick={() => onNavegar('usuarios')}
+          className="cursor-pointer text-sm"
+          style={{
+            color: paginaAtiva === 'usuarios' ? '#e2e8f0' : '#8892a4',
+            background: paginaAtiva === 'usuarios' ? '#1e2235' : 'transparent',
+          }}
+        >
+          👥  Usuários
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  </SidebarGroupContent>
+</SidebarGroup>
+
       </SidebarContent>
 
       {/* Footer */}

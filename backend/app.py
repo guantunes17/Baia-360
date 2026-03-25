@@ -122,5 +122,86 @@ def seed():
     db.session.commit()
     return jsonify({'msg': 'Admin criado com sucesso'}), 201
 
+@app.route('/api/auth/usuarios/<int:user_id>', methods=['GET'])
+@jwt_required()
+def get_usuario(user_id):
+    from flask import jsonify
+    admin = User.query.get(int(get_jwt_identity()))
+    if admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+    return jsonify(user.to_dict()), 200
+
+
+@app.route('/api/auth/usuarios/<int:user_id>', methods=['PUT'])
+@jwt_required()
+def atualizar_usuario(user_id):
+    from flask import request, jsonify
+    admin = User.query.get(int(get_jwt_identity()))
+    if admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+
+    data = request.get_json()
+    if 'nome' in data:
+        user.nome = data['nome']
+    if 'email' in data:
+        email = data['email'].strip().lower()
+        existente = User.query.filter_by(email=email).first()
+        if existente and existente.id != user_id:
+            return jsonify({'erro': 'Email já cadastrado'}), 409
+        user.email = email
+    if 'perfil' in data:
+        user.perfil = data['perfil']
+    if 'ativo' in data:
+        user.ativo = data['ativo']
+
+    db.session.commit()
+    return jsonify(user.to_dict()), 200
+
+
+@app.route('/api/auth/usuarios/<int:user_id>/senha', methods=['PUT'])
+@jwt_required()
+def redefinir_senha(user_id):
+    from flask import request, jsonify
+    admin = User.query.get(int(get_jwt_identity()))
+    if admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+
+    data = request.get_json()
+    nova_senha = data.get('nova_senha', '')
+    if len(nova_senha) < 6:
+        return jsonify({'erro': 'Senha deve ter pelo menos 6 caracteres'}), 400
+
+    user.set_senha(nova_senha)
+    db.session.commit()
+    return jsonify({'msg': 'Senha redefinida com sucesso'}), 200
+
+
+@app.route('/api/auth/usuarios/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+def deletar_usuario(user_id):
+    from flask import jsonify
+    admin = User.query.get(int(get_jwt_identity()))
+    if admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+    if user.id == admin.id:
+        return jsonify({'erro': 'Não é possível deletar seu próprio usuário'}), 400
+
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'msg': 'Usuário deletado com sucesso'}), 200
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)
