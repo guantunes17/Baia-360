@@ -28,3 +28,23 @@ class User(db.Model):
             'ativo':     self.ativo,
             'criado_em': self.criado_em.isoformat()
         }
+    
+class RelatorioGerado(db.Model):
+    __tablename__ = 'relatorios_gerados'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    modulo     = db.Column(db.String(50), nullable=False)
+    mes_ref    = db.Column(db.String(10), nullable=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    gerado_em  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship('User', backref='relatorios')
+
+    def to_dict(self):
+        return {
+            'id':        self.id,
+            'modulo':    self.modulo,
+            'mes_ref':   self.mes_ref,
+            'usuario':   self.usuario.nome if self.usuario else 'Desconhecido',
+            'gerado_em': self.gerado_em.isoformat()
+        }

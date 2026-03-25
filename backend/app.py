@@ -53,6 +53,26 @@ class User(db.Model):
             'criado_em': self.criado_em.isoformat()
         }
 
+class RelatorioGerado(db.Model):
+    __tablename__ = 'relatorios_gerados'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    modulo     = db.Column(db.String(50), nullable=False)
+    mes_ref    = db.Column(db.String(10), nullable=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    gerado_em  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship('User', backref='relatorios')
+
+    def to_dict(self):
+        return {
+            'id':        self.id,
+            'modulo':    self.modulo,
+            'mes_ref':   self.mes_ref,
+            'usuario':   self.usuario.nome if self.usuario else 'Desconhecido',
+            'gerado_em': self.gerado_em.isoformat()
+        }
+
 with app.app_context():
     db.create_all()
 
@@ -238,7 +258,8 @@ def processar_fretes_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id = str(uuid.uuid4())
+    job_id     = str(uuid.uuid4())
+    usuario_id = int(get_jwt_identity())
     jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
 
     def log(msg):
@@ -249,7 +270,6 @@ def processar_fretes_route():
             import sys, os
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-            # Importa as funções do app desktop
             spec = importlib.util.spec_from_file_location(
                 'central',
                 os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -264,6 +284,13 @@ def processar_fretes_route():
             if resultado:
                 jobs[job_id]['status']  = 'concluido'
                 jobs[job_id]['arquivo'] = tmp_saida.name
+                try:
+                    with app.app_context():
+                        reg = RelatorioGerado(modulo='Fretes', mes_ref=None, usuario_id=usuario_id)
+                        db.session.add(reg)
+                        db.session.commit()
+                except Exception:
+                    pass
             else:
                 jobs[job_id]['status'] = 'erro'
                 jobs[job_id]['erro']   = 'Processamento falhou'
@@ -334,7 +361,8 @@ def processar_armazenagem_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id = str(uuid.uuid4())
+    job_id     = str(uuid.uuid4())
+    usuario_id = int(get_jwt_identity())
     jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
 
     def log(msg):
@@ -342,21 +370,31 @@ def processar_armazenagem_route():
 
     def executar():
         try:
+            import sys, os
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
             spec = importlib.util.spec_from_file_location(
                 'central',
                 os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             'modules', 'central_relatorios.py'))
+                    'modules', 'central_relatorios.py'))
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
 
-            resultado = mod.processar_armazenagem(
-                tmp_entrada.name, mes_filtro, log,
+            resultado = mod.processar_fretes(
+                tmp_entrada.name, log,
                 _saida_override=tmp_saida.name)
 
             if resultado:
                 jobs[job_id]['status']  = 'concluido'
                 jobs[job_id]['arquivo'] = tmp_saida.name
                 jobs[job_id]['nome']    = f'relatorio_armazenagem_{mes_filtro}.xlsx'
+                try:
+                    with app.app_context():
+                        reg = RelatorioGerado(modulo='Armazenagem', mes_ref=mes_filtro, usuario_id=usuario_id)
+                        db.session.add(reg)
+                        db.session.commit()
+                except Exception:
+                    pass
             else:
                 jobs[job_id]['status'] = 'erro'
                 jobs[job_id]['erro']   = 'Processamento falhou'
@@ -387,7 +425,8 @@ def processar_pedidos_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id = str(uuid.uuid4())
+    job_id     = str(uuid.uuid4())
+    usuario_id = int(get_jwt_identity())
     jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
 
     def log(msg):
@@ -410,6 +449,13 @@ def processar_pedidos_route():
                 jobs[job_id]['status']  = 'concluido'
                 jobs[job_id]['arquivo'] = tmp_saida.name
                 jobs[job_id]['nome']    = 'relatorio_pedidos.xlsx'
+                try:
+                    with app.app_context():
+                        reg = RelatorioGerado(modulo='Pedidos', mes_ref=None, usuario_id=usuario_id)
+                        db.session.add(reg)
+                        db.session.commit()
+                except Exception:
+                    pass
             else:
                 jobs[job_id]['status'] = 'erro'
                 jobs[job_id]['erro']   = 'Processamento falhou'
@@ -444,7 +490,8 @@ def processar_recebimentos_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id = str(uuid.uuid4())
+    job_id     = str(uuid.uuid4())
+    usuario_id = int(get_jwt_identity())
     jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
 
     def log(msg):
@@ -467,6 +514,13 @@ def processar_recebimentos_route():
             jobs[job_id]['status']  = 'concluido'
             jobs[job_id]['arquivo'] = tmp_saida.name
             jobs[job_id]['nome']    = f'relatorio_recebimentos_{mes_ref}.xlsx'
+            try:
+                with app.app_context():
+                    reg = RelatorioGerado(modulo='Recebimentos', mes_ref=mes_ref, usuario_id=usuario_id)
+                    db.session.add(reg)
+                    db.session.commit()
+            except Exception:
+                pass
         except Exception as e:
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
@@ -503,7 +557,8 @@ def processar_cap_operacional_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id = str(uuid.uuid4())
+    job_id     = str(uuid.uuid4())
+    usuario_id = int(get_jwt_identity())
     jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
 
     def log(msg):
@@ -528,6 +583,13 @@ def processar_cap_operacional_route():
             jobs[job_id]['status']  = 'concluido'
             jobs[job_id]['arquivo'] = tmp_saida.name
             jobs[job_id]['nome']    = f'cap_operacional_{mes_ref}.xlsx'
+            try:
+                with app.app_context():
+                    reg = RelatorioGerado(modulo='Cap. Operacional', mes_ref=mes_ref, usuario_id=usuario_id)
+                    db.session.add(reg)
+                    db.session.commit()
+            except Exception:
+                pass
         except Exception as e:
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
@@ -653,7 +715,8 @@ def processar_estoque_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id = str(uuid.uuid4())
+    job_id     = str(uuid.uuid4())
+    usuario_id = int(get_jwt_identity())
     jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
 
     def log(msg):
@@ -683,6 +746,13 @@ def processar_estoque_route():
                 jobs[job_id]['status']  = 'concluido'
                 jobs[job_id]['arquivo'] = tmp_saida.name
                 jobs[job_id]['nome']    = f'relatorio_estoque_{mes_ref}.xlsx'
+                try:
+                    with app.app_context():
+                        reg = RelatorioGerado(modulo='Estoque', mes_ref=mes_ref, usuario_id=usuario_id)
+                        db.session.add(reg)
+                        db.session.commit()
+                except Exception:
+                    pass
             else:
                 jobs[job_id]['status'] = 'erro'
                 jobs[job_id]['erro']   = 'Processamento falhou'
@@ -719,7 +789,8 @@ def processar_fat_dist_route():
 
     tmp_dir = tempfile.mkdtemp()
 
-    job_id = str(uuid.uuid4())
+    job_id     = str(uuid.uuid4())
+    usuario_id = int(get_jwt_identity())
     jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
 
     def log(msg):
@@ -742,6 +813,13 @@ def processar_fat_dist_route():
                 jobs[job_id]['status']  = 'concluido'
                 jobs[job_id]['arquivo'] = resultado
                 jobs[job_id]['nome']    = f'Fat_Distribuicao_{mes_ref}.xlsx'
+                try:
+                    with app.app_context():
+                        reg = RelatorioGerado(modulo='Fat. Distribuição', mes_ref=mes_ref, usuario_id=usuario_id)
+                        db.session.add(reg)
+                        db.session.commit()
+                except Exception:
+                    pass
             else:
                 jobs[job_id]['status'] = 'erro'
                 jobs[job_id]['erro']   = 'Processamento falhou'
@@ -781,7 +859,8 @@ def processar_fat_arm_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id = str(uuid.uuid4())
+    job_id     = str(uuid.uuid4())
+    usuario_id = int(get_jwt_identity())
     jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
 
     def log(msg):
@@ -805,6 +884,13 @@ def processar_fat_arm_route():
                 jobs[job_id]['status']  = 'concluido'
                 jobs[job_id]['arquivo'] = tmp_saida.name
                 jobs[job_id]['nome']    = f'Fat_Armazenagem_{mes_ref}.xlsx'
+                try:
+                    with app.app_context():
+                        reg = RelatorioGerado(modulo='Fat. Armazenagem', mes_ref=mes_ref, usuario_id=usuario_id)
+                        db.session.add(reg)
+                        db.session.commit()
+                except Exception:
+                    pass
             else:
                 jobs[job_id]['status'] = 'erro'
                 jobs[job_id]['erro']   = 'Processamento falhou'
@@ -820,6 +906,37 @@ def processar_fat_arm_route():
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
+
+@app.route('/api/dashboard', methods=['GET'])
+@jwt_required()
+def dashboard():
+    from sqlalchemy import func
+    from collections import defaultdict
+
+    # Total de relatórios por módulo
+    por_modulo = db.session.query(
+        RelatorioGerado.modulo,
+        func.count(RelatorioGerado.id).label('total')
+    ).group_by(RelatorioGerado.modulo).all()
+
+    # Evolução mensal (últimos 6 meses)
+    por_mes = db.session.query(
+        RelatorioGerado.mes_ref,
+        func.count(RelatorioGerado.id).label('total')
+    ).filter(
+        RelatorioGerado.mes_ref.isnot(None)
+    ).group_by(RelatorioGerado.mes_ref).order_by(RelatorioGerado.mes_ref).all()
+
+    # Últimas 10 gerações
+    recentes = RelatorioGerado.query.order_by(
+        RelatorioGerado.gerado_em.desc()
+    ).limit(10).all()
+
+    return jsonify({
+        'por_modulo': [{'modulo': r.modulo, 'total': r.total} for r in por_modulo],
+        'por_mes':    [{'mes': r.mes_ref, 'total': r.total} for r in por_mes],
+        'recentes':   [r.to_dict() for r in recentes],
+    }), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)
