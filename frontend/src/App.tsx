@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Usuarios } from '@/pages/Usuarios'
+import { Fretes } from '@/pages/Fretes'
 
 const API = 'http://localhost:5000'
 
@@ -117,6 +118,8 @@ function Dashboard({ usuario, onLogout }: { usuario: Usuario, onLogout: () => vo
         return <Home onNavegar={setPaginaAtiva} />
         case 'usuarios':
         return <Usuarios />
+        case 'fretes':
+        return <Fretes />
       default:
         return (
           <div className="p-8">

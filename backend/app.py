@@ -1,3 +1,5 @@
+import importlib
+
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
@@ -202,6 +204,109 @@ def deletar_usuario(user_id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({'msg': 'Usuário deletado com sucesso'}), 200
+
+import tempfile, threading, uuid
+from flask import send_file
+
+# Dicionário para armazenar progresso dos jobs
+jobs = {}
+
+@app.route('/api/modulos/fretes', methods=['POST'])
+@jwt_required()
+def processar_fretes_route():
+    from flask import request, jsonify
+
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo  = request.files['arquivo']
+    nome_aba = request.form.get('nome_aba', '').strip()
+
+    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
+
+    # Salva arquivo temporário de entrada
+    tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp_entrada.name)
+    tmp_entrada.close()
+
+    # Arquivo temporário de saída
+    tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    tmp_saida.close()
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+
+    def log(msg):
+        jobs[job_id]['logs'].append(msg)
+
+    def executar():
+        try:
+            import sys, os
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+            # Importa as funções do app desktop
+            spec = importlib.util.spec_from_file_location(
+                'central',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                    'modules', 'central_relatorios.py'))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            resultado = mod.processar_fretes(
+                tmp_entrada.name, log,
+                _saida_override=tmp_saida.name)
+
+            if resultado:
+                jobs[job_id]['status']  = 'concluido'
+                jobs[job_id]['arquivo'] = tmp_saida.name
+            else:
+                jobs[job_id]['status'] = 'erro'
+                jobs[job_id]['erro']   = 'Processamento falhou'
+        except Exception as e:
+            jobs[job_id]['status'] = 'erro'
+            jobs[job_id]['erro']   = str(e)
+        finally:
+            os.unlink(tmp_entrada.name)
+
+    threading.Thread(target=executar, daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
+
+
+@app.route('/api/modulos/status/<job_id>', methods=['GET'])
+@jwt_required()
+def status_job(job_id):
+    from flask import jsonify
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({'erro': 'Job não encontrado'}), 404
+    return jsonify(job), 200
+
+
+@app.route('/api/modulos/download/<job_id>', methods=['GET'])
+def download_resultado(job_id):
+    from flask import request as freq
+    # Aceita token via query string para download direto
+    token = freq.args.get('token')
+    if not token:
+        return jsonify({'erro': 'Token não fornecido'}), 401
+    
+    try:
+        from flask_jwt_extended import decode_token
+        decode_token(token)
+    except Exception:
+        return jsonify({'erro': 'Token inválido'}), 401
+
+    job = jobs.get(job_id)
+    if not job or job['status'] != 'concluido':
+        return jsonify({'erro': 'Arquivo não disponível'}), 404
+    
+    return send_file(
+        job['arquivo'],
+        as_attachment=True,
+        download_name='relatorio_fretes.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)
