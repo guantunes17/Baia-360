@@ -3,6 +3,7 @@ import axios from 'axios'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DicaExtracao } from '@/components/DicaExtracao'
 
 const API = 'http://localhost:5000'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -92,20 +93,24 @@ export function Pedidos() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label style={{ color: '#8892a4' }}>Arquivo de Pedidos (.xlsx)</Label>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={e => setArquivo(e.target.files?.[0] || null)}
-              className="w-full text-sm rounded-md border px-3 py-2 cursor-pointer"
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-            />
-            {arquivo && (
-              <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivo.name}</p>
-            )}
-          </div>
+<div className="space-y-2">
+  <Label style={{ color: '#8892a4' }}>Arquivo de Pedidos (.xlsx)</Label>
+  <input
+    ref={inputRef}
+    type="file"
+    accept=".xlsx,.xls"
+    onChange={e => setArquivo(e.target.files?.[0] || null)}
+    className="w-full text-sm rounded-md border px-3 py-2 cursor-pointer"
+    style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+  />
+  <DicaExtracao linhas={[
+    'ℹ️ A aba de dados é detectada automaticamente.',
+    '📋 Exportar do sistema: Relatório → Pedidos → Exportar como Excel (.xlsx)',
+  ]} />
+  {arquivo && (
+    <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivo.name}</p>
+  )}
+</div>
         </CardContent>
       </Card>
 

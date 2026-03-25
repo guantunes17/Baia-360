@@ -698,5 +698,128 @@ def processar_estoque_route():
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
+@app.route('/api/modulos/fat_dist', methods=['POST'])
+@jwt_required()
+def processar_fat_dist_route():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo = request.files['arquivo']
+    mes_ref = request.form.get('mes_ref', '').strip()
+
+    if not mes_ref:
+        return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
+
+    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
+
+    tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp_entrada.name)
+    tmp_entrada.close()
+
+    tmp_dir = tempfile.mkdtemp()
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+
+    def log(msg):
+        jobs[job_id]['logs'].append(msg)
+
+    def executar():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                'central',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'modules', 'central_relatorios.py'))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            resultado = mod.run_faturamento_distribuicao(
+                tmp_entrada.name, mes_ref, log,
+                pasta_saida=tmp_dir)
+
+            if resultado:
+                jobs[job_id]['status']  = 'concluido'
+                jobs[job_id]['arquivo'] = resultado
+                jobs[job_id]['nome']    = f'Fat_Distribuicao_{mes_ref}.xlsx'
+            else:
+                jobs[job_id]['status'] = 'erro'
+                jobs[job_id]['erro']   = 'Processamento falhou'
+        except Exception as e:
+            jobs[job_id]['status'] = 'erro'
+            jobs[job_id]['erro']   = str(e)
+        finally:
+            try:
+                os.unlink(tmp_entrada.name)
+            except Exception:
+                pass
+
+    threading.Thread(target=executar, daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
+
+@app.route('/api/modulos/fat_arm', methods=['POST'])
+@jwt_required()
+def processar_fat_arm_route():
+    if 'arquivo_mov' not in request.files or 'arquivo_volumes' not in request.files:
+        return jsonify({'erro': 'Arquivos de movimentação e volumes são obrigatórios'}), 400
+
+    arquivo_mov     = request.files['arquivo_mov']
+    arquivo_volumes = request.files['arquivo_volumes']
+    mes_ref         = request.form.get('mes_ref', '').strip()
+
+    if not mes_ref:
+        return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
+
+    tmp_mov = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo_mov.save(tmp_mov.name)
+    tmp_mov.close()
+
+    tmp_vol = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo_volumes.save(tmp_vol.name)
+    tmp_vol.close()
+
+    tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    tmp_saida.close()
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+
+    def log(msg):
+        jobs[job_id]['logs'].append(msg)
+
+    def executar():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                'central',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'modules', 'central_relatorios.py'))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            mod._caminho_saida = lambda *args, **kwargs: tmp_saida.name
+
+            resultado = mod.run_faturamento_armazenagem(
+                tmp_mov.name, tmp_vol.name, mes_ref, log)
+
+            if resultado:
+                jobs[job_id]['status']  = 'concluido'
+                jobs[job_id]['arquivo'] = tmp_saida.name
+                jobs[job_id]['nome']    = f'Fat_Armazenagem_{mes_ref}.xlsx'
+            else:
+                jobs[job_id]['status'] = 'erro'
+                jobs[job_id]['erro']   = 'Processamento falhou'
+        except Exception as e:
+            jobs[job_id]['status'] = 'erro'
+            jobs[job_id]['erro']   = str(e)
+        finally:
+            for f in [tmp_mov.name, tmp_vol.name]:
+                try:
+                    os.unlink(f)
+                except Exception:
+                    pass
+
+    threading.Thread(target=executar, daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)

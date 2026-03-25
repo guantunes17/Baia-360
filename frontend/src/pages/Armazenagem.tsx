@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DicaExtracao } from '@/components/DicaExtracao'
 
 const API = 'http://localhost:5000'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -123,6 +124,10 @@ export function Armazenagem() {
               ℹ️ Formato: MM-AAAA (ex: 02-2026)
             </p>
           </div>
+          <DicaExtracao linhas={[
+            '📋 Exportar do sistema: Financeiro → Armazenagem → Exportar como Excel (.xlsx)',
+            'ℹ️ O arquivo deve conter coluna Emissão e Valor Principal.',
+          ]} />
         </CardContent>
       </Card>
 

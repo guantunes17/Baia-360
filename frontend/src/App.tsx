@@ -15,6 +15,8 @@ import { Pedidos } from '@/pages/Pedidos'
 import { Recebimentos } from '@/pages/Recebimentos'
 import { CapOperacional } from '@/pages/CapOperacional'
 import { Estoque } from '@/pages/Estoque'
+import { FatDistribuicao } from '@/pages/FatDistribuicao'
+import { FatArmazenagem } from '@/pages/FatArmazenagem'
 
 const API = 'http://localhost:5000'
 
@@ -135,6 +137,10 @@ function Dashboard({ usuario, onLogout }: { usuario: Usuario, onLogout: () => vo
         return <CapOperacional />
         case 'estoque':
         return <Estoque />
+        case 'fat_dist':
+        return <FatDistribuicao />
+        case 'fat_arm':
+        return <FatArmazenagem />
       default:
         return (
           <div className="p-8">

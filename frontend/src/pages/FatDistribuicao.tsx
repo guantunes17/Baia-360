@@ -4,26 +4,25 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DicaExtracao } from '@/components/DicaExtracao'
 
 const API = 'http://localhost:5000'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
 
 type Status = 'idle' | 'processando' | 'concluido' | 'erro'
 
-export function Fretes() {
-  const [arquivo, setArquivo]     = useState<File | null>(null)
-  const [nomeAba, setNomeAba]     = useState('')
-  const [status, setStatus]       = useState<Status>('idle')
-  const [logs, setLogs]           = useState<string[]>([])
-  const [erro, setErro]           = useState('')
-  const [jobId, setJobId]         = useState('')
-  const inputRef                  = useRef<HTMLInputElement>(null)
-  const intervalRef               = useRef<ReturnType<typeof setInterval> | null>(null)
+export function FatDistribuicao() {
+  const [arquivo, setArquivo] = useState<File | null>(null)
+  const [mesRef, setMesRef]   = useState('')
+  const [status, setStatus]   = useState<Status>('idle')
+  const [logs, setLogs]       = useState<string[]>([])
+  const [erro, setErro]       = useState('')
+  const [jobId, setJobId]     = useState('')
+  const inputRef              = useRef<HTMLInputElement>(null)
+  const intervalRef           = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const resetar = () => {
     setArquivo(null)
-    setNomeAba('')
+    setMesRef('')
     setStatus('idle')
     setLogs([])
     setErro('')
@@ -34,13 +33,9 @@ export function Fretes() {
   const iniciarPolling = (id: string) => {
     intervalRef.current = setInterval(async () => {
       try {
-        const res = await axios.get(`${API}/api/modulos/status/${id}`, {
-          headers: headers()
-        })
+        const res = await axios.get(`${API}/api/modulos/status/${id}`, { headers: headers() })
         const job = res.data
-
         setLogs(job.logs || [])
-
         if (job.status === 'concluido') {
           clearInterval(intervalRef.current!)
           setStatus('concluido')
@@ -58,18 +53,17 @@ export function Fretes() {
   }
 
   const processar = async () => {
-    if (!arquivo || !nomeAba.trim()) return
-
+    if (!arquivo || !mesRef.trim()) return
     setStatus('processando')
     setLogs([])
     setErro('')
 
     const formData = new FormData()
     formData.append('arquivo', arquivo)
-    formData.append('nome_aba', nomeAba.trim())
+    formData.append('mes_ref', mesRef.trim())
 
     try {
-      const res = await axios.post(`${API}/api/modulos/fretes`, formData, {
+      const res = await axios.post(`${API}/api/modulos/fat_dist`, formData, {
         headers: { ...headers(), 'Content-Type': 'multipart/form-data' }
       })
       setJobId(res.data.job_id)
@@ -86,17 +80,15 @@ export function Fretes() {
 
   return (
     <div className="p-8 max-w-3xl">
-      {/* Cabeçalho */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold" style={{ color: '#e2e8f0' }}>
-          🚚 Fretes
+          🚛 Faturamento Distribuição
         </h1>
         <p className="text-sm mt-1" style={{ color: '#8892a4' }}>
-          Embarques · RESCOM · Portadores · Custo de Insumos
+          Geral · EPH · Pint Pharma · Funcional
         </p>
       </div>
 
-      {/* Card de configuração */}
       <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
         <CardHeader>
           <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>
@@ -104,48 +96,41 @@ export function Fretes() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label style={{ color: '#8892a4' }}>Arquivo de Embarques (.xlsx)</Label>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={e => setArquivo(e.target.files?.[0] || null)}
+              className="w-full text-sm rounded-md border px-3 py-2 cursor-pointer"
+              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+            />
+            {arquivo && (
+              <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivo.name}</p>
+            )}
+          </div>
 
-  {/* Upload */}
-  <div className="space-y-2">
-    <Label style={{ color: '#8892a4' }}>Arquivo de Fretes (.xlsx)</Label>
-    <input
-      ref={inputRef}
-      type="file"
-      accept=".xlsx,.xls"
-      onChange={e => setArquivo(e.target.files?.[0] || null)}
-      className="w-full text-sm rounded-md border px-3 py-2 cursor-pointer"
-      style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-    />
-    {arquivo && (
-      <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivo.name}</p>
-    )}
-  </div>
-
-  {/* Nome da aba */}
-<div className="space-y-2">
-  <Label style={{ color: '#8892a4' }}>Nome da aba de Embarques</Label>
-  <Input
-    value={nomeAba}
-    onChange={e => setNomeAba(e.target.value)}
-    placeholder="ex: EMBARQUES 02.26"
-    style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-  />
-  <DicaExtracao linhas={[
-    'ℹ️ Abas RESCOM e PORTADORES são detectadas automaticamente.',
-    '📋 Exportar do sistema: Relatório → Embarques → Exportar como Excel (.xlsx)',
-    '📋 Nome da aba: geralmente EMBARQUES MM.AA (ex: EMBARQUES 02.26)',
-  ]} />
-  </div>
-
-</CardContent>
+          <div className="space-y-2">
+            <Label style={{ color: '#8892a4' }}>Mês de Referência</Label>
+            <Input
+              value={mesRef}
+              onChange={e => setMesRef(e.target.value)}
+              placeholder="ex: 02-2026"
+              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+            />
+            <p className="text-xs" style={{ color: '#8892a4' }}>
+              ℹ️ Formato: Mês/Ano (ex: 02-2026)
+            </p>
+          </div>
+        </CardContent>
       </Card>
 
-      {/* Botões */}
       <div className="flex gap-3 mb-6">
         <Button
           onClick={processar}
-          disabled={!arquivo || !nomeAba.trim() || status === 'processando'}
-          style={{ background: '#7c3aed', color: 'white' }}
+          disabled={!arquivo || !mesRef.trim() || status === 'processando'}
+          style={{ background: '#ea580c', color: 'white' }}
         >
           {status === 'processando' ? '⏳ Processando...' : '▶ Gerar Relatório'}
         </Button>
@@ -161,16 +146,12 @@ export function Fretes() {
         )}
 
         {status === 'concluido' && (
-          <Button
-            onClick={baixar}
-            style={{ background: '#10b981', color: 'white' }}
-          >
+          <Button onClick={baixar} style={{ background: '#10b981', color: 'white' }}>
             ⬇ Baixar Relatório
           </Button>
         )}
       </div>
 
-      {/* Log */}
       {logs.length > 0 && (
         <Card className="border" style={{ background: '#0f1117', borderColor: '#2d3148' }}>
           <CardContent className="p-4">
@@ -179,16 +160,13 @@ export function Fretes() {
             </p>
             <div className="space-y-0 max-h-64 overflow-y-auto">
               {logs.map((linha, i) => (
-                <p key={i} className="text-xs font-mono" style={{ color: '#4f8ef7' }}>
-                  {linha}
-                </p>
+                <p key={i} className="text-xs font-mono" style={{ color: '#4f8ef7' }}>{linha}</p>
               ))}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Erro */}
       {erro && (
         <Card className="border mt-4" style={{ background: '#1a1d27', borderColor: '#ef4444' }}>
           <CardContent className="p-4">
@@ -197,12 +175,11 @@ export function Fretes() {
         </Card>
       )}
 
-      {/* Sucesso */}
       {status === 'concluido' && (
         <Card className="border mt-4" style={{ background: '#1a1d27', borderColor: '#10b981' }}>
           <CardContent className="p-4">
             <p className="text-sm" style={{ color: '#10b981' }}>
-              ✅ Relatório gerado com sucesso! Clique em "Baixar Relatório" para fazer o download.
+              ✅ Relatório gerado! Clique em "Baixar Relatório" para fazer o download.
             </p>
           </CardContent>
         </Card>
