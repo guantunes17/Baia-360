@@ -13,6 +13,7 @@ import { Fretes } from '@/pages/Fretes'
 import { Armazenagem } from '@/pages/Armazenagem'
 import { Pedidos } from '@/pages/Pedidos'
 import { Recebimentos } from '@/pages/Recebimentos'
+import { CapOperacional } from '@/pages/CapOperacional'
 
 const API = 'http://localhost:5000'
 
@@ -129,6 +130,8 @@ function Dashboard({ usuario, onLogout }: { usuario: Usuario, onLogout: () => vo
         return <Pedidos />
         case 'recebimentos':
         return <Recebimentos />
+        case 'cap_operacional':
+        return <CapOperacional />
       default:
         return (
           <div className="p-8">

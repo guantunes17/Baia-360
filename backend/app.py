@@ -479,5 +479,66 @@ def processar_recebimentos_route():
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
+@app.route('/api/modulos/cap_operacional', methods=['POST'])
+@jwt_required()
+def processar_cap_operacional_route():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo = request.files['arquivo']
+    mes_ref = request.form.get('mes_ref', '').strip()
+    limiar_media = float(request.form.get('limiar_media', 3.0))
+    limiar_alta  = float(request.form.get('limiar_alta', 5.0))
+
+    if not mes_ref:
+        return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
+
+    if not arquivo.filename.endswith('.pdf'):
+        return jsonify({'erro': 'Arquivo deve ser .pdf'}), 400
+
+    tmp_entrada = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    arquivo.save(tmp_entrada.name)
+    tmp_entrada.close()
+
+    tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    tmp_saida.close()
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+
+    def log(msg):
+        jobs[job_id]['logs'].append(msg)
+
+    def executar():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                'central',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'modules', 'central_relatorios.py'))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            mod._caminho_saida = lambda *args, **kwargs: tmp_saida.name
+
+            resultado = mod.run_cap_operacional_pdf(
+                tmp_entrada.name, mes_ref, log,
+                limiar_media=limiar_media,
+                limiar_alta=limiar_alta)
+
+            jobs[job_id]['status']  = 'concluido'
+            jobs[job_id]['arquivo'] = tmp_saida.name
+            jobs[job_id]['nome']    = f'cap_operacional_{mes_ref}.xlsx'
+        except Exception as e:
+            jobs[job_id]['status'] = 'erro'
+            jobs[job_id]['erro']   = str(e)
+        finally:
+            try:
+                os.unlink(tmp_entrada.name)
+            except Exception:
+                pass
+
+    threading.Thread(target=executar, daemon=True).start()
+    return jsonify({'job_id': job_id}), 202
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)
