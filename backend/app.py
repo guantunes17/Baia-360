@@ -3,6 +3,7 @@ import importlib.util
 import tempfile
 import threading
 import uuid
+import pandas as pd
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -61,8 +62,13 @@ class RelatorioGerado(db.Model):
     mes_ref    = db.Column(db.String(10), nullable=True)
     usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     gerado_em  = db.Column(db.DateTime, default=datetime.utcnow)
+    kpis_json  = db.Column(db.Text, nullable=True)  # KPIs em JSON
 
     usuario = db.relationship('User', backref='relatorios')
+
+    def kpis(self):
+        import json
+        return json.loads(self.kpis_json) if self.kpis_json else {}
 
     def to_dict(self):
         return {
@@ -70,7 +76,8 @@ class RelatorioGerado(db.Model):
             'modulo':    self.modulo,
             'mes_ref':   self.mes_ref,
             'usuario':   self.usuario.nome if self.usuario else 'Desconhecido',
-            'gerado_em': self.gerado_em.isoformat()
+            'gerado_em': self.gerado_em.isoformat(),
+            'kpis':      self.kpis()
         }
 
 with app.app_context():
@@ -235,6 +242,99 @@ from flask import send_file
 # Dicionário para armazenar progresso dos jobs
 jobs = {}
 
+# ── Extratores de KPIs ────────────────────────────────────────────────────────
+import json
+
+def _extrair_kpis_pedidos(caminho_xlsx):
+    try:
+        df = pd.read_excel(caminho_xlsx, sheet_name='Resumo Por Depositante')
+        total     = int(df['Total Geral'].sum())
+        sla       = round(float(df['SLA %'].mean()), 1)
+        excedidas = int(df['Excedido D+1'].sum())
+        return {'total_ordens': total, 'sla_pct': sla, 'excedidas': excedidas}
+    except Exception:
+        return {}
+
+def _extrair_kpis_fretes(caminho_xlsx):
+    try:
+        df = pd.read_excel(caminho_xlsx, sheet_name='Consolidado')
+        total_frete = round(float(df['Valor Frete Total'].sum()), 2)
+        remetentes  = int(df['Remetente'].nunique())
+        return {'total_frete': total_frete, 'remetentes': remetentes}
+    except Exception as e:
+        print(f'[KPI FRETES ERRO] {e}')
+        return {}
+
+def _extrair_kpis_armazenagem(caminho_xlsx):
+    try:
+        df = pd.read_excel(caminho_xlsx, sheet_name='Armazenagem')
+        total    = round(float(df['Soma Armazenagem'].sum()), 2)
+        clientes = int(df.shape[0])
+        return {'total_armazenagem': total, 'clientes': clientes}
+    except Exception:
+        return {}
+
+def _extrair_kpis_estoque(caminho_xlsx):
+    try:
+        df = pd.read_excel(caminho_xlsx, sheet_name='Resumo por Cliente')
+        pico_m3  = round(float(df['Pico Volume m³'].sum()), 2)
+        clientes = int(df.shape[0])
+        return {'pico_total_m3': pico_m3, 'clientes': clientes}
+    except Exception:
+        return {}
+
+def _extrair_kpis_recebimentos(caminho_xlsx):
+    try:
+        df = pd.read_excel(caminho_xlsx, sheet_name='Resumo por Depositante')
+        total_rec  = int(df['Total Recebimentos'].sum())
+        valor_total = round(float(df['Valor Total (R$)'].sum()), 2)
+        depositantes = int(df.shape[0])
+        return {'total_recebimentos': total_rec, 'valor_total': valor_total, 'depositantes': depositantes}
+    except Exception:
+        return {}
+
+def _extrair_kpis_fat_dist(caminho_xlsx):
+    try:
+        df = pd.read_excel(caminho_xlsx, sheet_name='Fechamento', header=None)
+        # Linha do total está na coluna 3 (Valor do Frete), filtra linhas numéricas
+        valores = pd.to_numeric(df[3], errors='coerce').dropna()
+        total   = round(float(valores.sum()), 2)
+        clientes = int(df[1].dropna().apply(lambda x: str(x).strip()).str.endswith('›').sum())
+        return {'total_frete': total, 'clientes': clientes}
+    except Exception:
+        return {}
+
+def _extrair_kpis_fat_arm(caminho_xlsx):
+    try:
+        df = pd.read_excel(caminho_xlsx, sheet_name='Resumo', header=None)
+        # Linhas de TOTAL têm 'Total a Faturar' na col 6, filtra linhas de total por cliente
+        mask  = df[0].astype(str).str.startswith('TOTAL —')
+        total = round(float(df.loc[mask, 6].sum()), 2)
+        clientes = int(mask.sum())
+        return {'total_faturamento': total, 'clientes': clientes}
+    except Exception:
+        return {}
+
+def _extrair_kpis_cap_operacional(caminho_xlsx):
+    try:
+        df = pd.read_excel(caminho_xlsx, sheet_name='Resumo por Depositante')
+        total_os     = int(df['Total de OS'].sum())
+        depositantes = int(df.shape[0])
+        return {'total_os': total_os, 'depositantes': depositantes}
+    except Exception:
+        return {}
+
+_EXTRATORES_KPIS = {
+    'Pedidos':          _extrair_kpis_pedidos,
+    'Fretes':           _extrair_kpis_fretes,
+    'Armazenagem':      _extrair_kpis_armazenagem,
+    'Estoque':          _extrair_kpis_estoque,
+    'Recebimentos':     _extrair_kpis_recebimentos,
+    'Fat. Distribuição':_extrair_kpis_fat_dist,
+    'Fat. Armazenagem': _extrair_kpis_fat_arm,
+    'Cap. Operacional': _extrair_kpis_cap_operacional,
+}
+
 @app.route('/api/modulos/fretes', methods=['POST'])
 @jwt_required()
 def processar_fretes_route():
@@ -286,7 +386,8 @@ def processar_fretes_route():
                 jobs[job_id]['arquivo'] = tmp_saida.name
                 try:
                     with app.app_context():
-                        reg = RelatorioGerado(modulo='Fretes', mes_ref=None, usuario_id=usuario_id)
+                        kpis = _extrair_kpis_fretes(tmp_saida.name)
+                        reg  = RelatorioGerado(modulo='Fretes', mes_ref=None, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
                 except Exception:
@@ -380,8 +481,8 @@ def processar_armazenagem_route():
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
 
-            resultado = mod.processar_fretes(
-                tmp_entrada.name, log,
+            resultado = mod.processar_armazenagem(
+                tmp_entrada.name, mes_filtro, log,
                 _saida_override=tmp_saida.name)
 
             if resultado:
@@ -390,10 +491,12 @@ def processar_armazenagem_route():
                 jobs[job_id]['nome']    = f'relatorio_armazenagem_{mes_filtro}.xlsx'
                 try:
                     with app.app_context():
-                        reg = RelatorioGerado(modulo='Armazenagem', mes_ref=mes_filtro, usuario_id=usuario_id)
+                        kpis = _extrair_kpis_armazenagem(tmp_saida.name)
+                        reg  = RelatorioGerado(modulo='Armazenagem', mes_ref=mes_filtro, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
-                except Exception:
+                except Exception as e:
+                    log(f'Erro ao salvar KPIs: {str(e)}')
                     pass
             else:
                 jobs[job_id]['status'] = 'erro'
@@ -451,10 +554,12 @@ def processar_pedidos_route():
                 jobs[job_id]['nome']    = 'relatorio_pedidos.xlsx'
                 try:
                     with app.app_context():
-                        reg = RelatorioGerado(modulo='Pedidos', mes_ref=None, usuario_id=usuario_id)
+                        kpis = _extrair_kpis_pedidos(tmp_saida.name)
+                        reg  = RelatorioGerado(modulo='Pedidos', mes_ref=None, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
-                except Exception:
+                except Exception as e:
+                    log(f'Erro ao salvar KPIs: {str(e)}')
                     pass
             else:
                 jobs[job_id]['status'] = 'erro'
@@ -515,12 +620,14 @@ def processar_recebimentos_route():
             jobs[job_id]['arquivo'] = tmp_saida.name
             jobs[job_id]['nome']    = f'relatorio_recebimentos_{mes_ref}.xlsx'
             try:
-                with app.app_context():
-                    reg = RelatorioGerado(modulo='Recebimentos', mes_ref=mes_ref, usuario_id=usuario_id)
-                    db.session.add(reg)
-                    db.session.commit()
-            except Exception:
-                pass
+                    with app.app_context():
+                        kpis = _extrair_kpis_recebimentos(tmp_saida.name)
+                        reg  = RelatorioGerado(modulo='Recebimento', mes_ref=None, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
+                        db.session.add(reg)
+                        db.session.commit()
+            except Exception as e:
+                    log(f'Erro ao salvar KPIs: {str(e)}')
+                    pass
         except Exception as e:
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
@@ -584,12 +691,14 @@ def processar_cap_operacional_route():
             jobs[job_id]['arquivo'] = tmp_saida.name
             jobs[job_id]['nome']    = f'cap_operacional_{mes_ref}.xlsx'
             try:
-                with app.app_context():
-                    reg = RelatorioGerado(modulo='Cap. Operacional', mes_ref=mes_ref, usuario_id=usuario_id)
-                    db.session.add(reg)
-                    db.session.commit()
-            except Exception:
-                pass
+                    with app.app_context():
+                        kpis = _extrair_kpis_cap_operacional(tmp_saida.name)
+                        reg  = RelatorioGerado(modulo='Cap. Operacional', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
+                        db.session.add(reg)
+                        db.session.commit()
+            except Exception as e:
+                    log(f'Erro ao salvar KPIs: {str(e)}')
+                    pass
         except Exception as e:
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
@@ -748,10 +857,12 @@ def processar_estoque_route():
                 jobs[job_id]['nome']    = f'relatorio_estoque_{mes_ref}.xlsx'
                 try:
                     with app.app_context():
-                        reg = RelatorioGerado(modulo='Estoque', mes_ref=mes_ref, usuario_id=usuario_id)
+                        kpis = _extrair_kpis_estoque(tmp_saida.name)
+                        reg  = RelatorioGerado(modulo='Estoque', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
-                except Exception:
+                except Exception as e:
+                    log(f'Erro ao salvar KPIs: {str(e)}')
                     pass
             else:
                 jobs[job_id]['status'] = 'erro'
@@ -815,10 +926,12 @@ def processar_fat_dist_route():
                 jobs[job_id]['nome']    = f'Fat_Distribuicao_{mes_ref}.xlsx'
                 try:
                     with app.app_context():
-                        reg = RelatorioGerado(modulo='Fat. Distribuição', mes_ref=mes_ref, usuario_id=usuario_id)
+                        kpis = _extrair_kpis_fat_dist(resultado)
+                        reg  = RelatorioGerado(modulo='Fat. Distribuição', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
-                except Exception:
+                except Exception as e:
+                    log(f'Erro ao salvar KPIs: {str(e)}')
                     pass
             else:
                 jobs[job_id]['status'] = 'erro'
@@ -886,10 +999,12 @@ def processar_fat_arm_route():
                 jobs[job_id]['nome']    = f'Fat_Armazenagem_{mes_ref}.xlsx'
                 try:
                     with app.app_context():
-                        reg = RelatorioGerado(modulo='Fat. Armazenagem', mes_ref=mes_ref, usuario_id=usuario_id)
+                        kpis = _extrair_kpis_fat_arm(tmp_saida.name)
+                        reg  = RelatorioGerado(modulo='Fat. Armazenagem', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
-                except Exception:
+                except Exception as e:
+                    log(f'Erro ao salvar KPIs: {str(e)}')
                     pass
             else:
                 jobs[job_id]['status'] = 'erro'
@@ -911,15 +1026,14 @@ def processar_fat_arm_route():
 @jwt_required()
 def dashboard():
     from sqlalchemy import func
-    from collections import defaultdict
 
-    # Total de relatórios por módulo
+    # Total por módulo
     por_modulo = db.session.query(
         RelatorioGerado.modulo,
         func.count(RelatorioGerado.id).label('total')
     ).group_by(RelatorioGerado.modulo).all()
 
-    # Evolução mensal (últimos 6 meses)
+    # Evolução mensal
     por_mes = db.session.query(
         RelatorioGerado.mes_ref,
         func.count(RelatorioGerado.id).label('total')
@@ -932,10 +1046,24 @@ def dashboard():
         RelatorioGerado.gerado_em.desc()
     ).limit(10).all()
 
+    # KPIs mais recentes por módulo
+    kpis_por_modulo = {}
+    for modulo in ['Pedidos', 'Fretes', 'Armazenagem', 'Estoque',
+                   'Recebimentos', 'Fat. Distribuição', 'Fat. Armazenagem', 'Cap. Operacional']:
+        ultimo = RelatorioGerado.query.filter_by(modulo=modulo)\
+            .order_by(RelatorioGerado.gerado_em.desc()).first()
+        if ultimo and ultimo.kpis_json:
+            kpis_por_modulo[modulo] = {
+                'mes_ref':  ultimo.mes_ref,
+                'gerado_em': ultimo.gerado_em.isoformat(),
+                'kpis':     ultimo.kpis()
+            }
+
     return jsonify({
-        'por_modulo': [{'modulo': r.modulo, 'total': r.total} for r in por_modulo],
-        'por_mes':    [{'mes': r.mes_ref, 'total': r.total} for r in por_mes],
-        'recentes':   [r.to_dict() for r in recentes],
+        'por_modulo':     [{'modulo': r.modulo, 'total': r.total} for r in por_modulo],
+        'por_mes':        [{'mes': r.mes_ref, 'total': r.total} for r in por_mes],
+        'recentes':       [r.to_dict() for r in recentes],
+        'kpis_por_modulo': kpis_por_modulo,
     }), 200
 
 if __name__ == '__main__':
