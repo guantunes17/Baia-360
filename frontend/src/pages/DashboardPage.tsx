@@ -3,7 +3,7 @@ import axios from 'axios'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
-const API = 'http://localhost:5000'
+const API = 'http://localhost:5001'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
 
 interface PorModulo { modulo: string; total: number }

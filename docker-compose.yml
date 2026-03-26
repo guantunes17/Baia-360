@@ -10,7 +10,7 @@ services:
       - ./backend:/app
       - /app/venv
     ports:
-      - "5000:5000"
+      - "5001:5001"
     networks:
       - baia360
 
