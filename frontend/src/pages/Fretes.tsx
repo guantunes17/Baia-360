@@ -44,10 +44,12 @@ export function Fretes() {
         if (job.status === 'concluido') {
           clearInterval(intervalRef.current!)
           setStatus('concluido')
+          ;(window as any)._toast?.('sucesso', 'Relatório gerado com sucesso!')
         } else if (job.status === 'erro') {
           clearInterval(intervalRef.current!)
           setStatus('erro')
           setErro(job.erro || 'Erro desconhecido')
+          ;(window as any)._toast?.('erro', job.erro || 'Erro ao gerar relatório')
         }
       } catch {
         clearInterval(intervalRef.current!)

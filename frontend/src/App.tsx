@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/AppSidebar'
@@ -20,6 +20,7 @@ import { FatArmazenagem } from '@/pages/FatArmazenagem'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { Hub } from '@/pages/Hub'
 import { Perfil } from '@/pages/Perfil'
+import { ToastContainer, ToastData } from '@/components/Toast'
 
 const API = 'http://localhost:5000'
 
@@ -121,6 +122,17 @@ function Login({ onLogin }: { onLogin: (u: Usuario) => void }) {
 
 function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void, onAtualizarUsuario: (u: Usuario) => void }) {
   const [paginaAtiva, setPaginaAtiva] = useState('home')
+  const [toasts, setToasts] = useState<ToastData[]>([])
+  const adicionarToast = (tipo: 'sucesso' | 'erro', mensagem: string) => {
+    const id = Date.now()
+    setToasts(prev => [...prev, { id, tipo, mensagem }])
+  }
+  const removerToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id))
+
+  useEffect(() => {
+    (window as any)._toast = adicionarToast
+    return () => { delete (window as any)._toast }
+  }, [])
 
   const renderPagina = () => {
     switch (paginaAtiva) {
@@ -166,6 +178,7 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario }: { usu
     <TooltipProvider>
       <SidebarProvider>
         <div className="flex min-h-screen w-full" style={{ background: '#0f1117' }}>
+          <ToastContainer toasts={toasts} onRemover={removerToast} />
 
           <AppSidebar paginaAtiva={paginaAtiva} onNavegar={setPaginaAtiva} />
 
