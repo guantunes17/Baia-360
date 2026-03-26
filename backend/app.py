@@ -1114,4 +1114,4 @@ def atualizar_perfil():
     return jsonify(user.to_dict()), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=False)
+    app.run(host='0.0.0.0', port=5001, debug=False)
