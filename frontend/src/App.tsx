@@ -18,6 +18,7 @@ import { Estoque } from '@/pages/Estoque'
 import { FatDistribuicao } from '@/pages/FatDistribuicao'
 import { FatArmazenagem } from '@/pages/FatArmazenagem'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { Hub } from '@/pages/Hub'
 
 const API = 'http://localhost:5000'
 
@@ -210,15 +211,17 @@ export default function App() {
     const u = localStorage.getItem('usuario')
     return u ? JSON.parse(u) : null
   })
+  const [noHub, setNoHub] = useState(true)
 
-  const handleLogin  = (u: Usuario) => setUsuario(u)
+  const handleLogin  = (u: Usuario) => { setUsuario(u); setNoHub(true) }
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('usuario')
     setUsuario(null)
+    setNoHub(true)
   }
 
-  return usuario
-    ? <Dashboard usuario={usuario} onLogout={handleLogout} />
-    : <Login onLogin={handleLogin} />
+  if (!usuario) return <Login onLogin={handleLogin} />
+  if (noHub)    return <Hub usuario={usuario} onEntrar={() => setNoHub(false)} onLogout={handleLogout} />
+  return <Dashboard usuario={usuario} onLogout={() => { setNoHub(true) }} />
 }
