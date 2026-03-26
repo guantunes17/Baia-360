@@ -118,7 +118,7 @@ function Login({ onLogin }: { onLogin: (u: Usuario) => void }) {
   )
 }
 
-function Dashboard({ usuario, onLogout }: { usuario: Usuario, onLogout: () => void }) {
+function Dashboard({ usuario, onLogout, onVoltarHub }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void }) {
   const [paginaAtiva, setPaginaAtiva] = useState('home')
 
   const renderPagina = () => {
@@ -174,6 +174,22 @@ function Dashboard({ usuario, onLogout }: { usuario: Usuario, onLogout: () => vo
             >
               <div className="flex items-center gap-3">
                 <SidebarTrigger style={{ color: '#8892a4' }} />
+                <button
+                  onClick={onVoltarHub}
+                  className="text-xs px-3 py-1.5 rounded-md font-medium"
+                  style={{ color: '#4f8ef7', background: '#4f8ef711', border: '1px solid #4f8ef733', cursor: 'pointer' }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLElement).style.background = '#4f8ef722'
+                    ;(e.currentTarget as HTMLElement).style.borderColor = '#4f8ef7'
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLElement).style.background = '#4f8ef711'
+                    ;(e.currentTarget as HTMLElement).style.borderColor = '#4f8ef733'
+                  }}
+                >
+                  ← Baia 360
+                </button>
+                <span style={{ color: '#2d3148' }}>|</span>
                 <span className="text-sm font-semibold" style={{ color: '#e2e8f0' }}>
                   Central de Relatórios
                 </span>
@@ -223,5 +239,5 @@ export default function App() {
 
   if (!usuario) return <Login onLogin={handleLogin} />
   if (noHub)    return <Hub usuario={usuario} onEntrar={() => setNoHub(false)} onLogout={handleLogout} />
-  return <Dashboard usuario={usuario} onLogout={() => { setNoHub(true) }} />
+  return <Dashboard usuario={usuario} onLogout={handleLogout} onVoltarHub={() => setNoHub(true)} />
 }
