@@ -5,6 +5,20 @@ import threading
 import uuid
 import pandas as pd
 
+def _deletar_temp(path: str):
+    """Remove arquivo temporário com tolerância ao PermissionError do Windows."""
+    import time
+    for _ in range(5):
+        try:
+            os.unlink(path)
+            return
+        except PermissionError:
+            time.sleep(0.2)
+        except FileNotFoundError:
+            return
+        except Exception:
+            return
+
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, decode_token
@@ -403,7 +417,7 @@ def processar_fretes_route():
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
         finally:
-            os.unlink(tmp_entrada.name)
+            _deletar_temp(tmp_entrada.name)
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -509,7 +523,7 @@ def processar_armazenagem_route():
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
         finally:
-            os.unlink(tmp_entrada.name)
+            _deletar_temp(tmp_entrada.name)
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -572,7 +586,7 @@ def processar_pedidos_route():
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
         finally:
-            os.unlink(tmp_entrada.name)
+            _deletar_temp(tmp_entrada.name)
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -637,7 +651,7 @@ def processar_recebimentos_route():
             jobs[job_id]['erro']   = str(e)
         finally:
             try:
-                os.unlink(tmp_entrada.name)
+                _deletar_temp(tmp_entrada.name)
             except Exception:
                 pass
 
@@ -708,7 +722,7 @@ def processar_cap_operacional_route():
             jobs[job_id]['erro']   = str(e)
         finally:
             try:
-                os.unlink(tmp_entrada.name)
+                _deletar_temp(tmp_entrada.name)
             except Exception:
                 pass
 
@@ -945,7 +959,7 @@ def processar_fat_dist_route():
             jobs[job_id]['erro']   = str(e)
         finally:
             try:
-                os.unlink(tmp_entrada.name)
+                _deletar_temp(tmp_entrada.name)
             except Exception:
                 pass
 
