@@ -160,11 +160,18 @@ def criar_usuario():
 
 @app.route('/api/auth/seed', methods=['POST'])
 def seed():
-    from flask import jsonify
-    if User.query.filter_by(email='admin@baia360.com').first():
+    seed_key = request.get_json(silent=True) or {}
+    if seed_key.get('seed_key') != os.getenv('SEED_KEY', ''):
+        return jsonify({'erro': 'Não autorizado'}), 403
+
+    admin_email = os.getenv('ADMIN_EMAIL', 'admin@baia360.com')
+    admin_senha = os.getenv('ADMIN_SENHA', 'admin123')
+
+    if User.query.filter_by(email=admin_email).first():
         return jsonify({'msg': 'Admin já existe'}), 200
-    admin = User(nome='Administrador', email='admin@baia360.com', perfil='admin')
-    admin.set_senha('admin123')
+
+    admin = User(nome='Administrador', email=admin_email, perfil='admin')
+    admin.set_senha(admin_senha)
     db.session.add(admin)
     db.session.commit()
     return jsonify({'msg': 'Admin criado com sucesso'}), 201
