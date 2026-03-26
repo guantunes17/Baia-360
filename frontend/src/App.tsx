@@ -22,7 +22,7 @@ import { Hub } from '@/pages/Hub'
 import { Perfil } from '@/pages/Perfil'
 import { ToastContainer, ToastData } from '@/components/Toast'
 
-const API = 'http://localhost:5000'
+const API = 'http://localhost:5001'
 
 interface Usuario {
   id: number

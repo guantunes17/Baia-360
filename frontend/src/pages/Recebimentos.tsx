@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DicaExtracao } from '@/components/DicaExtracao'
 
-const API = 'http://localhost:5000'
+const API = 'http://localhost:5001'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
 
 type Status = 'idle' | 'processando' | 'concluido' | 'erro'
