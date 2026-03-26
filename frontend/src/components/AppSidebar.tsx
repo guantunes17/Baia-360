@@ -73,7 +73,7 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
                   }}
                   title="Em desenvolvimento"
                 >
-                  🤖  Assistente
+                  🤖  Atlas
                   <span
                     className="ml-auto text-xs rounded px-1.5 py-0.5"
                     style={{ background: '#1e2235', color: '#4f8ef7', fontSize: '10px' }}

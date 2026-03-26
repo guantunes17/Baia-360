@@ -23,8 +23,8 @@ const produtos = [
   },
   {
     icone: '🤖',
-    nome: 'Assistente IA',
-    descricao: 'Agendador de tarefas e análises via linguagem natural.',
+    nome: 'Atlas',
+    descricao: 'Assistente IA — agendador de tarefas e análises via linguagem natural.',
     cor: '#7c3aed',
     disponivel: false,
   },
