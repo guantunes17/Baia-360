@@ -248,8 +248,9 @@ import json
 def _extrair_kpis_pedidos(caminho_xlsx):
     try:
         df = pd.read_excel(caminho_xlsx, sheet_name='Resumo Por Depositante')
+        df = df[df['Depositante'] != 'TOTAL GERAL']
         total     = int(df['Total Geral'].sum())
-        sla       = round(float(df['SLA %'].mean()), 1)
+        sla       = round(float((df['SLA %'] * df['Total Geral']).sum() / df['Total Geral'].sum()) * 100, 1)
         excedidas = int(df['Excedido D+1'].sum())
         return {'total_ordens': total, 'sla_pct': sla, 'excedidas': excedidas}
     except Exception:
@@ -277,9 +278,12 @@ def _extrair_kpis_armazenagem(caminho_xlsx):
 def _extrair_kpis_estoque(caminho_xlsx):
     try:
         df = pd.read_excel(caminho_xlsx, sheet_name='Resumo por Cliente')
-        pico_m3  = round(float(df['Pico Volume m³'].sum()), 2)
-        clientes = int(df.shape[0])
-        return {'pico_total_m3': pico_m3, 'clientes': clientes}
+        df = df[df['Cliente'] != 'TOTAL GERAL']
+        clientes  = int(df.shape[0])
+        top_row   = df.loc[df['Pico Volume m³'].idxmax()]
+        top_pico  = round(float(top_row['Pico Volume m³']), 2)
+        top_cli   = str(top_row['Cliente'])
+        return {'clientes': clientes, 'maior_pico_m3': top_pico, 'maior_pico_cliente': top_cli}
     except Exception:
         return {}
 

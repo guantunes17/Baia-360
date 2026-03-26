@@ -26,7 +26,7 @@ const KPI_LABELS: Record<string, Record<string, string>> = {
   'Pedidos':          { total_ordens: 'Total Ordens', sla_pct: 'SLA %', excedidas: 'Excedidas' },
   'Fretes':           { total_frete: 'Custo Total (R$)', remetentes: 'Remetentes' },
   'Armazenagem':      { total_armazenagem: 'Faturamento (R$)', clientes: 'Clientes' },
-  'Estoque':          { pico_total_m3: 'Pico Total m³', clientes: 'Clientes' },
+  'Estoque':          { clientes: 'Clientes', maior_pico_m3: 'Maior Pico m³', maior_pico_cliente: 'Top Cliente' },
   'Recebimentos':     { total_recebimentos: 'Total Recebimentos', valor_total: 'Valor Total (R$)', depositantes: 'Depositantes' },
   'Fat. Distribuição':{ total_frete: 'Total Fretes (R$)', clientes: 'Clientes' },
   'Fat. Armazenagem': { total_faturamento: 'Faturamento (R$)', clientes: 'Clientes' },
@@ -46,6 +46,8 @@ function formatarValor(chave: string, valor: any): string {
     return `${Number(valor).toFixed(1)}%`
   if (chave.includes('m3'))
     return `${Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m³`
+  if (chave === 'maior_pico_cliente')
+    return String(valor)
   return String(valor)
 }
 
