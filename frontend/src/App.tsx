@@ -19,6 +19,7 @@ import { FatDistribuicao } from '@/pages/FatDistribuicao'
 import { FatArmazenagem } from '@/pages/FatArmazenagem'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { Hub } from '@/pages/Hub'
+import { Perfil } from '@/pages/Perfil'
 
 const API = 'http://localhost:5000'
 
@@ -118,7 +119,7 @@ function Login({ onLogin }: { onLogin: (u: Usuario) => void }) {
   )
 }
 
-function Dashboard({ usuario, onLogout, onVoltarHub }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void }) {
+function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void, onAtualizarUsuario: (u: Usuario) => void }) {
   const [paginaAtiva, setPaginaAtiva] = useState('home')
 
   const renderPagina = () => {
@@ -145,6 +146,8 @@ function Dashboard({ usuario, onLogout, onVoltarHub }: { usuario: Usuario, onLog
         return <FatArmazenagem />
         case 'dashboard':
         return <DashboardPage />
+        case 'perfil':
+        return <Perfil usuario={usuario} onAtualizar={onAtualizarUsuario} />
       default:
         return (
           <div className="p-8">
@@ -195,9 +198,15 @@ function Dashboard({ usuario, onLogout, onVoltarHub }: { usuario: Usuario, onLog
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-sm" style={{ color: '#8892a4' }}>
-                  {usuario.nome}
-                </span>
+                <button
+                  onClick={() => setPaginaAtiva('perfil')}
+                  className="text-sm"
+                  style={{ color: '#8892a4', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#e2e8f0')}
+                  onMouseLeave={e => (e.currentTarget.style.color = '#8892a4')}
+                >
+                  👤 {usuario.nome}
+                </button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -239,5 +248,5 @@ export default function App() {
 
   if (!usuario) return <Login onLogin={handleLogin} />
   if (noHub)    return <Hub usuario={usuario} onEntrar={() => setNoHub(false)} onLogout={handleLogout} />
-  return <Dashboard usuario={usuario} onLogout={handleLogout} onVoltarHub={() => setNoHub(true)} />
+  return <Dashboard usuario={usuario} onLogout={handleLogout} onVoltarHub={() => setNoHub(true)} onAtualizarUsuario={u => setUsuario(u)} />
 }

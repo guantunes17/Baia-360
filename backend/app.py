@@ -1070,5 +1070,27 @@ def dashboard():
         'kpis_por_modulo': kpis_por_modulo,
     }), 200
 
+@app.route('/api/auth/perfil', methods=['PUT'])
+@jwt_required()
+def atualizar_perfil():
+    user = User.query.get(int(get_jwt_identity()))
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+
+    data = request.get_json()
+
+    if 'nome' in data and data['nome'].strip():
+        user.nome = data['nome'].strip()
+
+    if 'senha_atual' in data and 'nova_senha' in data:
+        if not user.check_senha(data['senha_atual']):
+            return jsonify({'erro': 'Senha atual incorreta'}), 400
+        if len(data['nova_senha']) < 6:
+            return jsonify({'erro': 'Nova senha deve ter pelo menos 6 caracteres'}), 400
+        user.set_senha(data['nova_senha'])
+
+    db.session.commit()
+    return jsonify(user.to_dict()), 200
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)
