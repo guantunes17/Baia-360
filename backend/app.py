@@ -1168,6 +1168,13 @@ def atlas_chat():
             for p in parts:
                 if 'text' in p:
                     converted.append(p['text'])
+                elif 'file_data' in p:
+                    converted.append(genai.protos.Part(
+                        file_data=genai.protos.FileData(
+                            mime_type=p['file_data']['mime_type'],
+                            file_uri=p['file_data']['file_uri']
+                        )
+                    ))
                 elif 'functionCall' in p:
                     converted.append(genai.protos.Part(
                         function_call=genai.protos.FunctionCall(
@@ -1189,38 +1196,23 @@ def atlas_chat():
             for m in history[:-1]
         ])
 
-        last_msg = history[-1]['parts'][0]
-        if isinstance(last_msg, dict) and 'text' in last_msg:
-            last_msg = last_msg['text']
+        last_msg = converter_parts(history[-1]['parts'])
+        response = chat.send_message(
+            last_msg,
+            generation_config=genai.types.GenerationConfig(temperature=temp)
+        )
 
-        def generate():
-            collected_text = ''
-            fn_calls = []
-            try:
-                response = chat.send_message(last_msg, stream=True,
-                    generation_config=genai.types.GenerationConfig(temperature=temp))
-                for chunk in response:
-                    for part in chunk.parts:
-                        if part.text:
-                            collected_text += part.text
-                            yield f"data: {json_module.dumps({'type': 'text', 'delta': part.text})}\n\n"
-                        elif part.function_call:
-                            fn_calls.append({
-                                'functionCall': {
-                                    'name': part.function_call.name,
-                                    'args': dict(part.function_call.args)
-                                }
-                            })
-                parts_out = []
-                if collected_text:
-                    parts_out.append({'text': collected_text})
-                parts_out.extend(fn_calls)
-                yield f"data: {json_module.dumps({'type': 'done', 'parts': parts_out})}\n\n"
-            except Exception as e:
-                yield f"data: {json_module.dumps({'type': 'error', 'erro': str(e)})}\n\n"
+        parts_out = []
+        for part in response.parts:
+            if part.text:
+                parts_out.append({'text': part.text})
+            elif part.function_call:
+                parts_out.append({'functionCall': {
+                    'name': part.function_call.name,
+                    'args': dict(part.function_call.args)
+                }})
 
-        return app.response_class(generate(), mimetype='text/event-stream',
-            headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+        return jsonify({'parts': parts_out}), 200
 
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -1277,6 +1269,13 @@ def atlas_tool_response():
             for p in parts:
                 if 'text' in p:
                     converted.append(p['text'])
+                elif 'file_data' in p:
+                    converted.append(genai.protos.Part(
+                        file_data=genai.protos.FileData(
+                            mime_type=p['file_data']['mime_type'],
+                            file_uri=p['file_data']['file_uri']
+                        )
+                    ))
                 elif 'functionCall' in p:
                     converted.append(genai.protos.Part(
                         function_call=genai.protos.FunctionCall(
@@ -1285,7 +1284,6 @@ def atlas_tool_response():
                         )
                     ))
                 elif 'functionResponse' in p:
-                    import json as _json
                     converted.append(genai.protos.Part(
                         function_response=genai.protos.FunctionResponse(
                             name=p['functionResponse']['name'],
@@ -1313,6 +1311,57 @@ def atlas_tool_response():
                 }})
 
         return jsonify({'parts': parts}), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+@app.route('/api/atlas/upload_arquivo', methods=['POST'])
+@jwt_required()
+def atlas_upload_arquivo():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo = request.files['arquivo']
+    nome = arquivo.filename or 'arquivo'
+
+    extensoes_suportadas = {
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.xls': 'application/vnd.ms-excel',
+        '.pdf': 'application/pdf',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+    }
+
+    import os as _os
+    ext = _os.path.splitext(nome)[1].lower()
+    if ext not in extensoes_suportadas:
+        return jsonify({'erro': f'Tipo de arquivo não suportado: {ext}'}), 400
+
+    mime = extensoes_suportadas[ext]
+    api_key = os.getenv('GEMINI_API_KEY', '').strip()
+    if not api_key:
+        return jsonify({'erro': 'GEMINI_API_KEY não configurada'}), 500
+
+    try:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+        arquivo.save(tmp.name)
+        tmp.close()
+
+        genai.configure(api_key=api_key)
+        uploaded = genai.upload_file(tmp.name, mime_type=mime, display_name=nome)
+
+        _deletar_temp(tmp.name)
+
+        return jsonify({
+            'file_uri': uploaded.uri,
+            'mime_type': mime,
+            'nome': nome
+        }), 200
 
     except Exception as e:
         import traceback; traceback.print_exc()

@@ -38,36 +38,10 @@ const MOCK_RESPONSES: Record<string, (args: any) => any> = {
 }
 
 const ENDPOINT_MAP: Record<string, string> = {
-  'Pedidos': 'pedidos',
-  'Fretes': 'fretes',
-  'Armazenagem': 'armazenagem',
-  'Estoque': 'estoque',
-  'Cap. Operacional': 'cap_operacional',
-  'Recebimentos': 'recebimentos',
-  'Fat. Distribuição': 'fat_dist',
-  'Fat. Armazenagem': 'fat_arm'
+  'Pedidos': 'pedidos', 'Fretes': 'fretes', 'Armazenagem': 'armazenagem',
+  'Estoque': 'estoque', 'Cap. Operacional': 'cap_operacional',
+  'Recebimentos': 'recebimentos', 'Fat. Distribuição': 'fat_dist', 'Fat. Armazenagem': 'fat_arm'
 }
-
-const SYSTEM_PROMPT = `Você é o Atlas, assistente de inteligência artificial da Baia 4 Logística e Transportes.
-
-Sua função é ajudar a equipe com:
-- Consulta e análise de KPIs e relatórios operacionais
-- Disparo de geração de relatórios via ferramentas
-- Consulta e criação de eventos na agenda (Outlook)
-- Responder perguntas gerais sobre logística e operações
-- Responder perguntas gerais sobre quaisquer assuntos
-
-Personalidade:
-- Profissional, direto e objetivo
-- Responda sempre em português brasileiro
-- Use os dados disponíveis antes de especular
-- Quando usar uma ferramenta, explique brevemente o que está fazendo
-- Quando for gerar um relatório, após registrar o módulo e mês, peça ao usuário que envie o arquivo Excel correspondente usando o botão que aparecerá na tela
-
-Contexto da empresa:
-- Baia 4 é um operador logístico focado em distribuição farmacêutica
-- Clientes: ADITUS, BIOGEN, EPHARMA, BHC-Xofigo, CSL BEHRING, IPSEN, CELLTRION, YELUM, CM HOSPITALAR, GSK, PINT PHARMA, FUNCIONAL
-- Módulos: Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem`
 
 interface Msg {
   role: 'user' | 'assistant' | 'note'
@@ -81,6 +55,13 @@ interface ArquivoPendente {
   file: File
   modulo: string
   mes_ref: string
+}
+
+// Arquivo enviado para interpretação pelo Atlas
+interface ArquivoContexto {
+  file_uri: string
+  mime_type: string
+  nome: string
 }
 
 interface Conversa {
@@ -103,17 +84,57 @@ function novaConversa(): Conversa {
   }
 }
 
-export function Atlas() {
+export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [conversas, setConversas] = useState<Conversa[]>([novaConversa()])
   const [ativaId, setAtivaId] = useState<string>(() => conversas[0].id)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [arquivoPendente, setArquivoPendente] = useState<ArquivoPendente | null>(null)
   const [uploadInfo, setUploadInfo] = useState<{ modulo: string; mes_ref: string } | null>(null)
+  const [arquivoContexto, setArquivoContexto] = useState<ArquivoContexto | null>(null)
+  const [uploadandoArquivo, setUploadandoArquivo] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileContextoRef = useRef<HTMLInputElement>(null)
   const token = localStorage.getItem('token') || ''
+
+  const SYSTEM_PROMPT = `Você é o Atlas, assistente de inteligência artificial da Baia 4 Logística e Transportes.
+
+Você está conversando com ${nomeUsuario}.
+
+Personalidade e estilo de resposta:
+- Você tem personalidade própria — é direto, inteligente e ocasionalmente usa humor leve quando o contexto permite
+- Use o nome ${nomeUsuario} naturalmente nas respostas, como um colega faria — não em toda mensagem, apenas quando fizer sentido
+- Escreva em texto corrido, como uma pessoa escreveria — evite listas com marcadores a menos que o conteúdo realmente exija
+- Respostas curtas para perguntas simples, mais detalhadas apenas quando necessário
+- Nunca comece respostas com "Com certeza!", "Claro!", "Ótimo!" ou variações robóticas
+- Não repita o que o usuário acabou de dizer antes de responder
+- Quando não souber algo, diga diretamente — sem rodeios
+- Use dados antes de especular
+- Responda sempre em português brasileiro informal mas profissional
+
+Capacidades:
+- Consulta e análise de KPIs e relatórios operacionais via ferramentas
+- Geração de relatórios (requer upload do arquivo Excel correspondente)
+- Consulta e criação de eventos na agenda (Outlook)
+- Interpretação de arquivos enviados pelo usuário (Excel, PDF, Word, imagens)
+- Responder perguntas gerais sobre logística, operações ou qualquer outro assunto
+
+Contexto da empresa:
+- Baia 4 é um operador logístico focado em distribuição farmacêutica
+- Clientes: ADITUS, BIOGEN, EPHARMA, BHC-Xofigo, CSL BEHRING, IPSEN, CELLTRION, YELUM, CM HOSPITALAR, GSK, PINT PHARMA, FUNCIONAL
+- Módulos: Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem
+
+Sobre arquivos enviados pelo usuário:
+- Quando o usuário enviar qualquer arquivo (Excel, PDF, Word, imagem), analise o conteúdo e responda o que foi pedido
+- Para arquivos Excel, PDF, Word e imagens, leia os dados e forneça insights, resumos, análises ou responda perguntas sobre o conteúdo
+- Nunca diga que não consegue ler ou interpretar um arquivo — você tem essa capacidade
+- A geração de relatórios é um fluxo separado que usa arquivos de entrada específicos da operação. Não confunda com arquivos enviados para análise
+- Quando receber um arquivo, você TEM acesso ao conteúdo real dele — leia e analise de verdade, nunca diga que não consegue ler
+
+Sobre geração de relatórios operacionais:
+- Quando o usuário pedir para GERAR um relatório operacional (Pedidos, Fretes, etc.), use a ferramenta gerar_relatorio e informe que um botão aparecerá para enviar o arquivo Excel correspondente`
 
   const conversa = conversas.find(c => c.id === ativaId)!
 
@@ -132,6 +153,7 @@ export function Atlas() {
     setInput('')
     setUploadInfo(null)
     setArquivoPendente(null)
+    setArquivoContexto(null)
     inputRef.current?.focus()
   }
 
@@ -167,10 +189,31 @@ export function Atlas() {
     return res.data
   }
 
+  // Upload de arquivo para interpretação pelo Atlas
+  const handleArquivoContexto = async (file: File) => {
+    setUploadandoArquivo(true)
+    try {
+      const formData = new FormData()
+      formData.append('arquivo', file)
+      const res = await fetch(`${API}/api/atlas/upload_arquivo`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.erro || 'Erro ao enviar arquivo')
+      setArquivoContexto({ file_uri: data.file_uri, mime_type: data.mime_type, nome: data.nome })
+    } catch (e: any) {
+      addMsgToConversa(ativaId, { role: 'note', text: 'Erro ao enviar arquivo: ' + e.message })
+    } finally {
+      setUploadandoArquivo(false)
+    }
+  }
+
   const send = async () => {
     const text = input.trim()
     if (loading) return
-    if (!text && !arquivoPendente) return
+    if (!text && !arquivoPendente && !arquivoContexto) return
 
     setInput('')
     setLoading(true)
@@ -184,7 +227,7 @@ export function Atlas() {
       tools: activeTools
     }
 
-    // ── Fluxo com arquivo pendente: chama backend real ──
+    // ── Fluxo com arquivo pendente para geração de relatório ──
     if (arquivoPendente) {
       const { file, modulo, mes_ref } = arquivoPendente
       setArquivoPendente(null)
@@ -212,21 +255,18 @@ export function Atlas() {
         const job_id = data.job_id
         addMsgToConversa(convId, { role: 'assistant', text: `Relatório de **${modulo}** (${mes_ref}) em processamento. Aguarde...`, streaming: false }, true)
 
-        // Polling
         const poll = setInterval(async () => {
           try {
             const statusRes = await fetch(`${API}/api/modulos/status/${job_id}`, {
               headers: { Authorization: `Bearer ${token}` }
             })
             const statusData = await statusRes.json()
-
             if (statusData.status === 'concluido') {
               clearInterval(poll)
               const downloadUrl = `${API}/api/modulos/download/${job_id}?token=${token}`
               updateConversa(convId, c => {
                 const msgs = [...c.msgs]
-                const lastIdx = msgs.length - 1
-                msgs[lastIdx] = {
+                msgs[msgs.length - 1] = {
                   role: 'assistant',
                   text: `✅ Relatório de **${modulo}** (${mes_ref}) gerado com sucesso!\n\n[📥 Baixar relatório](${downloadUrl})`,
                   streaming: false
@@ -239,10 +279,7 @@ export function Atlas() {
               addMsgToConversa(convId, { role: 'note', text: 'Erro na geração: ' + (statusData.erro || 'desconhecido') }, true)
               setLoading(false)
             }
-          } catch {
-            clearInterval(poll)
-            setLoading(false)
-          }
+          } catch { clearInterval(poll); setLoading(false) }
         }, 2000)
 
       } catch (e: any) {
@@ -256,56 +293,42 @@ export function Atlas() {
       return
     }
 
-    // ── Fluxo normal de chat ──
+    // ── Fluxo normal de chat (com ou sem arquivo de contexto) ──
+    const ctx = arquivoContexto
+    setArquivoContexto(null)
+
+    // Monta a mensagem do usuário — com arquivo se houver
+    const userMsgText = ctx ? `📎 ${ctx.nome}${text ? `\n${text}` : ''}` : text
+    const userPrompt = text || `Analise o arquivo "${ctx?.nome}" que acabei de enviar.`
+
     updateConversa(convId, c => ({
       ...c,
-      titulo: c.titulo === 'Nova conversa' ? text.slice(0, 40) : c.titulo,
-      msgs: [...c.msgs, { role: 'user', text }, { role: 'assistant', text: '', streaming: true }],
-      history: [...c.history, { role: 'user', parts: [{ text }] }]
+      titulo: c.titulo === 'Nova conversa' ? userMsgText.slice(0, 40) : c.titulo,
+      msgs: [...c.msgs, { role: 'user', text: userMsgText, arquivo: ctx ? { nome: ctx.nome } : undefined }, { role: 'assistant', text: '', streaming: true }],
+      history: [...c.history, { role: 'user', parts: ctx
+        ? [{ text: userPrompt }, { file_data: { mime_type: ctx.mime_type, file_uri: ctx.file_uri } }]
+        : [{ text: userPrompt }]
+      }]
     }))
 
-    const currentHistory = [...(conversa.history), { role: 'user', parts: [{ text }] }]
+    const currentHistory = [...(conversa.history), { role: 'user', parts: ctx
+      ? [{ text: userPrompt }, { file_data: { mime_type: ctx.mime_type, file_uri: ctx.file_uri } }]
+      : [{ text: userPrompt }]
+    }]
 
     try {
-      const response = await fetch(`${API}/api/atlas/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ...base, history: currentHistory })
+      const res = await axios.post(`${API}/api/atlas/chat`,
+        { ...base, history: currentHistory },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      const finalParts: any[] = res.data.parts || []
+      const streamedText = finalParts.find((p: any) => p.text)?.text || ''
+
+      updateConversa(convId, c => {
+        const msgs = [...c.msgs]
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: streamedText, streaming: false }
+        return { ...c, msgs }
       })
-
-      if (!response.body) throw new Error('Sem stream')
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let finalParts: any[] = []
-      let streamedText = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const evt = JSON.parse(line.slice(6))
-            if (evt.type === 'text') {
-              streamedText += evt.delta
-              updateConversa(convId, c => {
-                const msgs = [...c.msgs]
-                msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: streamedText, streaming: true }
-                return { ...c, msgs }
-              })
-            } else if (evt.type === 'done') {
-              finalParts = evt.parts || []
-            } else if (evt.type === 'error') {
-              throw new Error(evt.erro)
-            }
-          } catch {}
-        }
-      }
 
       const fnCalls = finalParts.filter((p: any) => p.functionCall)
       const toolNames = fnCalls.map((p: any) => p.functionCall.name)
@@ -318,13 +341,11 @@ export function Atlas() {
           return { ...c, msgs }
         })
 
-        // Verifica se é gerar_relatorio
         const gerarCall = fnCalls.find((p: any) => p.functionCall.name === 'gerar_relatorio')
 
         if (gerarCall) {
           const { modulo, mes_ref } = gerarCall.functionCall.args
           setUploadInfo({ modulo, mes_ref })
-
           const fnResponses = fnCalls.map((p: any) => ({
             functionResponse: {
               name: p.functionCall.name,
@@ -339,13 +360,11 @@ export function Atlas() {
             msgs[msgs.length - 1] = {
               role: 'assistant',
               text: parts2.find((p: any) => p.text)?.text || `Por favor, envie o arquivo Excel de **${modulo}** usando o botão abaixo.`,
-              tools: toolNames,
-              streaming: false
+              tools: toolNames, streaming: false
             }
             return { ...c, msgs, history: [...h3, { role: 'model', parts: parts2 }] }
           })
         } else {
-          // Outras ferramentas (get_dashboard, agenda, etc)
           const fnResponses = fnCalls.map((p: any) => {
             const fn = p.functionCall
             const result = MOCK_RESPONSES[fn.name] ? MOCK_RESPONSES[fn.name](fn.args || {}) : { erro: 'não implementado' }
@@ -359,8 +378,7 @@ export function Atlas() {
             msgs[msgs.length - 1] = {
               role: 'assistant',
               text: parts2.find((p: any) => p.text)?.text || '(sem resposta)',
-              tools: toolNames,
-              streaming: false
+              tools: toolNames, streaming: false
             }
             return { ...c, msgs, history: [...h3, { role: 'model', parts: parts2 }] }
           })
@@ -402,12 +420,11 @@ export function Atlas() {
             <span style={{ fontSize: 16 }}>+</span> Nova conversa
           </button>
         </div>
-
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 12px' }}>
           {conversas.map(c => (
             <div
               key={c.id}
-              onClick={() => { setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null) }}
+              onClick={() => { setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null); setArquivoContexto(null) }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 4,
                 padding: '8px 10px', borderRadius: 7, marginBottom: 2,
@@ -416,27 +433,16 @@ export function Atlas() {
                 cursor: 'pointer'
               }}
             >
-              <span style={{
-                flex: 1, fontSize: 12, color: c.id === ativaId ? '#e2e8f0' : '#8892a4',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-              }}>
+              <span style={{ flex: 1, fontSize: 12, color: c.id === ativaId ? '#e2e8f0' : '#8892a4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 🤖 {c.titulo}
               </span>
               <button
                 onClick={e => deletarConversa(c.id, e)}
-                style={{
-                  flexShrink: 0, width: 18, height: 18, borderRadius: 4,
-                  background: 'none', border: 'none', color: '#8892a4',
-                  fontSize: 12, cursor: 'pointer', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', opacity: 0,
-                  transition: 'opacity .15s'
-                }}
+                style={{ flexShrink: 0, width: 18, height: 18, borderRadius: 4, background: 'none', border: 'none', color: '#8892a4', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity .15s' }}
                 onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                 onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
                 title="Deletar conversa"
-              >
-                ✕
-              </button>
+              >✕</button>
             </div>
           ))}
         </div>
@@ -460,14 +466,13 @@ export function Atlas() {
                 </div>
               )}
 
-              {/* Usuário */}
               {m.role === 'user' && (
                 <div style={{ padding: '10px 16px', borderRadius: 18, background: '#1e2133', color: '#e2e8f0', fontSize: 14, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
-                  {m.text}
+                  {m.arquivo && <span style={{ fontSize: 12, color: '#8892a4', display: 'block', marginBottom: 4 }}>📎 {m.arquivo.nome}</span>}
+                  {m.text.replace(`📎 ${m.arquivo?.nome}\n`, '').replace(`📎 ${m.arquivo?.nome}`, '') || null}
                 </div>
               )}
 
-              {/* Atlas */}
               {m.role === 'assistant' && (
                 <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                   <div style={{ flexShrink: 0, marginTop: 2 }}>
@@ -479,9 +484,7 @@ export function Atlas() {
                           .globo-spin-${i} { transform-origin: 14px 14px; animation: ${m.streaming ? 'globoRoda 3s linear infinite' : 'none'}; }
                           .globo-pulsa-${i} { animation: ${m.streaming ? 'globoPulsa 1.5s ease-in-out infinite' : 'none'}; }
                         `}</style>
-                        <clipPath id={`globoClip-${i}`}>
-                          <circle cx="14" cy="14" r="11" />
-                        </clipPath>
+                        <clipPath id={`globoClip-${i}`}><circle cx="14" cy="14" r="11" /></clipPath>
                       </defs>
                       <circle cx="14" cy="14" r="11" stroke="#ffffff" strokeOpacity={m.streaming ? '0.9' : '0.5'} strokeWidth="1" fill="none" className={`globo-pulsa-${i}`} />
                       <g className={`globo-spin-${i}`} clipPath={`url(#globoClip-${i})`}>
@@ -491,12 +494,9 @@ export function Atlas() {
                         <ellipse cx="14" cy="9" rx="7.5" ry="2.5" stroke="#ffffff" strokeOpacity="0.4" strokeWidth="0.6" fill="none" />
                         <ellipse cx="14" cy="19" rx="7.5" ry="2.5" stroke="#ffffff" strokeOpacity="0.4" strokeWidth="0.6" fill="none" />
                       </g>
-                      {m.streaming && (
-                        <circle cx="14" cy="14" r="2" fill="#a78bfa" className={`globo-pulsa-${i}`} />
-                      )}
+                      {m.streaming && <circle cx="14" cy="14" r="2" fill="#a78bfa" className={`globo-pulsa-${i}`} />}
                     </svg>
                   </div>
-
                   <div style={{ flex: 1, color: '#e2e8f0', fontSize: 14, lineHeight: 1.75, paddingTop: 4 }}>
                     {m.streaming && !m.text ? (
                       <span style={{ display: 'flex', gap: 4, alignItems: 'center', height: 20, marginTop: 4 }}>
@@ -506,33 +506,24 @@ export function Atlas() {
                       </span>
                     ) : (
                       <div>
-                        <ReactMarkdown
-                          components={{
-                            p: ({ children }) => <p style={{ margin: '0 0 8px 0' }}>{children}</p>,
-                            strong: ({ children }) => <strong style={{ color: '#e2e8f0', fontWeight: 600 }}>{children}</strong>,
-                            ul: ({ children }) => <ul style={{ margin: '4px 0 8px 0', paddingLeft: 20 }}>{children}</ul>,
-                            ol: ({ children }) => <ol style={{ margin: '4px 0 8px 0', paddingLeft: 20 }}>{children}</ol>,
-                            li: ({ children }) => <li style={{ marginBottom: 4 }}>{children}</li>,
-                            code: ({ children }) => <code style={{ fontFamily: 'monospace', background: '#0f1117', padding: '1px 6px', borderRadius: 4, fontSize: 13, color: '#a78bfa' }}>{children}</code>,
-                            a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" style={{ color: '#4f8ef7', textDecoration: 'underline' }}>{children}</a>,
-                          }}
-                        >
-                          {m.text}
-                        </ReactMarkdown>
-                        {m.streaming && (
-                          <span style={{ display: 'inline-block', width: 2, height: 15, background: '#4f8ef7', marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s infinite' }} />
-                        )}
+                        <ReactMarkdown components={{
+                          p: ({ children }) => <p style={{ margin: '0 0 8px 0' }}>{children}</p>,
+                          strong: ({ children }) => <strong style={{ color: '#e2e8f0', fontWeight: 600 }}>{children}</strong>,
+                          ul: ({ children }) => <ul style={{ margin: '4px 0 8px 0', paddingLeft: 20 }}>{children}</ul>,
+                          ol: ({ children }) => <ol style={{ margin: '4px 0 8px 0', paddingLeft: 20 }}>{children}</ol>,
+                          li: ({ children }) => <li style={{ marginBottom: 4 }}>{children}</li>,
+                          code: ({ children }) => <code style={{ fontFamily: 'monospace', background: '#0f1117', padding: '1px 6px', borderRadius: 4, fontSize: 13, color: '#a78bfa' }}>{children}</code>,
+                          a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" style={{ color: '#4f8ef7', textDecoration: 'underline' }}>{children}</a>,
+                        }}>{m.text}</ReactMarkdown>
+                        {m.streaming && <span style={{ display: 'inline-block', width: 2, height: 15, background: '#4f8ef7', marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s infinite' }} />}
                       </div>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Nota */}
               {m.role === 'note' && (
-                <div style={{ fontSize: 11, color: '#8892a455', padding: '2px 0' }}>
-                  {m.text}
-                </div>
+                <div style={{ fontSize: 11, color: '#8892a455', padding: '2px 0' }}>{m.text}</div>
               )}
             </div>
           ))}
@@ -544,80 +535,101 @@ export function Atlas() {
           @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
         `}</style>
 
-        {/* Input area */}
         <div style={{ padding: '16px 10%', borderTop: '1px solid #2d3148', background: '#0f1117' }}>
 
-          {/* Banner de upload quando Atlas pediu arquivo */}
+          {/* Banner upload para geração de relatório */}
           {uploadInfo && (
-            <div style={{
-              marginBottom: 10, padding: '10px 16px',
-              background: '#1a1d27', border: '1px solid #4f8ef733',
-              borderRadius: 8, display: 'flex', alignItems: 'center',
-              justifyContent: 'space-between', gap: 12
-            }}>
+            <div style={{ marginBottom: 10, padding: '10px 16px', background: '#1a1d27', border: '1px solid #4f8ef733', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <span style={{ fontSize: 13, color: '#8892a4' }}>
-                📎 Envie o arquivo Excel de{' '}
-                <strong style={{ color: '#e2e8f0' }}>{uploadInfo.modulo}</strong>{' '}
-                ({uploadInfo.mes_ref})
+                📎 Envie o arquivo Excel de <strong style={{ color: '#e2e8f0' }}>{uploadInfo.modulo}</strong> ({uploadInfo.mes_ref})
               </span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{ padding: '5px 14px', borderRadius: 6, background: '#4f8ef7', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                >
+                <button onClick={() => fileInputRef.current?.click()} style={{ padding: '5px 14px', borderRadius: 6, background: '#4f8ef7', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                   Selecionar arquivo
                 </button>
-                <button
-                  onClick={() => { setUploadInfo(null); setArquivoPendente(null) }}
-                  style={{ padding: '5px 10px', borderRadius: 6, background: 'none', color: '#8892a4', border: '1px solid #2d3148', fontSize: 12, cursor: 'pointer' }}
-                >
+                <button onClick={() => { setUploadInfo(null); setArquivoPendente(null) }} style={{ padding: '5px 10px', borderRadius: 6, background: 'none', color: '#8892a4', border: '1px solid #2d3148', fontSize: 12, cursor: 'pointer' }}>
                   Cancelar
                 </button>
               </div>
             </div>
           )}
 
-          {/* Input oculto de arquivo */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            style={{ display: 'none' }}
+          {/* Preview arquivo de contexto selecionado */}
+          {arquivoContexto && (
+            <div style={{ marginBottom: 8, padding: '6px 12px', background: '#1a1d27', border: '1px solid #7c3aed33', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ fontSize: 12, color: '#a78bfa' }}>📎 {arquivoContexto.nome}</span>
+              <button onClick={() => setArquivoContexto(null)} style={{ background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', fontSize: 12 }}>✕</button>
+            </div>
+          )}
+
+          {/* Input oculto para relatório */}
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
             onChange={e => {
               const file = e.target.files?.[0]
-              if (file && uploadInfo) {
-                setArquivoPendente({ file, modulo: uploadInfo.modulo, mes_ref: uploadInfo.mes_ref })
-              }
+              if (file && uploadInfo) setArquivoPendente({ file, modulo: uploadInfo.modulo, mes_ref: uploadInfo.mes_ref })
               e.target.value = ''
             }}
           />
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 12, padding: '8px 8px 8px 16px' }}>
+          {/* Input oculto para arquivo de contexto */}
+          <input ref={fileContextoRef} type="file" accept=".xlsx,.xls,.pdf,.docx,.png,.jpg,.jpeg,.webp" style={{ display: 'none' }}
+            onChange={e => {
+              const file = e.target.files?.[0]
+              if (file) handleArquivoContexto(file)
+              e.target.value = ''
+            }}
+          />
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 12, padding: '8px 8px 8px 12px' }}>
+            {/* Botão clipe para arquivo de contexto */}
+            <button
+              onClick={() => fileContextoRef.current?.click()}
+              disabled={loading || uploadandoArquivo || !!uploadInfo}
+              title="Enviar arquivo para o Atlas analisar"
+              style={{
+                flexShrink: 0, width: 32, height: 32, borderRadius: 8,
+                background: 'none', border: 'none',
+                color: uploadandoArquivo ? '#4f8ef7' : '#8892a4',
+                cursor: loading || uploadandoArquivo || !!uploadInfo ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 16, opacity: uploadInfo ? 0.3 : 1, transition: 'color .15s'
+              }}
+              onMouseEnter={e => { if (!loading && !uploadandoArquivo && !uploadInfo) (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = uploadandoArquivo ? '#4f8ef7' : '#8892a4' }}
+            >
+              {uploadandoArquivo ? '⏳' : '📎'}
+            </button>
+
             <textarea
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKey}
-              placeholder={arquivoPendente ? `📎 ${arquivoPendente.file.name} — clique em Enviar` : 'Mensagem para o Atlas...'}
+              placeholder={
+                uploadandoArquivo ? 'Enviando arquivo...' :
+                arquivoContexto ? `📎 ${arquivoContexto.nome} — digite sua pergunta ou envie direto` :
+                arquivoPendente ? `📎 ${arquivoPendente.file.name} — clique em Enviar` :
+                'Mensagem para o Atlas...'
+              }
               rows={1}
               style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#e2e8f0', fontSize: 14, fontFamily: 'inherit', resize: 'none', lineHeight: 1.5, maxHeight: 120, overflowY: 'auto', padding: '4px 0' }}
             />
             <button
               onClick={send}
-              disabled={loading || (!input.trim() && !arquivoPendente)}
+              disabled={loading || uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto)}
               style={{
                 padding: '8px 16px', borderRadius: 8,
-                background: loading || (!input.trim() && !arquivoPendente) ? '#2d3148' : '#4f8ef7',
-                color: loading || (!input.trim() && !arquivoPendente) ? '#8892a4' : '#fff',
+                background: loading || uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? '#2d3148' : '#4f8ef7',
+                color: loading || uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? '#8892a4' : '#fff',
                 border: 'none', fontWeight: 600, fontSize: 13,
-                cursor: loading || (!input.trim() && !arquivoPendente) ? 'not-allowed' : 'pointer',
+                cursor: loading || uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? 'not-allowed' : 'pointer',
                 flexShrink: 0, transition: 'all .15s'
               }}
             >
               {loading ? '...' : 'Enviar'}
             </button>
           </div>
-          <p style={{ textAlign: 'center', fontSize: 11, color: '#2d3148', marginTop: 8 }}>Enter para enviar · Shift+Enter para nova linha</p>
+          <p style={{ textAlign: 'center', fontSize: 11, color: '#2d3148', marginTop: 8 }}>Enter para enviar · Shift+Enter para nova linha · 📎 para enviar arquivo</p>
         </div>
       </div>
     </div>

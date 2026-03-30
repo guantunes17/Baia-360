@@ -281,7 +281,7 @@ if (tela === 'atlas') return (
       </div>
       <span style={{ fontSize: 13, color: '#8892a4' }}>👤 {usuario.nome}</span>
     </header>
-    <Atlas />
+    <Atlas nomeUsuario={usuario.nome} />
   </div>
 )
 return (
