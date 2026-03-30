@@ -9,7 +9,8 @@ interface Usuario {
 
 interface Props {
   usuario: Usuario
-  onEntrar: () => void
+  onEntrarRelatorios: () => void
+  onEntrarAtlas: () => void
   onLogout: () => void
 }
 
@@ -26,7 +27,7 @@ const produtos = [
     nome: 'Atlas',
     descricao: 'Assistente IA — agendador de tarefas e análises via linguagem natural.',
     cor: '#7c3aed',
-    disponivel: false,
+    disponivel: true,
   },
   {
     icone: '📅',
@@ -37,7 +38,7 @@ const produtos = [
   },
 ]
 
-export function Hub({ usuario, onEntrar, onLogout }: Props) {
+export function Hub({ usuario, onEntrarRelatorios, onEntrarAtlas, onLogout }: Props) {
   const hoje = new Date()
   const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
   const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
@@ -91,7 +92,7 @@ export function Hub({ usuario, onEntrar, onLogout }: Props) {
           {produtos.map(p => (
             <div
               key={p.nome}
-              onClick={p.disponivel ? onEntrar : undefined}
+              onClick={p.nome === 'Central de Relatórios' ? onEntrarRelatorios : p.nome === 'Atlas' ? onEntrarAtlas : undefined}
               className="rounded-xl border p-8 flex flex-col items-center text-center gap-4 transition-all"
               style={{
                 background: '#1a1d27',

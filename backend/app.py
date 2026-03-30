@@ -36,7 +36,7 @@ app.config['JWT_SECRET_KEY']                 = os.getenv('JWT_SECRET_KEY')
 app.config['SQLALCHEMY_DATABASE_URI']        = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-CORS(app)
+CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "https://claude.ai"])
 db  = SQLAlchemy(app)
 jwt = JWTManager(app)
 
@@ -1112,6 +1112,211 @@ def atualizar_perfil():
 
     db.session.commit()
     return jsonify(user.to_dict()), 200
+
+import google.generativeai as genai
+import json
+
+@app.route('/api/atlas/chat', methods=['POST'])
+@jwt_required()
+def atlas_chat():
+    import json as json_module
+    data = request.get_json()
+    api_key       = os.getenv('GEMINI_API_KEY', '').strip()
+    model_id      = data.get('model', 'gemini-2.5-flash')
+    history       = data.get('history', [])
+    tools         = data.get('tools', [])
+    temp          = float(data.get('temperature', 1.0))
+    system_prompt = data.get('system_prompt', '')
+
+    if not api_key:
+        return jsonify({'erro': 'GEMINI_API_KEY não configurada no servidor'}), 500
+
+    try:
+        genai.configure(api_key=api_key)
+
+        gemini_tools = None
+        if tools:
+            declarations = []
+            for t in tools:
+                params = t.get('parameters', {})
+                properties = {}
+                for prop_name, prop_def in params.get('properties', {}).items():
+                    properties[prop_name] = genai.protos.Schema(
+                        type=genai.protos.Type.STRING,
+                        description=prop_def.get('description', '')
+                    )
+                schema = genai.protos.Schema(
+                    type=genai.protos.Type.OBJECT,
+                    properties=properties,
+                    required=params.get('required', [])
+                )
+                declarations.append(genai.protos.FunctionDeclaration(
+                    name=t['name'],
+                    description=t.get('description', ''),
+                    parameters=schema
+                ))
+            gemini_tools = [genai.protos.Tool(function_declarations=declarations)]
+
+        model = genai.GenerativeModel(
+            model_name=model_id,
+            system_instruction=system_prompt or None,
+            tools=gemini_tools
+        )
+
+        def converter_parts(parts):
+            converted = []
+            for p in parts:
+                if 'text' in p:
+                    converted.append(p['text'])
+                elif 'functionCall' in p:
+                    converted.append(genai.protos.Part(
+                        function_call=genai.protos.FunctionCall(
+                            name=p['functionCall']['name'],
+                            args=p['functionCall']['args']
+                        )
+                    ))
+                elif 'functionResponse' in p:
+                    converted.append(genai.protos.Part(
+                        function_response=genai.protos.FunctionResponse(
+                            name=p['functionResponse']['name'],
+                            response=p['functionResponse']['response']
+                        )
+                    ))
+            return converted
+
+        chat = model.start_chat(history=[
+            {'role': m['role'], 'parts': converter_parts(m['parts'])}
+            for m in history[:-1]
+        ])
+
+        last_msg = history[-1]['parts'][0]
+        if isinstance(last_msg, dict) and 'text' in last_msg:
+            last_msg = last_msg['text']
+
+        def generate():
+            collected_text = ''
+            fn_calls = []
+            try:
+                response = chat.send_message(last_msg, stream=True,
+                    generation_config=genai.types.GenerationConfig(temperature=temp))
+                for chunk in response:
+                    for part in chunk.parts:
+                        if part.text:
+                            collected_text += part.text
+                            yield f"data: {json_module.dumps({'type': 'text', 'delta': part.text})}\n\n"
+                        elif part.function_call:
+                            fn_calls.append({
+                                'functionCall': {
+                                    'name': part.function_call.name,
+                                    'args': dict(part.function_call.args)
+                                }
+                            })
+                parts_out = []
+                if collected_text:
+                    parts_out.append({'text': collected_text})
+                parts_out.extend(fn_calls)
+                yield f"data: {json_module.dumps({'type': 'done', 'parts': parts_out})}\n\n"
+            except Exception as e:
+                yield f"data: {json_module.dumps({'type': 'error', 'erro': str(e)})}\n\n"
+
+        return app.response_class(generate(), mimetype='text/event-stream',
+            headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+@app.route('/api/atlas/chat/tool_response', methods=['POST'])
+@jwt_required()
+def atlas_tool_response():
+    data = request.get_json()
+    api_key       = os.getenv('GEMINI_API_KEY', '').strip()
+    model_id      = data.get('model', 'gemini-3-flash-preview')
+    history       = data.get('history', [])
+    tools         = data.get('tools', [])
+    temp          = float(data.get('temperature', 1.0))
+    system_prompt = data.get('system_prompt', '')
+
+    if not api_key:
+        return jsonify({'erro': 'GEMINI_API_KEY não configurada no servidor'}), 500
+
+    try:
+        genai.configure(api_key=api_key)
+
+        gemini_tools = None
+        if tools:
+            declarations = []
+            for t in tools:
+                params = t.get('parameters', {})
+                properties = {}
+                for prop_name, prop_def in params.get('properties', {}).items():
+                    properties[prop_name] = genai.protos.Schema(
+                        type=genai.protos.Type.STRING,
+                        description=prop_def.get('description', '')
+                    )
+                schema = genai.protos.Schema(
+                    type=genai.protos.Type.OBJECT,
+                    properties=properties,
+                    required=params.get('required', [])
+                )
+                declarations.append(genai.protos.FunctionDeclaration(
+                    name=t['name'],
+                    description=t.get('description', ''),
+                    parameters=schema
+                ))
+            gemini_tools = [genai.protos.Tool(function_declarations=declarations)]
+
+        model = genai.GenerativeModel(
+            model_name=model_id,
+            system_instruction=system_prompt or None,
+            tools=gemini_tools
+        )
+
+        def converter_parts(parts):
+            converted = []
+            for p in parts:
+                if 'text' in p:
+                    converted.append(p['text'])
+                elif 'functionCall' in p:
+                    converted.append(genai.protos.Part(
+                        function_call=genai.protos.FunctionCall(
+                            name=p['functionCall']['name'],
+                            args=p['functionCall']['args']
+                        )
+                    ))
+                elif 'functionResponse' in p:
+                    import json as _json
+                    converted.append(genai.protos.Part(
+                        function_response=genai.protos.FunctionResponse(
+                            name=p['functionResponse']['name'],
+                            response=p['functionResponse']['response']
+                        )
+                    ))
+            return converted
+
+        chat = model.start_chat(history=[
+            {'role': m['role'], 'parts': converter_parts(m['parts'])}
+            for m in history[:-1]
+        ])
+
+        last_parts = converter_parts(history[-1]['parts'])
+        response = chat.send_message(last_parts)
+
+        parts = []
+        for part in response.parts:
+            if part.text:
+                parts.append({'text': part.text})
+            elif part.function_call:
+                parts.append({'functionCall': {
+                    'name': part.function_call.name,
+                    'args': dict(part.function_call.args)
+                }})
+
+        return jsonify({'parts': parts}), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)

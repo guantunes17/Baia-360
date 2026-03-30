@@ -21,6 +21,7 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { Hub } from '@/pages/Hub'
 import { Perfil } from '@/pages/Perfil'
 import { ToastContainer, ToastData } from '@/components/Toast'
+import { Atlas } from '@/pages/Atlas'
 
 const API = 'http://localhost:5001'
 
@@ -249,17 +250,46 @@ export default function App() {
     const u = localStorage.getItem('usuario')
     return u ? JSON.parse(u) : null
   })
-  const [noHub, setNoHub] = useState(true)
+  const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas'>('hub')
 
-  const handleLogin  = (u: Usuario) => { setUsuario(u); setNoHub(true) }
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('usuario')
-    setUsuario(null)
-    setNoHub(true)
+  const handleLogin  = (u: Usuario) => { setUsuario(u); setTela('hub') }
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('usuario')
+  setUsuario(null)
+  setTela('hub')
   }
 
   if (!usuario) return <Login onLogin={handleLogin} />
-  if (noHub)    return <Hub usuario={usuario} onEntrar={() => setNoHub(false)} onLogout={handleLogout} />
-  return <Dashboard usuario={usuario} onLogout={handleLogout} onVoltarHub={() => setNoHub(true)} onAtualizarUsuario={u => setUsuario(u)} />
+  if (tela === 'hub') return (
+  <Hub
+    usuario={usuario}
+    onEntrarRelatorios={() => setTela('relatorios')}
+    onEntrarAtlas={() => setTela('atlas')}
+    onLogout={handleLogout}
+  />
+)
+if (tela === 'atlas') return (
+  <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
+    <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: 48, borderBottom: '1px solid #2d3148', background: '#13161f', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => setTela('hub')} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, color: '#7c3aed', background: '#7c3aed11', border: '1px solid #7c3aed33', cursor: 'pointer' }}>
+          ← Baia 360
+        </button>
+        <span style={{ color: '#2d3148' }}>|</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>🤖 Atlas</span>
+      </div>
+      <span style={{ fontSize: 13, color: '#8892a4' }}>👤 {usuario.nome}</span>
+    </header>
+    <Atlas />
+  </div>
+)
+return (
+  <Dashboard
+    usuario={usuario}
+    onLogout={handleLogout}
+    onVoltarHub={() => setTela('hub')}
+    onAtualizarUsuario={u => setUsuario(u)}
+  />
+)
 }
