@@ -1941,13 +1941,43 @@ def processar_estoque(arquivo_estoque, pasta_volumes, arquivo_movimentacao,
                     area_s = pd.to_numeric(dados[13], errors='coerce').dropna()
                     if vol_s.empty:
                         continue
+
+                    # Detecta caso especial: volume m³ constante em todas as linhas
+                    # Nesse caso o pico é determinado pela maior NF (Qtd. Volume Recebido)
+                    # identificada dinamicamente pelo cabeçalho da coluna
+                    vol_constante = vol_s.nunique() == 1
+
+                    if vol_constante:
+                        # Busca coluna de NF no DataFrame completo (cabeçalho está fora de dados)
+                        col_nf = None
+                        for row_idx in range(len(df_v)):
+                            for col_idx, val in df_v.iloc[row_idx].items():
+                                if isinstance(val, str) and 'recebido' in val.lower() and 'volume' in val.lower():
+                                    col_nf = col_idx
+                                    break
+                            if col_nf is not None:
+                                break
+                        if col_nf is None:
+                            col_nf = 5  # fallback: coluna F = Qtd. Volume Recebido
+                        nf_s = pd.to_numeric(dados[col_nf], errors='coerce').dropna()
+                        if not nf_s.empty:
+                            idx_maior_nf = nf_s.idxmax()
+                            pico_vol  = round(float(vol_s.loc[idx_maior_nf]) if idx_maior_nf in vol_s.index else vol_s.max(), 4)
+                            pico_area = round(float(area_s.loc[idx_maior_nf]) if not area_s.empty and idx_maior_nf in area_s.index else (area_s.max() if not area_s.empty else 0), 4)
+                        else:
+                            pico_vol  = round(float(vol_s.max()), 4)
+                            pico_area = round(float(area_s.max()), 4) if not area_s.empty else 0
+                        log(f"   📋 {aba}: volume constante → pico pela maior NF | pico {pico_vol:.2f} m³ | saldo {vol_s.iloc[-1]:.2f} m³\n")
+                    else:
+                        pico_vol  = round(float(vol_s.max()), 4)
+                        pico_area = round(float(area_s.max()), 4) if not area_s.empty else 0
+                        log(f"   📋 {aba}: pico {vol_s.max():.2f} m³ | saldo {vol_s.iloc[-1]:.2f} m³\n")
                     pico_por_cliente[aba.strip()] = {
-                        'pico_vol':   round(float(vol_s.max()), 4),
+                        'pico_vol':   pico_vol,
                         'saldo_vol':  round(float(vol_s.iloc[-1]), 4),
-                        'pico_area':  round(float(area_s.max()), 4) if not area_s.empty else 0,
+                        'pico_area':  pico_area,
                         'saldo_area': round(float(area_s.iloc[-1]), 4) if not area_s.empty else 0,
                     }
-                    log(f"   📋 {aba}: pico {vol_s.max():.2f} m³ | saldo {vol_s.iloc[-1]:.2f} m³\n")
                 except Exception as e:
                     log(f"   ⚠️ Pico aba '{aba}': {e}\n")
             log(f"✅ Pico de estoque carregado ({len(pico_por_cliente)} clientes).\n")
@@ -4277,34 +4307,67 @@ def processar_faturamento_armazenagem(arquivo_mov, arquivo_volumes, log,
 
                 depositante = m_dep.group(1).strip() if m_dep else aba.strip()
 
-                # Dados começam na linha 12 (após cabeçalhos do relatório)
-                dados = df_v.iloc[11:].copy()
+                # Detecta início dos dados: primeira linha onde col 0 é data válida
+                primeira_linha_dados = None
+                for li in range(len(df_v)):
+                    if pd.notna(pd.to_datetime(df_v.iloc[li, 0], errors='coerce')):
+                        primeira_linha_dados = li
+                        break
+                if primeira_linha_dados is None:
+                    continue
+
+                # Ignora a última linha (dia da extração — incompleta)
+                dados = df_v.iloc[primeira_linha_dados:-1].copy()
+                if dados.empty: continue
+
                 col_data = pd.to_datetime(dados.iloc[:, 0],
                                           dayfirst=True, errors='coerce')
                 col_vol  = pd.to_numeric(dados.iloc[:, 14], errors='coerce')
+                # Col 12 = "Valor (R$)" do estoque no dia — usado como critério de desempate.
+                # Quando dois ou mais dias empatam no volume m³ máximo (incluindo o caso
+                # em que o volume é constante o mês inteiro), o dia correto é aquele em que
+                # o valor monetário do estoque é maior, pois reflete o momento em que o
+                # estoque estava mais cheio em termos financeiros.
+                col_val  = pd.to_numeric(dados.iloc[:, 12], errors='coerce')
                 df_tmp   = pd.DataFrame(
-                    {'data': col_data, 'vol': col_vol}).dropna()
+                    {'data': col_data, 'vol': col_vol, 'val': col_val}).dropna(subset=['data', 'vol'])
                 if df_tmp.empty: continue
 
-                # Filtra apenas o mês de referência — ignora o dia 01 do
-                # mês seguinte que o sistema insere como saldo de fechamento
-                meses = df_tmp['data'].dt.month
-                mes_ref = int(meses.mode()[0])
-                df_mes = df_tmp[df_tmp['data'].dt.month == mes_ref]
+                # Filtra apenas o mês de referência
+                mes_ref_int = int(df_tmp['data'].dt.month.mode()[0])
+                df_mes = df_tmp[df_tmp['data'].dt.month == mes_ref_int]
                 if df_mes.empty:
-                    df_mes = df_tmp  # fallback: usa tudo
+                    df_mes = df_tmp
 
-                idx = df_mes['vol'].idxmax()
+                # Identifica os dias que atingiram o volume máximo
+                max_vol    = df_mes['vol'].max()
+                df_pico    = df_mes[df_mes['vol'] == max_vol].copy()
+                vol_constante = len(df_pico) == len(df_mes)  # True quando vol é constante o mês todo
+
+                if len(df_pico) == 1:
+                    # Caso simples: apenas um dia no máximo
+                    idx = df_pico.index[0]
+                    metodo_log = 'único'
+                else:
+                    # Empate (incluindo vol constante): desempate pelo maior valor R$ do estoque
+                    df_pico['val'] = df_pico['val'].fillna(0)
+                    idx = df_pico['val'].idxmax()
+                    metodo_log = 'constante→val' if vol_constante else 'empate→val'
+
+                data_pico_val = df_mes.loc[idx, 'data'].date()
+                vol_pico_val  = round(float(df_mes.loc[idx, 'vol']), 4)
+
                 pico_sub[nome_real] = {
-                    'data':        df_mes.loc[idx, 'data'].date(),
-                    'vol':         round(float(df_mes.loc[idx, 'vol']), 4),
+                    'data':        data_pico_val,
+                    'vol':         vol_pico_val,
                     'depositante': depositante,
                     'tipo_sub':    tipo_sub,
                     'aba':         aba.strip(),
                 }
                 log(f"   📋 {nome_real} [{tipo_sub}] — dep: {depositante} — "
                     f"{pico_sub[nome_real]['vol']:.2f} m³ "
-                    f"em {pico_sub[nome_real]['data'].strftime('%d/%m/%Y')}\n")
+                    f"em {pico_sub[nome_real]['data'].strftime('%d/%m/%Y')} "
+                    f"[{metodo_log}]\n")
             except Exception as e:
                 log(f"   ⚠️  Aba '{aba}': {e}\n")
     except Exception as e:
@@ -4639,208 +4702,6 @@ def processar_faturamento_armazenagem(arquivo_mov, arquivo_volumes, log,
 
     return resultado
 
-    # ── Carrega DBs de configuração ───────────────────────────────────────
-    cfg = _carregar_db_precos_arm()
-    db_fam = _carregar_db_familias()
-    clientes_cfg = cfg.get('clientes', {}) if cfg else {}
-
-    if not clientes_cfg:
-        log("⚠️  DB de configuração vazio — use 'Carregar Configuração' primeiro.\n"
-            "   O relatório será gerado sem agrupamento por família/grupo e sem preços.\n\n")
-
-    # ── PASSO 1: Pico m³ por cliente (arquivo de volumes) ─────────────────
-    log("📊 Lendo picos de volume por cliente...\n")
-    pico_vol = {}
-    try:
-        xl_vol = pd.ExcelFile(arquivo_volumes)
-        for aba in xl_vol.sheet_names:
-            try:
-                df_v  = xl_vol.parse(aba, header=None)
-                dados = df_v.iloc[3:-1].copy()
-                if dados.empty: continue
-                col_data = pd.to_datetime(dados[0], dayfirst=True, errors='coerce')
-                col_vol  = pd.to_numeric(dados[14], errors='coerce')
-                df_tmp   = pd.DataFrame({'data': col_data, 'vol': col_vol}).dropna()
-                if df_tmp.empty: continue
-                # Filtra apenas o mês de referência
-                mes_ref = int(df_tmp['data'].dt.month.mode()[0])
-                df_mes = df_tmp[df_tmp['data'].dt.month == mes_ref]
-                if df_mes.empty: df_mes = df_tmp
-                idx = df_mes['vol'].idxmax()
-                pico_vol[aba.strip()] = {
-                    'data': df_mes.loc[idx, 'data'].date(),
-                    'vol':  round(float(df_mes.loc[idx, 'vol']), 4),
-                }
-                log(f"   📋 {aba}: {pico_vol[aba.strip()]['vol']:.2f} m³ "
-                    f"em {pico_vol[aba.strip()]['data'].strftime('%d/%m/%Y')}\n")
-            except Exception as e:
-                log(f"   ⚠️  Aba '{aba}': {e}\n")
-    except Exception as e:
-        log(f"❌ Erro ao ler arquivo de volumes: {e}\n"); return None
-
-    if not pico_vol:
-        log("❌ Nenhum dado de volume encontrado.\n"); return None
-    log(f"✅ {len(pico_vol)} clientes com pico.\n\n")
-
-    # ── PASSO 2: Parse do arquivo de movimentação ─────────────────────────
-    log("📄 Lendo arquivo de movimentação...\n")
-
-    def _sv(v): return str(v).strip() if v is not None and str(v) not in ('nan','None') else ''
-    def _fv(v):
-        try: return float(v)
-        except (ValueError, TypeError): return 0.0
-
-    # mov_db[aba] = {sku: [(marcador_ou_data, saldo_qtd, saldo_val), ...]}
-    mov_db = {}
-    try:
-        xl_mov = pd.ExcelFile(arquivo_mov)
-        for aba in xl_mov.sheet_names:
-            try:
-                df_m = xl_mov.parse(aba, header=None)
-                regs = defaultdict(list)
-                sku_atual = None
-                for _, row in df_m.iterrows():
-                    data_raw = _sv(row.iloc[0])
-                    prod_raw = _sv(row.iloc[2])
-                    saldo_q  = _fv(row.iloc[11])
-                    saldo_v  = _fv(row.iloc[14])  # valor monetário — última coluna
-                    if not prod_raw: continue
-                    if data_raw in ('Saldo Inicial', 'Saldo Final', ''):
-                        sku_atual = prod_raw
-                        regs[sku_atual].append((data_raw, saldo_q, saldo_v))
-                    else:
-                        if prod_raw: sku_atual = prod_raw
-                        if sku_atual:
-                            try:
-                                d, m, a = data_raw.split('/')
-                                dt = date(int(a), int(m), int(d))
-                                regs[sku_atual].append((dt, saldo_q, saldo_v))
-                            except (ValueError, AttributeError):
-                                pass
-                mov_db[aba.strip()] = dict(regs)
-                log(f"   ✅ {aba}: {len(regs)} SKUs\n")
-            except Exception as e:
-                log(f"   ⚠️  Aba '{aba}': {e}\n")
-    except Exception as e:
-        log(f"❌ Erro ao ler movimentação: {e}\n"); return None
-
-    log(f"✅ {len(mov_db)} clientes na movimentação.\n\n")
-
-    # ── PASSO 3: Saldo na data do pico ────────────────────────────────────
-    def _saldo_em(registros, data_alvo):
-        """Retorna (qtd, valor) do último registro <= data_alvo."""
-        ini_q = ini_v = 0.0
-        ult_q = ult_v = None
-        ult_dt = None
-        for item in registros:
-            marc, sq, sv = item
-            if marc == 'Saldo Inicial':
-                ini_q, ini_v = sq, sv
-            elif isinstance(marc, date) and marc <= data_alvo:
-                if ult_dt is None or marc >= ult_dt:
-                    ult_dt, ult_q, ult_v = marc, sq, sv
-        if ult_q is not None:
-            return ult_q, ult_v
-        return ini_q, ini_v
-
-    def _norm(s): return s.upper().strip().replace('  ', ' ')
-
-    def _match_mov(nome, mov_db):
-        n = _norm(nome)
-        for k in mov_db:
-            nk = _norm(k)
-            if nk == n or n in nk or nk in n: return k
-        return None
-
-    def _match_cfg(nome, clientes_cfg):
-        n = _norm(nome)
-        for k in clientes_cfg:
-            nk = _norm(k)
-            if nk == n or n in nk or nk in n or \
-               nk.split()[0] == n.split()[0]: return k
-        return None
-
-    def _get_familia_sku_local(aba_mov, sku_raw):
-        """Extrai família do SKU a partir do DB de famílias."""
-        sku_limpo = sku_raw.strip()
-        # Tenta match no DB de famílias pelo nome da aba
-        for cli_db, skus in db_fam.items():
-            nk = _norm(cli_db)
-            na = _norm(aba_mov)
-            if nk == na or na in nk or nk in na:
-                # Tenta match do código
-                if sku_limpo in skus:
-                    return skus[sku_limpo].get('familia', 'SEM FAMÍLIA')
-                # Tenta sem colchetes
-                cod_c = sku_limpo.strip('[]').strip()
-                for cod_db, info_db in skus.items():
-                    if cod_c == cod_db.strip('[]').strip():
-                        return info_db.get('familia', 'SEM FAMÍLIA')
-                break
-        return 'SEM FAMÍLIA'
-
-    log("🔗 Cruzando dados...\n")
-    resultado = {}
-
-    for nome_vol, info_pico in pico_vol.items():
-        data_pico = info_pico['data']
-        vol_pico  = info_pico['vol']
-
-        # Casa volumes → movimentação → configuração
-        mov_cli = _match_mov(nome_vol)
-        cfg_key = _match_cfg_cli(nome_vol)
-        cfg_cli = clientes_cfg.get(cfg_key, {}) if cfg_key else {}
-
-        tipo        = cfg_cli.get('tipo', 'unico')
-        subdivisoes = cfg_cli.get('subdivisoes', [])
-
-        # Coleta SKUs com saldo > 0 na data do pico
-        skus_pico = []
-        if mov_cli:
-            for sku_raw, regs in mov_db[mov_cli].items():
-                qtd, val = _saldo_em(regs, data_pico)
-                if qtd > 0:
-                    familia = _get_familia_sku_local(mov_cli, sku_raw) \
-                              if tipo != 'unico' else nome_vol
-                    skus_pico.append({
-                        'sku':    sku_raw,
-                        'qtd':    qtd,
-                        'valor':  val,
-                        'subdiv': familia,
-                    })
-            skus_pico.sort(key=lambda x: (-x['qtd']))
-            log(f"   ✅ {nome_vol}: {len(skus_pico)} SKUs | "
-                f"tipo={tipo} | cfg={'sim' if cfg_key else 'não'}\n")
-        else:
-            log(f"   ⚠️  {nome_vol}: não encontrado na movimentação\n")
-
-        # Calcula valor a faturar
-        preco_m3 = cfg_cli.get('preco_m3', 0)
-        seguro   = cfg_cli.get('seguro_pct', 0) / 100 * \
-                   cfg_cli.get('seguro_base', 1000) * vol_pico
-        subtotal = preco_m3 * vol_pico + seguro
-        iss      = cfg_cli.get('iss_pct', 0) / 100 * subtotal
-        total_fat = round(subtotal + iss, 4)
-
-        resultado[nome_vol] = {
-            'data_pico':   data_pico,
-            'vol_pico':    vol_pico,
-            'skus':        skus_pico,
-            'tipo':        tipo,
-            'subdivisoes': subdivisoes,
-            'cfg':         cfg_cli,
-            'fat': {
-                'preco_m3':  preco_m3,
-                'seguro':    round(seguro, 4),
-                'subtotal':  round(subtotal, 4),
-                'iss':       round(iss, 4),
-                'total':     total_fat,
-            },
-            'cfg_key': cfg_key,
-            'mov_cli': mov_cli,
-        }
-
-    return resultado
 
 
 def run_faturamento_armazenagem(arquivo_mov, arquivo_volumes, mes_ref, log,
