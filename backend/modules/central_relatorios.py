@@ -5162,7 +5162,7 @@ def _fat_dist_linha_total(ws, row, label, valor, n_colunas, col_valor, cor_hex):
     ws.row_dimensions[row].height = 16
 
 
-ISS_RATE = 0.02  # alíquota padrão 2%
+ISS_RATE = 0.0204  # alíquota padrão 2,04%
 
 def _fat_dist_cabecalho_doc(ws, row, cliente, cc=None, n_colunas=5):
     """Cabeçalho de documento acima de cada bloco de CC.
@@ -5265,7 +5265,7 @@ def _fat_dist_aba_fechamento(wb, df, mes_ref):
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
-    ISS_RATE = 0.02
+    ISS_RATE = 0.0204
 
     # ── Calcula totais a partir do df ──────────────────────────────────────────
     def _soma(mask):
