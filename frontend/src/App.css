@@ -141,3 +141,38 @@ main h3 {
 }
 
 main p { color: #64748b; }
+/* ── Animações globais Baia 360 ── */
+
+@keyframes baia-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Fade de entrada nas páginas */
+.page-fade {
+  animation: baia-fade-in 0.25s ease forwards;
+}
+
+/* Micro-interação: botões primários */
+.btn-baia {
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.btn-baia:hover  { opacity: 0.9; }
+.btn-baia:active { transform: scale(0.96); }
+
+/* Micro-interação: cards KPI do dashboard */
+.kpi-card-hover {
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+.kpi-card-hover:hover {
+  transform: translateY(-3px);
+  border-color: #4f8ef744 !important;
+}
+
+/* Micro-interação: itens da sidebar */
+.sidebar-item-hover {
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.sidebar-item-hover:hover {
+  transform: translateX(2px);
+}

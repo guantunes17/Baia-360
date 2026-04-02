@@ -107,12 +107,14 @@ export function Hub({ usuario, onEntrarRelatorios, onEntrarAtlas, onLogout }: Pr
                 if (p.disponivel) {
                   (e.currentTarget as HTMLElement).style.borderColor = p.cor
                   ;(e.currentTarget as HTMLElement).style.boxShadow = `0 0 20px ${p.cor}22`
+                  ;(e.currentTarget as HTMLElement).style.transform = 'scale(1.03)'
                 }
               }}
               onMouseLeave={e => {
                 if (p.disponivel) {
                   (e.currentTarget as HTMLElement).style.borderColor = p.cor + '55'
                   ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
+                  ;(e.currentTarget as HTMLElement).style.transform = 'scale(1)'
                 }
               }}
             >

@@ -1,15 +1,7 @@
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarSeparator,
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
+  SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
+  SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarSeparator,
 } from '@/components/ui/sidebar'
 import { MODULOS } from '@/lib/constants'
 import { LogoBaia360 } from '@/components/LogoBaia360'
@@ -32,7 +24,7 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
           <div className="w-full h-1 rounded mb-3" style={{ background: '#4f8ef7' }} />
           <LogoBaia360 size={40} />
           <span className="text-sm font-bold text-center leading-tight" style={{ color: '#e2e8f0' }}>
-          Central de<br />Relatórios
+            Central de<br />Relatórios
           </span>
         </div>
       </SidebarHeader>
@@ -45,7 +37,6 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {/* Home */}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={paginaAtiva === 'home'}
@@ -54,21 +45,23 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
                   style={{
                     color: paginaAtiva === 'home' ? '#e2e8f0' : '#8892a4',
                     background: paginaAtiva === 'home' ? '#1e2235' : 'transparent',
+                    transition: 'transform 0.15s ease',
                   }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
                 >
                   🏠  Home
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              {/* Assistente IA — placeholder */}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={paginaAtiva === 'assistente'}
                   onClick={() => onNavegar('assistente')}
                   className="font-semibold cursor-pointer"
                   style={{
-                    color: paginaAtiva === 'assistente' ? '#e2e8f0' : '#8892a4',
-                    background: paginaAtiva === 'assistente' ? '#1e2235' : 'transparent',
+                    color: '#8892a4',
+                    background: 'transparent',
                     opacity: 0.5,
                     cursor: 'not-allowed',
                   }}
@@ -84,17 +77,19 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              {/* Dashboard */}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={paginaAtiva === 'dashboard'}
                   onClick={() => onNavegar('dashboard')}
-                  className="font-semibold cursor-pointer"
+                  className="font-semibold cursor-pointer sidebar-item-hover"
                   style={{
                     color: paginaAtiva === 'dashboard' ? '#e2e8f0' : '#8892a4',
                     background: paginaAtiva === 'dashboard' ? '#1e2235' : 'transparent',
-                  }}
-                >
+                    transition: 'transform 0.15s ease',
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
+                  >
                   📈  Dashboard
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -120,7 +115,10 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
                     style={{
                       color: paginaAtiva === m.key ? '#e2e8f0' : '#8892a4',
                       background: paginaAtiva === m.key ? '#1e2235' : 'transparent',
+                      transition: 'transform 0.15s ease',
                     }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
                   >
                     {m.icone}  {m.titulo}
                   </SidebarMenuButton>
@@ -148,7 +146,10 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
                     style={{
                       color: paginaAtiva === m.key ? '#e2e8f0' : '#8892a4',
                       background: paginaAtiva === m.key ? '#1e2235' : 'transparent',
+                      transition: 'transform 0.15s ease',
                     }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
                   >
                     {m.icone}  {m.titulo}
                   </SidebarMenuButton>
@@ -171,11 +172,14 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
                 <SidebarMenuButton
                   isActive={paginaAtiva === 'usuarios'}
                   onClick={() => onNavegar('usuarios')}
-                  className="cursor-pointer text-sm"
+                  className="cursor-pointer text-sm sidebar-item-hover"
                   style={{
                     color: paginaAtiva === 'usuarios' ? '#e2e8f0' : '#8892a4',
                     background: paginaAtiva === 'usuarios' ? '#1e2235' : 'transparent',
+                    transition: 'transform 0.15s ease',
                   }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
                 >
                   👥  Usuários
                 </SidebarMenuButton>

@@ -243,7 +243,9 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario }: { usu
 
             {/* Conteúdo */}
             <main className="flex-1 overflow-auto">
-              {renderPagina()}
+              <div key={paginaAtiva} className="page-fade">
+                {renderPagina()}
+              </div>
             </main>
           </div>
 

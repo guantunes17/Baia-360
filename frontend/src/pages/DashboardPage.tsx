@@ -103,7 +103,9 @@ export function DashboardPage() {
               </CardContent>
             </Card>
             {porModulo.slice(0, 3).map(m => (
-              <Card key={m.modulo} className="border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
+              <Card key={m.modulo} className="border col-span-2 sm:col-span-1" style={{ background: '#1a1d27', borderColor: '#2d3148', transition: 'transform 0.2s ease, border-color 0.2s ease' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef744' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.borderColor = '#2d3148' }}>
                 <CardContent className="p-4">
                   <p style={{ color: '#8892a4', fontSize: '10px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>{m.modulo}</p>
                   <p className="text-3xl font-bold" style={{ color: CORES_MODULO[m.modulo] || '#e2e8f0', lineHeight: 1 }}>{m.total}</p>
@@ -134,7 +136,9 @@ export function DashboardPage() {
                   const labels = KPI_LABELS[modulo] || {}
                   const cor    = CORES_MODULO[modulo] || '#4f8ef7'
                   return (
-                    <Card key={modulo} className="border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
+                    <Card key={modulo} className="border" style={{ background: '#1a1d27', borderColor: '#2d3148', transition: 'transform 0.2s ease, border-color 0.2s ease' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef744' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.borderColor = '#2d3148' }}>
                       <CardHeader className="pb-2 pt-4 px-4">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-sm font-semibold" style={{ color: cor }}>
