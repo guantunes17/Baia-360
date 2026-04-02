@@ -171,6 +171,9 @@ function exportarConversa(conversa: Conversa) {
   URL.revokeObjectURL(url)
 }
 
+const IconSettings = () => <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>
+const IconTokens = () => <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="10" width="3" height="4" rx="1"/><rect x="6.5" y="6" width="3" height="8" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>
+
 // ── Botão ícone com tooltip ──────────────────────────────────────────────────
 function IcBtn({ onClick, tip, children, active, color }: {
   onClick?: () => void
@@ -227,6 +230,14 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [busca, setBusca] = useState('')
   const [renomeandoId, setRenomeandoId] = useState<string | null>(null)
   const [renomeTitulo, setRenomeTitulo] = useState('')
+  // Grupo 3
+  const [painelConfig, setPainelConfig] = useState(false)
+  const [modo, setModo] = useState<string>(() => localStorage.getItem('atlas_modo') || 'Padrão')
+  const [temperatura, setTemperatura] = useState<number>(() => parseFloat(localStorage.getItem('atlas_temp') || '1.0'))
+  const [instrucoes, setInstrucoes] = useState<string>(() => localStorage.getItem('atlas_instrucoes') || '')
+  const [memorias, setMemorias] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('atlas_memorias') || '[]') } catch { return [] } })
+  const [novaMemoria, setNovaMemoria] = useState('')
+  const [tokenCount, setTokenCount] = useState(0)
   const bottomRef = useRef<HTMLDivElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -281,6 +292,14 @@ Sobre busca na internet:
 
   const conversa = conversas.find(c => c.id === ativaId)!
 
+  // Estimar tokens da conversa ativa
+  useEffect(() => {
+    const texto = conversa?.msgs.map(m => m.text).join(' ') || ''
+    setTokenCount(Math.round(texto.length / 4))
+  }, [conversa?.msgs])
+
+
+
   // ── Scroll to bottom automático ──────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -326,6 +345,28 @@ Sobre busca na internet:
     setConversas(prev => prev.map(c => c.id === renomeandoId ? { ...c, titulo } : c))
     setRenomeandoId(null)
     setRenomeTitulo('')
+  }
+
+
+  // ── Grupo 3: Configurações ───────────────────────────────────────────────
+  const salvarConfig = () => {
+    localStorage.setItem('atlas_modo', modo)
+    localStorage.setItem('atlas_temp', temperatura.toString())
+    localStorage.setItem('atlas_instrucoes', instrucoes)
+    localStorage.setItem('atlas_memorias', JSON.stringify(memorias))
+    setPainelConfig(false)
+  }
+
+  const adicionarMemoria = () => {
+    const mem = novaMemoria.trim()
+    if (!mem) return
+    const novas = [...memorias, mem]
+    setMemorias(novas)
+    setNovaMemoria('')
+  }
+
+  const removerMemoria = (idx: number) => {
+    setMemorias(prev => prev.filter((_, i) => i !== idx))
   }
 
   const handleRenameKey = (e: React.KeyboardEvent) => {
@@ -489,10 +530,16 @@ Sobre busca na internet:
     const convId = ativaId
 
     const activeTools = TOOLS_DEF.filter(t => t.on).map(t => t.declaration)
+    const modoSuffix = modo === 'Resumido' ? '\n\nIMPORTANTE: Seja extremamente conciso, máximo 3 linhas por resposta.'
+      : modo === 'Analítico' ? '\n\nIMPORTANTE: Forneça análise detalhada com dados, contexto e implicações.'
+      : modo === 'Detalhado' ? '\n\nIMPORTANTE: Seja completo e didático, explique cada ponto com exemplos.'
+      : ''
+    const instrucoesSuffix = instrucoes.trim() ? `\n\nInstruções do usuário:\n${instrucoes}` : ''
+    const memoriasSuffix = memorias.length > 0 ? `\n\nFatos que o usuário quer que você lembre:\n${memorias.map(m => `- ${m}`).join('\n')}` : ''
     const base = {
       model: 'gemini-2.5-flash',
-      temperature: 1.0,
-      system_prompt: SYSTEM_PROMPT,
+      temperature: temperatura,
+      system_prompt: SYSTEM_PROMPT + modoSuffix + instrucoesSuffix + memoriasSuffix,
       tools: activeTools
     }
 
@@ -775,10 +822,125 @@ Sobre busca na internet:
               ))}
             </div>
           ))}
+          {/* Footer com ícones */}
+          <div style={{ padding: '8px 10px', borderTop: '0.5px solid #2d3148', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 10, color: '#2d3148' }}>v1.0</span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                onClick={() => setPainelConfig(v => !v)}
+                title="Uso da sessão"
+                style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+              ><IconTokens /></button>
+              <button
+                onClick={() => setPainelConfig(v => !v)}
+                title="Configurações"
+                style={{ width: 28, height: 28, borderRadius: 6, background: painelConfig ? '#4f8ef711' : 'none', border: 'none', cursor: 'pointer', color: painelConfig ? '#4f8ef7' : '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+                onMouseEnter={e => { if (!painelConfig) { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' } }}
+                onMouseLeave={e => { if (!painelConfig) { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
+              ><IconSettings /></button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Chat */}
+      {/* Chat ou Painel de Configurações */}
+      {/* Painel de Configurações */}
+      {painelConfig ? (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 10%', background: '#0f1117', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', paddingLeft: 10, borderLeft: '2px solid #4f8ef7', margin: 0 }}>Configurações do Atlas</h2>
+
+          {/* Modo de resposta */}
+          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Modo de resposta</div>
+            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Define como o Atlas estrutura as respostas por padrão.</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['Resumido', 'Padrão', 'Analítico', 'Detalhado'].map(m => (
+                <button key={m} onClick={() => setModo(m)} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 500, cursor: 'pointer', border: '0.5px solid', background: modo === m ? '#4f8ef722' : 'none', borderColor: modo === m ? '#4f8ef7' : '#2d3148', color: modo === m ? '#4f8ef7' : '#8892a4', transition: 'all .12s' }}>{m}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Temperatura */}
+          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Criatividade das respostas</div>
+            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Valores baixos = mais preciso e direto. Valores altos = mais criativo e variado.</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 11, color: '#8892a4', minWidth: 52 }}>Preciso</span>
+              <input type="range" min="0" max="2" step="0.1" value={temperatura}
+                onChange={e => setTemperatura(parseFloat(e.target.value))}
+                style={{ flex: 1, accentColor: '#4f8ef7' }}
+              />
+              <span style={{ fontSize: 12, fontWeight: 500, color: '#4f8ef7', minWidth: 28, textAlign: 'right' }}>{temperatura.toFixed(1)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+              <span style={{ fontSize: 10, color: '#8892a455' }}>0.0</span>
+              <span style={{ fontSize: 10, color: '#8892a455' }}>Criativo</span>
+              <span style={{ fontSize: 10, color: '#8892a455' }}>2.0</span>
+            </div>
+          </div>
+
+          {/* Instruções customizadas */}
+          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Instruções personalizadas</div>
+            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>O Atlas seguirá essas instruções em todas as conversas.</div>
+            <textarea
+              value={instrucoes}
+              onChange={e => setInstrucoes(e.target.value)}
+              rows={3}
+              placeholder='Ex: "Sempre mencione a fonte quando usar dados externos. Prefiro respostas diretas."'
+              style={{ width: '100%', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, color: '#e2e8f0', fontSize: 12, padding: '8px 10px', resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.5, boxSizing: 'border-box' as any }}
+            />
+          </div>
+
+          {/* Memória explícita */}
+          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Memória do Atlas</div>
+            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Fatos que o Atlas sempre lembrará sobre você e a operação.</div>
+            {memorias.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {memorias.map((mem, idx) => (
+                  <span key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#4f8ef711', border: '0.5px solid #4f8ef733', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: '#4f8ef7' }}>
+                    {mem}
+                    <button onClick={() => removerMemoria(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f8ef755', fontSize: 11, lineHeight: 1, padding: 0, transition: 'color .12s' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#ef4444'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#4f8ef755'}
+                    >✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                value={novaMemoria}
+                onChange={e => setNovaMemoria(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') adicionarMemoria() }}
+                placeholder='Ex: "Meta de SLA: 95%"'
+                style={{ flex: 1, background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 6, color: '#e2e8f0', fontSize: 12, padding: '5px 8px', outline: 'none', fontFamily: 'inherit' }}
+              />
+              <button onClick={adicionarMemoria} style={{ padding: '5px 10px', borderRadius: 6, background: '#4f8ef711', border: '0.5px solid #4f8ef733', color: '#4f8ef7', fontSize: 11, cursor: 'pointer' }}>+ Adicionar</button>
+            </div>
+          </div>
+
+          {/* Contador de tokens */}
+          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Uso da sessão atual</div>
+            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Estimativa de tokens usados nesta conversa.</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 11, color: '#8892a4' }}>Tokens</span>
+              <div style={{ flex: 1, height: 4, background: '#2d3148', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 2, background: tokenCount > 8000 ? '#ef4444' : tokenCount > 5000 ? '#f0b429' : '#4f8ef7', width: `${Math.min((tokenCount / 10000) * 100, 100)}%`, transition: 'width .3s' }} />
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 500, color: '#e2e8f0', minWidth: 90, textAlign: 'right' }}>~{tokenCount.toLocaleString('pt-BR')} / 10.000</span>
+            </div>
+          </div>
+
+          <button onClick={salvarConfig} style={{ padding: '9px 20px', borderRadius: 8, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}>
+            Salvar configurações
+          </button>
+        </div>
+      ) : (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
 
         {/* Botão scroll to bottom */}
@@ -1114,6 +1276,7 @@ Sobre busca na internet:
           </p>
         </div>
       </div>
+      )}
     </div>
   )
 }
