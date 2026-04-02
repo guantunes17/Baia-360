@@ -498,11 +498,27 @@ Sobre geração de relatórios operacionais:
                   </div>
                   <div style={{ flex: 1, color: '#e2e8f0', fontSize: 14, lineHeight: 1.75, paddingTop: 4 }}>
                     {m.streaming && !m.text ? (
-                      <span style={{ display: 'flex', gap: 4, alignItems: 'center', height: 20, marginTop: 4 }}>
-                        {[0, 1, 2].map(j => (
-                          <span key={j} style={{ width: 5, height: 5, borderRadius: '50%', background: '#8892a4', display: 'inline-block', animation: `bounce 1.2s ${j * 0.2}s infinite` }} />
+                      <div style={{ paddingTop: 2 }}>
+                        {[85, 65, 75].map((w, j) => (
+                          <div key={j} style={{
+                            height: 10, borderRadius: 5, background: '#2d3148', marginBottom: 8,
+                            width: `${w}%`,
+                            animation: `shimmerAtlas 1.4s ease-in-out infinite ${j * 0.2}s`
+                          }} />
                         ))}
-                      </span>
+                        <div style={{ fontSize: 11, fontStyle: 'italic', color: '#8892a4', display: 'flex', alignItems: 'center', gap: 2, marginTop: 2 }}>
+                          {m.tools?.includes('get_dashboard')
+                            ? 'Buscando KPIs do dashboard'
+                            : m.tools?.includes('gerar_relatorio')
+                            ? 'Gerando relatório'
+                            : m.tools?.includes('get_agenda')
+                            ? 'Consultando agenda'
+                            : 'Consultando'}
+                          {[0, 1, 2].map(k => (
+                            <span key={k} style={{ animation: `fadedot 1.2s ease-in-out infinite ${k * 0.2}s` }}>.</span>
+                          ))}
+                        </div>
+                      </div>
                     ) : (
                       <div>
                         <ReactMarkdown components={{
@@ -532,6 +548,8 @@ Sobre geração de relatórios operacionais:
         <style>{`
           @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
           @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+          @keyframes shimmerAtlas { 0%{opacity:0.4} 50%{opacity:0.8} 100%{opacity:0.4} }
+          @keyframes fadedot { 0%,100%{opacity:0.3} 50%{opacity:1} }
         `}</style>
 
         <div style={{ padding: '16px 10%', borderTop: '1px solid #2d3148', background: '#0f1117' }}>

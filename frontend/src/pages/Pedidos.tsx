@@ -80,11 +80,11 @@ export function Pedidos() {
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold" style={{ color: '#e2e8f0' }}>
+        <h1 className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>
           📦 Pedidos e Recebimentos
         </h1>
-        <p className="text-sm mt-1" style={{ color: '#8892a4' }}>
-          Análise de SLA · D+0 · D+1 · Excedidos
+        <p className="text-xs mt-2" style={{ color: '#8892a4', letterSpacing: '0.02em' }}>
+          Análise de SLAs.
         </p>
       </div>
 

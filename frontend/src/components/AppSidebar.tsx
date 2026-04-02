@@ -12,6 +12,7 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar'
 import { MODULOS } from '@/lib/constants'
+import { LogoBaia360 } from '@/components/LogoBaia360'
 
 interface Props {
   paginaAtiva: string
@@ -29,9 +30,9 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
       <SidebarHeader className="px-4 py-5" style={{ background: '#13161f' }}>
         <div className="flex flex-col items-center gap-1">
           <div className="w-full h-1 rounded mb-3" style={{ background: '#4f8ef7' }} />
-          <span className="text-3xl">📊</span>
+          <LogoBaia360 size={40} />
           <span className="text-sm font-bold text-center leading-tight" style={{ color: '#e2e8f0' }}>
-            Central de<br />Relatórios
+          Central de<br />Relatórios
           </span>
         </div>
       </SidebarHeader>

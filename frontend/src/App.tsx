@@ -22,6 +22,7 @@ import { Hub } from '@/pages/Hub'
 import { Perfil } from '@/pages/Perfil'
 import { ToastContainer, ToastData } from '@/components/Toast'
 import { Atlas } from '@/pages/Atlas'
+import { LogoBaia360 } from '@/components/LogoBaia360'
 
 const API = 'http://localhost:5001'
 
@@ -61,13 +62,15 @@ function Login({ onLogin }: { onLogin: (u: Usuario) => void }) {
     >
       <Card className="w-full max-w-md border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
         <CardHeader className="text-center space-y-1">
-          <div className="text-5xl mb-2">📊</div>
-          <CardTitle className="text-3xl font-bold" style={{ color: '#4f8ef7' }}>
-            Central de Relatórios
+          <div className="flex justify-center mb-3">
+          <LogoBaia360 size={72} />
+          </div>
+          <CardTitle className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>
+          Baia 360
           </CardTitle>
           <CardDescription style={{ color: '#8892a4' }}>
-            Baia 4 Logística e Transportes
-          </CardDescription>
+          Baia 4 Logística e Transportes
+        </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

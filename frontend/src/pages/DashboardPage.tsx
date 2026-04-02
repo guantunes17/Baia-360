@@ -82,8 +82,8 @@ export function DashboardPage() {
   return (
     <div className="p-8 max-w-5xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold" style={{ color: '#e2e8f0' }}>📈 Dashboard</h1>
-        <p className="text-sm mt-1" style={{ color: '#8892a4' }}>
+        <h1 className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>📈 Dashboard</h1>
+        <p className="text-xs mt-2" style={{ color: '#8892a4', letterSpacing: '0.02em' }}>
           KPIs operacionais · Histórico de relatórios gerados
         </p>
       </div>
@@ -97,16 +97,16 @@ export function DashboardPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
             <Card className="border col-span-2 sm:col-span-1" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
               <CardContent className="p-4">
-                <p className="text-xs mb-1" style={{ color: '#8892a4' }}>Total gerado</p>
-                <p className="text-3xl font-bold" style={{ color: '#4f8ef7' }}>{totalGeral}</p>
+                <p style={{ color: '#8892a4', fontSize: '10px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>Total gerado</p>
+                <p className="text-3xl font-bold" style={{ color: '#4f8ef7', lineHeight: 1 }}>{totalGeral}</p>
                 <p className="text-xs mt-1" style={{ color: '#8892a4' }}>relatórios</p>
               </CardContent>
             </Card>
             {porModulo.slice(0, 3).map(m => (
               <Card key={m.modulo} className="border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
                 <CardContent className="p-4">
-                  <p className="text-xs mb-1" style={{ color: '#8892a4' }}>{m.modulo}</p>
-                  <p className="text-3xl font-bold" style={{ color: CORES_MODULO[m.modulo] || '#e2e8f0' }}>{m.total}</p>
+                  <p style={{ color: '#8892a4', fontSize: '10px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>{m.modulo}</p>
+                  <p className="text-3xl font-bold" style={{ color: CORES_MODULO[m.modulo] || '#e2e8f0', lineHeight: 1 }}>{m.total}</p>
                   <p className="text-xs mt-1" style={{ color: '#8892a4' }}>relatórios</p>
                 </CardContent>
               </Card>
@@ -114,11 +114,21 @@ export function DashboardPage() {
           </div>
 
           {/* KPIs por módulo */}
-          {Object.keys(kpisPorModulo).length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-sm font-semibold mb-4 uppercase tracking-wider" style={{ color: '#4f8ef7' }}>
-                📊 KPIs do Último Relatório
-              </h2>
+          <div className="mb-8">
+            <h2 className="text-base font-semibold mb-4" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #4f8ef7' }}>
+              KPIs do último relatório
+            </h2>
+            {Object.keys(kpisPorModulo).length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 16px', gap: '10px', textAlign: 'center', background: '#1a1d27', borderRadius: '12px', border: '0.5px solid #2d3148' }}>
+                <svg width="44" height="44" viewBox="0 0 44 44" fill="none" style={{ opacity: 0.25, marginBottom: '4px' }}>
+                  <circle cx="22" cy="22" r="14" stroke="#4f8ef7" strokeWidth="2" fill="none"/>
+                  <line x1="22" y1="15" x2="22" y2="23" stroke="#4f8ef7" strokeWidth="2.5" strokeLinecap="round"/>
+                  <circle cx="22" cy="28" r="1.5" fill="#4f8ef7"/>
+                </svg>
+                <p style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>Nenhum KPI disponível</p>
+                <p style={{ fontSize: '12px', color: '#8892a4', maxWidth: '260px', lineHeight: 1.5 }}>Gere relatórios nos módulos para visualizar os KPIs mais recentes aqui.</p>
+              </div>
+            ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.entries(kpisPorModulo).map(([modulo, dados]) => {
                   const labels = KPI_LABELS[modulo] || {}
@@ -156,17 +166,25 @@ export function DashboardPage() {
                   )
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Barras por módulo */}
           <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
             <CardHeader>
-              <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>Relatórios por Módulo</CardTitle>
+              <CardTitle className="text-base font-semibold" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #4f8ef7' }}>Relatórios por módulo</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {porModulo.length === 0 ? (
-                <p className="text-sm" style={{ color: '#8892a4' }}>Nenhum relatório gerado ainda.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 16px', gap: '10px', textAlign: 'center' }}>
+                  <svg width="44" height="44" viewBox="0 0 44 44" fill="none" style={{ opacity: 0.25, marginBottom: '4px' }}>
+                    <rect x="6" y="28" width="7" height="10" rx="2" fill="#4f8ef7"/>
+                    <rect x="18" y="20" width="7" height="18" rx="2" fill="#4f8ef7"/>
+                    <rect x="30" y="14" width="7" height="24" rx="2" fill="#4f8ef7"/>
+                  </svg>
+                  <p style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>Nenhum relatório gerado ainda</p>
+                  <p style={{ fontSize: '12px', color: '#8892a4', maxWidth: '260px', lineHeight: 1.5 }}>Gere seu primeiro relatório em qualquer módulo da Central de Relatórios.</p>
+                </div>
               ) : (
                 porModulo.map(m => (
                   <div key={m.modulo}>
@@ -189,11 +207,18 @@ export function DashboardPage() {
           {/* Evolução mensal */}
           <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
             <CardHeader>
-              <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>Evolução Mensal</CardTitle>
+              <CardTitle className="text-base font-semibold" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #4f8ef7' }}>Evolução mensal</CardTitle>
             </CardHeader>
             <CardContent>
               {porMes.length === 0 ? (
-                <p className="text-sm" style={{ color: '#8892a4' }}>Nenhum dado mensal disponível ainda.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 16px', gap: '10px', textAlign: 'center' }}>
+                  <svg width="44" height="44" viewBox="0 0 44 44" fill="none" style={{ opacity: 0.25, marginBottom: '4px' }}>
+                    <polyline points="6,34 16,22 24,26 36,12" stroke="#4f8ef7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    <circle cx="36" cy="12" r="3" fill="#4f8ef7"/>
+                  </svg>
+                  <p style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>Sem dados mensais</p>
+                  <p style={{ fontSize: '12px', color: '#8892a4', maxWidth: '260px', lineHeight: 1.5 }}>A evolução aparecerá após relatórios de meses diferentes serem gerados.</p>
+                </div>
               ) : (
                 <div className="flex items-end gap-3 h-32">
                   {porMes.map(m => {
@@ -215,11 +240,19 @@ export function DashboardPage() {
           {/* Últimas gerações */}
           <Card className="border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
             <CardHeader>
-              <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>Últimas Gerações</CardTitle>
+              <CardTitle className="text-base font-semibold" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #4f8ef7' }}>Últimas gerações</CardTitle>
             </CardHeader>
             <CardContent>
               {recentes.length === 0 ? (
-                <p className="text-sm" style={{ color: '#8892a4' }}>Nenhum relatório gerado ainda.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 16px', gap: '10px', textAlign: 'center' }}>
+                  <svg width="44" height="44" viewBox="0 0 44 44" fill="none" style={{ opacity: 0.25, marginBottom: '4px' }}>
+                    <rect x="8" y="10" width="28" height="4" rx="2" fill="#4f8ef7"/>
+                    <rect x="8" y="20" width="20" height="4" rx="2" fill="#4f8ef7"/>
+                    <rect x="8" y="30" width="24" height="4" rx="2" fill="#4f8ef7"/>
+                  </svg>
+                  <p style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>Histórico vazio</p>
+                  <p style={{ fontSize: '12px', color: '#8892a4', maxWidth: '260px', lineHeight: 1.5 }}>As gerações de relatórios aparecerão aqui conforme forem realizadas.</p>
+                </div>
               ) : (
                 <div className="space-y-2">
                   {recentes.map(r => (

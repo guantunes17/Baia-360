@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { LogoBaia360 } from '@/components/LogoBaia360'
 
 interface Usuario {
   id: number
@@ -53,7 +54,7 @@ export function Hub({ usuario, onEntrarRelatorios, onEntrarAtlas, onLogout }: Pr
         style={{ background: '#13161f', borderColor: '#2d3148' }}
       >
         <div className="flex items-center gap-3">
-          <span className="text-2xl">🏢</span>
+          <LogoBaia360 size={32} />
           <div>
             <p className="text-sm font-bold" style={{ color: '#e2e8f0' }}>Baia 360</p>
             <p className="text-xs" style={{ color: '#8892a4' }}>Baia 4 Logística e Transportes</p>
@@ -78,11 +79,11 @@ export function Hub({ usuario, onEntrarRelatorios, onEntrarAtlas, onLogout }: Pr
         {/* Saudação */}
         <div className="text-center mb-12">
           <div className="w-16 h-1 rounded mx-auto mb-6" style={{ background: '#4f8ef7' }} />
-          <h1 className="text-3xl font-bold mb-2" style={{ color: '#e2e8f0' }}>
+          <h1 className="text-4xl font-bold mb-3" style={{ color: '#e2e8f0' }}>
             Olá, {usuario.nome.split(' ')[0]}! 👋
           </h1>
-          <p className="text-sm" style={{ color: '#8892a4' }}>{dataFormatada}</p>
-          <p className="text-sm mt-1" style={{ color: '#8892a4' }}>
+          <p className="text-sm" style={{ color: '#8892a4', letterSpacing: '0.03em' }}>{dataFormatada}</p>
+          <p className="text-xs mt-2" style={{ color: '#8892a4' }}>
             Selecione um módulo para começar.
           </p>
         </div>
