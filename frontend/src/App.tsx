@@ -127,7 +127,7 @@ function Login({ onLogin }: { onLogin: (u: Usuario) => void }) {
 function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void, onAtualizarUsuario: (u: Usuario) => void }) {
   const [paginaAtiva, setPaginaAtiva] = useState('home')
   const [toasts, setToasts] = useState<ToastData[]>([])
-  const adicionarToast = (tipo: 'sucesso' | 'erro', mensagem: string) => {
+  const adicionarToast = (tipo: 'sucesso' | 'erro' | 'aviso', mensagem: string) => {
     const id = Date.now()
     setToasts(prev => [...prev, { id, tipo, mensagem }])
   }
