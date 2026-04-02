@@ -36,7 +36,7 @@ app.config['JWT_SECRET_KEY']                 = os.getenv('JWT_SECRET_KEY')
 app.config['SQLALCHEMY_DATABASE_URI']        = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "https://claude.ai"])
+CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
 db  = SQLAlchemy(app)
 jwt = JWTManager(app)
 
@@ -1216,14 +1216,17 @@ def atlas_chat():
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'erro': str(e)}), 500
+        msg = str(e)
+        if '429' in msg or 'quota' in msg.lower() or 'resource_exhausted' in msg.lower():
+            return jsonify({'erro': 'cota_gemini'}), 429
+        return jsonify({'erro': msg}), 500
 
 @app.route('/api/atlas/chat/tool_response', methods=['POST'])
 @jwt_required()
 def atlas_tool_response():
     data = request.get_json()
     api_key       = os.getenv('GEMINI_API_KEY', '').strip()
-    model_id      = data.get('model', 'gemini-3-flash-preview')
+    model_id      = data.get('model', 'gemini-2.5-flash')
     history       = data.get('history', [])
     tools         = data.get('tools', [])
     temp          = float(data.get('temperature', 1.0))
@@ -1361,6 +1364,75 @@ def atlas_upload_arquivo():
             'file_uri': uploaded.uri,
             'mime_type': mime,
             'nome': nome
+        }), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+@app.route('/api/atlas/dashboard_data', methods=['GET'])
+@jwt_required()
+def atlas_dashboard_data():
+    try:
+        from sqlalchemy import func
+
+        # KPIs do último relatório por módulo
+        subq = (
+            db.session.query(
+                RelatorioGerado.modulo,
+                func.max(RelatorioGerado.gerado_em).label('ultimo')
+            )
+            .group_by(RelatorioGerado.modulo)
+            .subquery()
+        )
+
+        ultimos = (
+            db.session.query(RelatorioGerado)
+            .join(subq, (RelatorioGerado.modulo == subq.c.modulo) &
+                        (RelatorioGerado.gerado_em == subq.c.ultimo))
+            .all()
+        )
+
+        kpis_por_modulo = {}
+        for r in ultimos:
+            kpis = {}
+            if r.kpis_json:
+                try:
+                    kpis = json.loads(r.kpis_json)
+                except Exception:
+                    pass
+            kpis_por_modulo[r.modulo] = {
+                'mes_ref':    r.mes_ref,
+                'gerado_em':  r.gerado_em.isoformat(),
+                'kpis':       kpis
+            }
+
+        # Histórico recente (últimas 10 gerações)
+        historico = (
+            RelatorioGerado.query
+            .order_by(RelatorioGerado.gerado_em.desc())
+            .limit(10)
+            .all()
+        )
+
+        historico_list = []
+        for r in historico:
+            kpis = {}
+            if r.kpis_json:
+                try:
+                    kpis = json.loads(r.kpis_json)
+                except Exception:
+                    pass
+            historico_list.append({
+                'modulo':    r.modulo,
+                'mes_ref':   r.mes_ref,
+                'gerado_em': r.gerado_em.isoformat(),
+                'kpis':      kpis
+            })
+
+        return jsonify({
+            'kpis_por_modulo': kpis_por_modulo,
+            'historico':       historico_list
         }), 200
 
     except Exception as e:

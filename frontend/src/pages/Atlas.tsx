@@ -19,22 +19,17 @@ const TOOLS_DEF = [
   }
 ]
 
-const MOCK_RESPONSES: Record<string, (args: any) => any> = {
-  get_dashboard: () => ({
-    kpis_por_modulo: {
-      Pedidos: { mes_ref: '2025-03', kpis: { total_pedidos: 1842, sla_entrega: '96.3%', pedidos_atrasados: 67 } },
-      Fretes: { mes_ref: '2025-03', kpis: { total_fretes: 312, custo_total: 148500, custo_medio: 476 } },
-      Armazenagem: { mes_ref: '2025-03', kpis: { pico_m3: 3240, media_m3: 2890, clientes_ativos: 12 } },
-      Estoque: { mes_ref: '2025-03', kpis: { skus_ativos: 4821, valor_total: 9200000, giro_medio: 18.4 } },
-    }
-  }),
+const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>) | ((args: any) => any)> = {
+  get_dashboard: async (_args: any, token: string) => {
+    const res = await fetch(`${API}/api/atlas/dashboard_data`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!res.ok) return { erro: 'Não foi possível carregar dados do dashboard.' }
+    return res.json()
+  },
   gerar_relatorio: ({ modulo, mes_ref }: any) => ({ status: 'aguardando_arquivo', modulo, mes_ref, mensagem: `Aguardando arquivo Excel para ${modulo} (${mes_ref}).` }),
-  get_agenda: () => ({ eventos: [
-    { titulo: 'Reunião operacional', data: '2025-03-27', hora: '09:00' },
-    { titulo: 'Revisão de KPIs Março', data: '2025-03-28', hora: '14:00' },
-    { titulo: 'Call BIOGEN', data: '2025-03-29', hora: '11:00' },
-  ]}),
-  criar_evento: ({ titulo, data, hora_inicio, hora_fim }: any) => ({ status: 'criado', mensagem: `Evento "${titulo}" criado para ${data} das ${hora_inicio} às ${hora_fim}.` })
+  get_agenda: () => ({ eventos: [] }),
+  criar_evento: ({ titulo, data, hora_inicio, hora_fim }: any) => ({ status: 'mock', mensagem: `Integração Outlook pendente. Evento "${titulo}" para ${data} das ${hora_inicio} às ${hora_fim} anotado.` })
 }
 
 const ENDPOINT_MAP: Record<string, string> = {
@@ -365,11 +360,12 @@ Sobre geração de relatórios operacionais:
             return { ...c, msgs, history: [...h3, { role: 'model', parts: parts2 }] }
           })
         } else {
-          const fnResponses = fnCalls.map((p: any) => {
+          const fnResponses = await Promise.all(fnCalls.map(async (p: any) => {
             const fn = p.functionCall
-            const result = MOCK_RESPONSES[fn.name] ? MOCK_RESPONSES[fn.name](fn.args || {}) : { erro: 'não implementado' }
+            const handler = MOCK_RESPONSES[fn.name]
+            const result = handler ? await handler(fn.args || {}, token) : { erro: 'não implementado' }
             return { functionResponse: { name: fn.name, response: { result } } }
-          })
+          }))
           const h3 = [...newHistory, { role: 'user', parts: fnResponses }]
           const data2 = await callBackend('/api/atlas/chat/tool_response', { ...base, history: h3 })
           const parts2: any[] = data2.parts || []
@@ -391,10 +387,13 @@ Sobre geração de relatórios operacionais:
         })
       }
     } catch (e: any) {
-      const errMsg = e.response?.data?.erro || e.message || 'Erro desconhecido'
+      const rawErr = e.response?.data?.erro || e.message || 'Erro desconhecido'
+      const errMsg = rawErr === 'cota_gemini'
+        ? '⚠️ O limite de requisições do Atlas foi atingido. Tente novamente em alguns minutos.'
+        : 'Erro: ' + rawErr
       updateConversa(convId, c => {
         const msgs = [...c.msgs]
-        msgs[msgs.length - 1] = { role: 'note', text: 'Erro: ' + errMsg, streaming: false }
+        msgs[msgs.length - 1] = { role: 'note', text: errMsg, streaming: false }
         return { ...c, msgs, history: [] }
       })
     }
