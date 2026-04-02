@@ -1114,17 +1114,18 @@ def atualizar_perfil():
     return jsonify(user.to_dict()), 200
 
 import google.generativeai as genai
+from google import genai as genai_new
+from google.genai import types as genai_types
 import json
 
 @app.route('/api/atlas/chat', methods=['POST'])
 @jwt_required()
 def atlas_chat():
-    import json as json_module
-    data = request.get_json()
+    data          = request.get_json()
     api_key       = os.getenv('GEMINI_API_KEY', '').strip()
     model_id      = data.get('model', 'gemini-2.5-flash')
     history       = data.get('history', [])
-    tools         = data.get('tools', [])
+    tools_def     = data.get('tools', [])
     temp          = float(data.get('temperature', 1.0))
     system_prompt = data.get('system_prompt', '')
 
@@ -1132,78 +1133,123 @@ def atlas_chat():
         return jsonify({'erro': 'GEMINI_API_KEY não configurada no servidor'}), 500
 
     try:
-        genai.configure(api_key=api_key)
+        client = genai_new.Client(api_key=api_key)
 
-        gemini_tools = None
-        if tools:
+        def converter_contents(history):
+            contents = []
+            for m in history:
+                parts = []
+                for p in m.get('parts', []):
+                    if 'text' in p:
+                        parts.append(genai_types.Part(text=p['text']))
+                    elif 'file_data' in p:
+                        parts.append(genai_types.Part(
+                            file_data=genai_types.FileData(
+                                mime_type=p['file_data']['mime_type'],
+                                file_uri=p['file_data']['file_uri']
+                            )
+                        ))
+                    elif 'functionCall' in p:
+                        parts.append(genai_types.Part(
+                            function_call=genai_types.FunctionCall(
+                                name=p['functionCall']['name'],
+                                args=p['functionCall']['args']
+                            )
+                        ))
+                    elif 'functionResponse' in p:
+                        parts.append(genai_types.Part(
+                            function_response=genai_types.FunctionResponse(
+                                name=p['functionResponse']['name'],
+                                response=p['functionResponse']['response']
+                            )
+                        ))
+                role = 'model' if m['role'] == 'model' else 'user'
+                contents.append(genai_types.Content(role=role, parts=parts))
+            return contents
+
+        def build_declarations(tools_def):
             declarations = []
-            for t in tools:
+            for t in tools_def:
                 params = t.get('parameters', {})
                 properties = {}
                 for prop_name, prop_def in params.get('properties', {}).items():
-                    properties[prop_name] = genai.protos.Schema(
-                        type=genai.protos.Type.STRING,
+                    properties[prop_name] = genai_types.Schema(
+                        type=genai_types.Type.STRING,
                         description=prop_def.get('description', '')
                     )
-                schema = genai.protos.Schema(
-                    type=genai.protos.Type.OBJECT,
+                schema = genai_types.Schema(
+                    type=genai_types.Type.OBJECT,
                     properties=properties,
                     required=params.get('required', [])
                 )
-                declarations.append(genai.protos.FunctionDeclaration(
+                declarations.append(genai_types.FunctionDeclaration(
                     name=t['name'],
                     description=t.get('description', ''),
                     parameters=schema
                 ))
-            gemini_tools = [genai.protos.Tool(function_declarations=declarations)]
+            return declarations
 
-        model = genai.GenerativeModel(
-            model_name=model_id,
-            system_instruction=system_prompt or None,
-            tools=gemini_tools
+        contents = converter_contents(history)
+
+        # ── Chamada 1: Router — google_search apenas ──────────────────────────
+        router_system = system_prompt + """
+
+INSTRUÇÃO ESPECIAL DE ROTEAMENTO:
+Antes de responder, classifique internamente o que o usuário precisa:
+- Se precisar de dados internos da operação (KPIs, relatórios, dashboard, faturamento, SLA, estoque, gerar relatório, agenda) → responda EXATAMENTE com: USAR_FUNCTION_CALLING
+- Se precisar de informações atuais da internet (cotações, notícias, eventos recentes, dados externos) → use o google_search e responda normalmente
+- Para qualquer outra pergunta → responda normalmente sem busca
+
+Responda APENAS com USAR_FUNCTION_CALLING quando for o caso, sem nenhuma outra palavra."""
+
+        config_router = genai_types.GenerateContentConfig(
+            system_instruction=router_system,
+            tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
+            temperature=temp
         )
 
-        def converter_parts(parts):
-            converted = []
-            for p in parts:
-                if 'text' in p:
-                    converted.append(p['text'])
-                elif 'file_data' in p:
-                    converted.append(genai.protos.Part(
-                        file_data=genai.protos.FileData(
-                            mime_type=p['file_data']['mime_type'],
-                            file_uri=p['file_data']['file_uri']
-                        )
-                    ))
-                elif 'functionCall' in p:
-                    converted.append(genai.protos.Part(
-                        function_call=genai.protos.FunctionCall(
-                            name=p['functionCall']['name'],
-                            args=p['functionCall']['args']
-                        )
-                    ))
-                elif 'functionResponse' in p:
-                    converted.append(genai.protos.Part(
-                        function_response=genai.protos.FunctionResponse(
-                            name=p['functionResponse']['name'],
-                            response=p['functionResponse']['response']
-                        )
-                    ))
-            return converted
-
-        chat = model.start_chat(history=[
-            {'role': m['role'], 'parts': converter_parts(m['parts'])}
-            for m in history[:-1]
-        ])
-
-        last_msg = converter_parts(history[-1]['parts'])
-        response = chat.send_message(
-            last_msg,
-            generation_config=genai.types.GenerationConfig(temperature=temp)
+        response1 = client.models.generate_content(
+            model=model_id,
+            contents=contents,
+            config=config_router
         )
 
+        texto1 = ''
+        for part in response1.candidates[0].content.parts:
+            if part.text:
+                texto1 += part.text
+
+        # ── Se o router decidiu usar function calling ─────────────────────────
+        if texto1.strip() == 'USAR_FUNCTION_CALLING':
+            declarations = build_declarations(tools_def)
+            fc_tools = [genai_types.Tool(function_declarations=declarations)] if declarations else []
+
+            config_fc = genai_types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                tools=fc_tools or None,
+                temperature=temp
+            )
+
+            response2 = client.models.generate_content(
+                model=model_id,
+                contents=contents,
+                config=config_fc
+            )
+
+            parts_out = []
+            for part in response2.candidates[0].content.parts:
+                if part.text:
+                    parts_out.append({'text': part.text})
+                elif part.function_call:
+                    parts_out.append({'functionCall': {
+                        'name': part.function_call.name,
+                        'args': dict(part.function_call.args)
+                    }})
+            return jsonify({'parts': parts_out}), 200
+
+        # ── Resposta direta (texto ou web search já processado) ───────────────
         parts_out = []
-        for part in response.parts:
+        for part in response1.candidates[0].content.parts:
             if part.text:
                 parts_out.append({'text': part.text})
             elif part.function_call:
@@ -1220,15 +1266,15 @@ def atlas_chat():
         if '429' in msg or 'quota' in msg.lower() or 'resource_exhausted' in msg.lower():
             return jsonify({'erro': 'cota_gemini'}), 429
         return jsonify({'erro': msg}), 500
-
+    
 @app.route('/api/atlas/chat/tool_response', methods=['POST'])
 @jwt_required()
 def atlas_tool_response():
-    data = request.get_json()
+    data          = request.get_json()
     api_key       = os.getenv('GEMINI_API_KEY', '').strip()
     model_id      = data.get('model', 'gemini-2.5-flash')
     history       = data.get('history', [])
-    tools         = data.get('tools', [])
+    tools_def     = data.get('tools', [])
     temp          = float(data.get('temperature', 1.0))
     system_prompt = data.get('system_prompt', '')
 
@@ -1236,88 +1282,98 @@ def atlas_tool_response():
         return jsonify({'erro': 'GEMINI_API_KEY não configurada no servidor'}), 500
 
     try:
-        genai.configure(api_key=api_key)
+        client = genai_new.Client(api_key=api_key)
 
-        gemini_tools = None
-        if tools:
+        def converter_contents(history):
+            contents = []
+            for m in history:
+                parts = []
+                for p in m.get('parts', []):
+                    if 'text' in p:
+                        parts.append(genai_types.Part(text=p['text']))
+                    elif 'file_data' in p:
+                        parts.append(genai_types.Part(
+                            file_data=genai_types.FileData(
+                                mime_type=p['file_data']['mime_type'],
+                                file_uri=p['file_data']['file_uri']
+                            )
+                        ))
+                    elif 'functionCall' in p:
+                        parts.append(genai_types.Part(
+                            function_call=genai_types.FunctionCall(
+                                name=p['functionCall']['name'],
+                                args=p['functionCall']['args']
+                            )
+                        ))
+                    elif 'functionResponse' in p:
+                        parts.append(genai_types.Part(
+                            function_response=genai_types.FunctionResponse(
+                                name=p['functionResponse']['name'],
+                                response=p['functionResponse']['response']
+                            )
+                        ))
+                role = 'model' if m['role'] == 'model' else 'user'
+                contents.append(genai_types.Content(role=role, parts=parts))
+            return contents
+
+        def build_declarations(tools_def):
             declarations = []
-            for t in tools:
+            for t in tools_def:
                 params = t.get('parameters', {})
                 properties = {}
                 for prop_name, prop_def in params.get('properties', {}).items():
-                    properties[prop_name] = genai.protos.Schema(
-                        type=genai.protos.Type.STRING,
+                    properties[prop_name] = genai_types.Schema(
+                        type=genai_types.Type.STRING,
                         description=prop_def.get('description', '')
                     )
-                schema = genai.protos.Schema(
-                    type=genai.protos.Type.OBJECT,
+                schema = genai_types.Schema(
+                    type=genai_types.Type.OBJECT,
                     properties=properties,
                     required=params.get('required', [])
                 )
-                declarations.append(genai.protos.FunctionDeclaration(
+                declarations.append(genai_types.FunctionDeclaration(
                     name=t['name'],
                     description=t.get('description', ''),
                     parameters=schema
                 ))
-            gemini_tools = [genai.protos.Tool(function_declarations=declarations)]
+            return declarations
 
-        model = genai.GenerativeModel(
-            model_name=model_id,
+        contents = converter_contents(history)
+        declarations = build_declarations(tools_def)
+
+        # tool_response sempre continua o ciclo de function calling — sem google_search
+        fc_tools = [genai_types.Tool(function_declarations=declarations)] if declarations else None
+
+        config = genai_types.GenerateContentConfig(
             system_instruction=system_prompt or None,
-            tools=gemini_tools
+            tools=fc_tools,
+            temperature=temp
         )
 
-        def converter_parts(parts):
-            converted = []
-            for p in parts:
-                if 'text' in p:
-                    converted.append(p['text'])
-                elif 'file_data' in p:
-                    converted.append(genai.protos.Part(
-                        file_data=genai.protos.FileData(
-                            mime_type=p['file_data']['mime_type'],
-                            file_uri=p['file_data']['file_uri']
-                        )
-                    ))
-                elif 'functionCall' in p:
-                    converted.append(genai.protos.Part(
-                        function_call=genai.protos.FunctionCall(
-                            name=p['functionCall']['name'],
-                            args=p['functionCall']['args']
-                        )
-                    ))
-                elif 'functionResponse' in p:
-                    converted.append(genai.protos.Part(
-                        function_response=genai.protos.FunctionResponse(
-                            name=p['functionResponse']['name'],
-                            response=p['functionResponse']['response']
-                        )
-                    ))
-            return converted
+        response = client.models.generate_content(
+            model=model_id,
+            contents=contents,
+            config=config
+        )
 
-        chat = model.start_chat(history=[
-            {'role': m['role'], 'parts': converter_parts(m['parts'])}
-            for m in history[:-1]
-        ])
-
-        last_parts = converter_parts(history[-1]['parts'])
-        response = chat.send_message(last_parts)
-
-        parts = []
-        for part in response.parts:
+        parts_out = []
+        for part in response.candidates[0].content.parts:
             if part.text:
-                parts.append({'text': part.text})
+                parts_out.append({'text': part.text})
             elif part.function_call:
-                parts.append({'functionCall': {
+                parts_out.append({'functionCall': {
                     'name': part.function_call.name,
                     'args': dict(part.function_call.args)
                 }})
 
-        return jsonify({'parts': parts}), 200
+        return jsonify({'parts': parts_out}), 200
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'erro': str(e)}), 500
+        msg = str(e)
+        if '429' in msg or 'quota' in msg.lower() or 'resource_exhausted' in msg.lower():
+            return jsonify({'erro': 'cota_gemini'}), 429
+        return jsonify({'erro': msg}), 500
 
 @app.route('/api/atlas/upload_arquivo', methods=['POST'])
 @jwt_required()
