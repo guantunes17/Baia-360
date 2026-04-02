@@ -67,6 +67,7 @@ interface Conversa {
   msgs: Msg[]
   history: any[]
   criadaEm: Date
+  pinned?: boolean
 }
 
 function gerarId() { return Math.random().toString(36).slice(2, 10) }
@@ -77,7 +78,8 @@ function novaConversa(): Conversa {
     titulo: 'Nova conversa',
     msgs: [{ role: 'note', text: 'Atlas pronto. Como posso ajudar?' }],
     history: [],
-    criadaEm: new Date()
+    criadaEm: new Date(),
+    pinned: false
   }
 }
 
@@ -119,6 +121,55 @@ const IconScrollDown = () => (
     <path d="M8 3v10M4 9l4 4 4-4"/>
   </svg>
 )
+
+const IconSearch = () => <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="7" cy="7" r="4"/><path d="M11 11l3 3"/></svg>
+const IconPin = () => <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2l5 5-2 2-2-1-3 3v2H5l-2-2v-2l3-3-1-2z"/><path d="M2 14l3-3"/></svg>
+const IconDownload = () => <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/></svg>
+
+// ── Agrupador de conversas por data ───────────────────────────────────────
+function agruparConversas(conversas: Conversa[], busca: string) {
+  const agora = new Date()
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate())
+  const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1)
+  const set7 = new Date(hoje); set7.setDate(set7.getDate() - 7)
+
+  const filtradas = busca.trim()
+    ? conversas.filter(c => c.titulo.toLowerCase().includes(busca.toLowerCase()))
+    : conversas
+
+  const pinned = filtradas.filter(c => c.pinned)
+  const resto = filtradas.filter(c => !c.pinned)
+
+  const grupos: { label: string; items: Conversa[] }[] = []
+  if (pinned.length > 0) grupos.push({ label: 'Fixadas', items: pinned })
+
+  const todasHoje = resto.filter(c => new Date(c.criadaEm) >= hoje)
+  const todasOntem = resto.filter(c => { const d = new Date(c.criadaEm); return d >= ontem && d < hoje })
+  const todas7 = resto.filter(c => { const d = new Date(c.criadaEm); return d >= set7 && d < ontem })
+  const maisAntigas = resto.filter(c => new Date(c.criadaEm) < set7)
+
+  if (todasHoje.length > 0) grupos.push({ label: 'Hoje', items: todasHoje })
+  if (todasOntem.length > 0) grupos.push({ label: 'Ontem', items: todasOntem })
+  if (todas7.length > 0) grupos.push({ label: 'Últimos 7 dias', items: todas7 })
+  if (maisAntigas.length > 0) grupos.push({ label: 'Mais antigas', items: maisAntigas })
+
+  return grupos
+}
+
+// ── Exportar conversa ─────────────────────────────────────────────────────
+function exportarConversa(conversa: Conversa) {
+  const linhas = conversa.msgs.map(m => {
+    if (m.role === 'user') return `**Você:** ${m.text}`
+    if (m.role === 'assistant') return `**Atlas:** ${m.text}`
+    return `_${m.text}_`
+  })
+  const conteudo = `# ${conversa.titulo}\n_${new Date(conversa.criadaEm).toLocaleString('pt-BR')}_\n\n---\n\n${linhas.join('\n\n')}`
+  const blob = new Blob([conteudo], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `${conversa.titulo.replace(/[^a-z0-9]/gi, '_')}.md`; a.click()
+  URL.revokeObjectURL(url)
+}
 
 // ── Botão ícone com tooltip ──────────────────────────────────────────────────
 function IcBtn({ onClick, tip, children, active, color }: {
@@ -172,11 +223,16 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [editandoTexto, setEditandoTexto] = useState('')
   const [copiadoIdx, setCopiadoIdx] = useState<number | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  // Grupo 2
+  const [busca, setBusca] = useState('')
+  const [renomeandoId, setRenomeandoId] = useState<string | null>(null)
+  const [renomeTitulo, setRenomeTitulo] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const fileContextoRef = useRef<HTMLInputElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const token = localStorage.getItem('token') || ''
 
   const SYSTEM_PROMPT = `Você é o Atlas, assistente de inteligência artificial da Baia 4 Logística e Transportes.
@@ -244,6 +300,37 @@ Sobre busca na internet:
 
   const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  // Foca no input de rename quando abre
+  useEffect(() => {
+    if (renomeandoId) setTimeout(() => renameInputRef.current?.focus(), 50)
+  }, [renomeandoId])
+
+  // ── Grupo 2: Pin, Rename, Export ─────────────────────────────────────────
+  const togglePin = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setConversas(prev => prev.map(c => c.id === id ? { ...c, pinned: !c.pinned } : c))
+  }
+
+  const iniciarRename = (c: Conversa, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setRenomeandoId(c.id)
+    setRenomeTitulo(c.titulo)
+  }
+
+  const confirmarRename = (e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    if (!renomeandoId) return
+    const titulo = renomeTitulo.trim() || 'Nova conversa'
+    setConversas(prev => prev.map(c => c.id === renomeandoId ? { ...c, titulo } : c))
+    setRenomeandoId(null)
+    setRenomeTitulo('')
+  }
+
+  const handleRenameKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') confirmarRename()
+    if (e.key === 'Escape') { setRenomeandoId(null); setRenomeTitulo('') }
   }
 
   const updateConversa = useCallback((id: string, fn: (c: Conversa) => Conversa) => {
@@ -595,43 +682,97 @@ Sobre busca na internet:
     if (e.key === 'Escape' && loading) { stopGeneration() }
   }
 
+  const grupos = agruparConversas(conversas, busca)
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden', height: '100%' }}>
 
       {/* Sidebar */}
       <div style={{ width: 240, background: '#13161f', borderRight: '1px solid #2d3148', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-        <div style={{ padding: '12px 12px 8px' }}>
-          <button
-            onClick={criarNovaConversa}
-            style={{ width: '100%', padding: '9px 14px', borderRadius: 8, background: '#4f8ef711', border: '1px solid #4f8ef733', color: '#4f8ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}
-          >
+
+        {/* Busca */}
+        <div style={{ padding: '10px 10px 0', position: 'relative' }}>
+          <div style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', color: '#8892a4', pointerEvents: 'none', display: 'flex' }}>
+            <IconSearch />
+          </div>
+          <input
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar conversas..."
+            style={{ width: '100%', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, padding: '6px 10px 6px 28px', fontSize: 12, color: '#e2e8f0', outline: 'none', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* Nova conversa */}
+        <div style={{ padding: '8px 10px' }}>
+          <button onClick={criarNovaConversa} style={{ width: '100%', padding: '9px 14px', borderRadius: 8, background: '#4f8ef711', border: '1px solid #4f8ef733', color: '#4f8ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
             <span style={{ fontSize: 16 }}>+</span> Nova conversa
           </button>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 12px' }}>
-          {conversas.map(c => (
-            <div
-              key={c.id}
-              onClick={() => { setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null); setArquivoContexto(null) }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                padding: '8px 10px', borderRadius: 7, marginBottom: 2,
-                background: c.id === ativaId ? '#1a1d27' : 'transparent',
-                border: c.id === ativaId ? '1px solid #2d3148' : '1px solid transparent',
-                cursor: 'pointer'
-              }}
-            >
-              <span style={{ flex: 1, fontSize: 12, color: c.id === ativaId ? '#e2e8f0' : '#8892a4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                🤖 {c.titulo}
-              </span>
-              <button
-                onClick={e => deletarConversa(c.id, e)}
-                style={{ flexShrink: 0, width: 18, height: 18, borderRadius: 4, background: 'none', border: 'none', color: '#8892a4', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity .15s' }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
-                title="Deletar conversa"
-              >✕</button>
+
+        {/* Lista agrupada */}
+        <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8 }}>
+          {grupos.length === 0 && (
+            <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: 12, color: '#8892a455' }}>
+              Nenhuma conversa encontrada
+            </div>
+          )}
+          {grupos.map(grupo => (
+            <div key={grupo.label}>
+              <div style={{ fontSize: 10, fontWeight: 500, color: '#8892a4', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 12px 4px' }}>
+                {grupo.label === 'Fixadas' ? '📌 Fixadas' : grupo.label}
+              </div>
+              {grupo.items.map(c => (
+                <div
+                  key={c.id}
+                  onClick={() => { if (renomeandoId === c.id) return; setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null); setArquivoContexto(null) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', borderRadius: 7, margin: '1px 8px', background: c.id === ativaId ? '#1a1d27' : 'transparent', border: c.id === ativaId ? '0.5px solid #2d3148' : '0.5px solid transparent', cursor: 'pointer', position: 'relative' }}
+                  onMouseEnter={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '1' }}
+                  onMouseLeave={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '0' }}
+                >
+                  {renomeandoId === c.id ? (
+                    <>
+                      <input
+                        ref={renameInputRef}
+                        value={renomeTitulo}
+                        onChange={e => setRenomeTitulo(e.target.value)}
+                        onKeyDown={handleRenameKey}
+                        onClick={e => e.stopPropagation()}
+                        style={{ flex: 1, background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 4, color: '#e2e8f0', fontSize: 12, padding: '2px 6px', outline: 'none', fontFamily: 'inherit' }}
+                      />
+                      <button onClick={confirmarRename} title="Confirmar"
+                        style={{ width: 18, height: 18, borderRadius: 4, background: 'none', border: 'none', color: '#8892a4', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color .12s' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#10b981'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+                      >✓</button>
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        style={{ flex: 1, fontSize: 12, color: c.id === ativaId ? '#e2e8f0' : '#8892a4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        onDoubleClick={e => iniciarRename(c, e)}
+                      >
+                        🤖 {c.titulo}
+                      </span>
+                      <div className="item-actions" style={{ display: 'flex', gap: 1, opacity: 0, transition: 'opacity .12s', flexShrink: 0 }}>
+                        <button onClick={e => togglePin(c.id, e)} title={c.pinned ? 'Desafixar' : 'Fixar'}
+                          style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: c.pinned ? '#f0b429' : '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <IconPin />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); exportarConversa(c) }} title="Exportar conversa"
+                          style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <IconDownload />
+                        </button>
+                        <button onClick={e => deletarConversa(c.id, e)} title="Deletar conversa"
+                          style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a4', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          ✕
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
             </div>
           ))}
         </div>
