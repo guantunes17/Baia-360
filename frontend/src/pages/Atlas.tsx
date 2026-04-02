@@ -174,6 +174,44 @@ function exportarConversa(conversa: Conversa) {
 const IconSettings = () => <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>
 const IconTokens = () => <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="10" width="3" height="4" rx="1"/><rect x="6.5" y="6" width="3" height="8" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>
 
+
+// ── Tool Badge melhorado ──────────────────────────────────────────────────
+function ToolBadge({ tool }: { tool: string }) {
+  const config: Record<string, { label: string; color: string; bg: string; border: string; icon: React.ReactNode }> = {
+    get_dashboard: {
+      label: 'Dashboard consultado',
+      color: '#4f8ef7', bg: '#4f8ef711', border: '#4f8ef733',
+      icon: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><ellipse cx="8" cy="5" rx="6" ry="2.5"/><path d="M2 5v6c0 1.38 2.69 2.5 6 2.5s6-1.12 6-2.5V5"/><path d="M2 8c0 1.38 2.69 2.5 6 2.5s6-1.12 6-2.5"/></svg>
+    },
+    gerar_relatorio: {
+      label: 'Relatório gerado',
+      color: '#10b981', bg: '#10b98111', border: '#10b98133',
+      icon: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M8 6v4M6 8h4"/></svg>
+    },
+    google_search: {
+      label: 'Pesquisa na web',
+      color: '#f0b429', bg: '#f0b42911', border: '#f0b42933',
+      icon: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 2c-2 2-3 4-3 6s1 4 3 6"/><path d="M8 2c2 2 3 4 3 6s-1 4-3 6"/><path d="M2 8h12"/></svg>
+    },
+    get_agenda: {
+      label: 'Agenda consultada',
+      color: '#a78bfa', bg: '#7c3aed11', border: '#7c3aed33',
+      icon: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 7h12M5 1v4M11 1v4"/></svg>
+    },
+    criar_evento: {
+      label: 'Evento criado',
+      color: '#a78bfa', bg: '#7c3aed11', border: '#7c3aed33',
+      icon: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 7h12M5 1v4M11 1v4M8 10v-2M7 10h2"/></svg>
+    },
+  }
+  const c = config[tool] || { label: tool, color: '#8892a4', bg: '#8892a411', border: '#8892a433', icon: null }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '3px 10px', borderRadius: 6, background: c.bg, border: `0.5px solid ${c.border}`, color: c.color, marginBottom: 6 }}>
+      {c.icon}{c.label}
+    </span>
+  )
+}
+
 // ── Botão ícone com tooltip ──────────────────────────────────────────────────
 function IcBtn({ onClick, tip, children, active, color }: {
   onClick?: () => void
@@ -238,6 +276,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [memorias, setMemorias] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('atlas_memorias') || '[]') } catch { return [] } })
   const [novaMemoria, setNovaMemoria] = useState('')
   const [tokenCount, setTokenCount] = useState(0)
+  const [modeloSelecionado, setModeloSelecionado] = useState<string>(() => localStorage.getItem('atlas_modelo') || 'gemini-2.5-flash')
   const bottomRef = useRef<HTMLDivElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -354,6 +393,7 @@ Sobre busca na internet:
     localStorage.setItem('atlas_temp', temperatura.toString())
     localStorage.setItem('atlas_instrucoes', instrucoes)
     localStorage.setItem('atlas_memorias', JSON.stringify(memorias))
+    localStorage.setItem('atlas_modelo', modeloSelecionado)
     setPainelConfig(false)
   }
 
@@ -537,7 +577,7 @@ Sobre busca na internet:
     const instrucoesSuffix = instrucoes.trim() ? `\n\nInstruções do usuário:\n${instrucoes}` : ''
     const memoriasSuffix = memorias.length > 0 ? `\n\nFatos que o usuário quer que você lembre:\n${memorias.map(m => `- ${m}`).join('\n')}` : ''
     const base = {
-      model: 'gemini-2.5-flash',
+      model: modeloSelecionado,
       temperature: temperatura,
       system_prompt: SYSTEM_PROMPT + modoSuffix + instrucoesSuffix + memoriasSuffix,
       tools: activeTools
@@ -934,6 +974,21 @@ Sobre busca na internet:
               </div>
               <span style={{ fontSize: 11, fontWeight: 500, color: '#e2e8f0', minWidth: 90, textAlign: 'right' }}>~{tokenCount.toLocaleString('pt-BR')} / 10.000</span>
             </div>
+          </div>
+
+          {/* Seleção de modelo */}
+          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Modelo de IA</div>
+            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Escolha o modelo usado pelo Atlas. Modelos mais avançados podem ser mais lentos.</div>
+            <select
+              value={modeloSelecionado}
+              onChange={e => setModeloSelecionado(e.target.value)}
+              style={{ width: '100%', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, color: '#e2e8f0', fontSize: 12, padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash — Rápido e eficiente</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro — Mais capaz, mais lento</option>
+            </select>
+            <div style={{ marginTop: 8, fontSize: 11, color: '#8892a455' }}>Modelos adicionais disponíveis após ativação do billing.</div>
           </div>
 
           <button onClick={salvarConfig} style={{ padding: '9px 20px', borderRadius: 8, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}>

@@ -42,6 +42,14 @@ jwt = JWTManager(app)
 
 
 # ── Model ─────────────────────────────────────────────────────────────────────
+class AtlasLog(db.Model):
+    __tablename__ = 'atlas_logs'
+    id          = db.Column(db.Integer, primary_key=True)
+    usuario_id  = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    primeira_msg = db.Column(db.String(200), nullable=True)
+    total_msgs  = db.Column(db.Integer, default=0)
+    criado_em   = db.Column(db.DateTime, default=datetime.utcnow)
+
 class User(db.Model):
     __tablename__ = 'users'
     id         = db.Column(db.Integer, primary_key=True)
@@ -1490,6 +1498,44 @@ def atlas_dashboard_data():
             'kpis_por_modulo': kpis_por_modulo,
             'historico':       historico_list
         }), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+@app.route('/api/atlas/log_conversas', methods=['GET'])
+@jwt_required()
+def atlas_log_conversas():
+    """Log de conversas do Atlas — apenas admins."""
+    usuario_id = get_jwt_identity()
+    usuario = User.query.get(usuario_id)
+    if not usuario or usuario.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    try:
+        # Busca os últimos 50 logs de conversas
+        logs = (
+            db.session.query(
+                AtlasLog.id,
+                AtlasLog.usuario_id,
+                AtlasLog.primeira_msg,
+                AtlasLog.total_msgs,
+                AtlasLog.criado_em,
+                User.nome.label('usuario_nome')
+            )
+            .join(User, AtlasLog.usuario_id == User.id)
+            .order_by(AtlasLog.criado_em.desc())
+            .limit(50)
+            .all()
+        )
+
+        return jsonify([{
+            'id': l.id,
+            'usuario': l.usuario_nome,
+            'primeira_msg': l.primeira_msg,
+            'total_msgs': l.total_msgs,
+            'criado_em': l.criado_em.isoformat()
+        } for l in logs]), 200
 
     except Exception as e:
         import traceback; traceback.print_exc()

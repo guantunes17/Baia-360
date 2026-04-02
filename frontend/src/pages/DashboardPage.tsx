@@ -51,6 +51,46 @@ function formatarValor(chave: string, valor: any): string {
   return String(valor)
 }
 
+function AtlasLogCard() {
+  const [logs, setLogs] = useState<any[]>([])
+
+  useEffect(() => {
+    axios.get(`${API}/api/atlas/log_conversas`, { headers: headers() })
+      .then(r => setLogs(r.data))
+      .catch(() => {})
+  }, [])
+
+  if (logs.length === 0) return null
+
+  return (
+    <Card className="mt-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
+      <CardHeader>
+        <CardTitle className="text-base font-semibold" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #7c3aed' }}>
+          Log de conversas — Atlas
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {logs.map((l: any) => (
+            <div key={l.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: '#0f1117' }}>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium" style={{ color: '#e2e8f0', minWidth: 70 }}>{l.usuario}</span>
+                <span className="text-xs" style={{ color: '#8892a4' }}>{l.primeira_msg}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#2d3148', color: '#8892a4' }}>{l.total_msgs} msgs</span>
+                <span className="text-xs" style={{ color: '#8892a455' }}>
+                  {new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function DashboardPage() {
   const [porModulo,      setPorModulo]      = useState<PorModulo[]>([])
   const [porMes,         setPorMes]         = useState<PorMes[]>([])
@@ -58,8 +98,10 @@ export function DashboardPage() {
   const [kpisPorModulo,  setKpisPorModulo]  = useState<Record<string, KpiModulo>>({})
   const [loading,        setLoading]        = useState(true)
   const [erro,           setErro]           = useState('')
+  const [isAdmin,        setIsAdmin]        = useState(false)
 
   useEffect(() => {
+    try { const u = JSON.parse(localStorage.getItem('usuario') || '{}'); setIsAdmin(u.perfil === 'admin') } catch {}
     const carregar = async () => {
       try {
         const res = await axios.get(`${API}/api/dashboard`, { headers: headers() })
@@ -277,6 +319,9 @@ export function DashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Log Atlas — apenas admin */}
+          {isAdmin && <AtlasLogCard />}
         </>
       )}
     </div>
