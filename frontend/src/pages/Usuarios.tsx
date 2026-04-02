@@ -167,97 +167,55 @@ export function Usuarios() {
       {erro && <p className="text-red-400 mb-4">{erro}</p>}
 
       {/* Tabela */}
-      <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#2d3148' }}>
-        <Table>
-          <TableHeader>
-            <TableRow style={{ background: '#13161f', borderColor: '#2d3148' }}>
-              <TableHead style={{ color: '#8892a4' }}>Nome</TableHead>
-              <TableHead style={{ color: '#8892a4' }}>Email</TableHead>
-              <TableHead style={{ color: '#8892a4' }}>Perfil</TableHead>
-              <TableHead style={{ color: '#8892a4' }}>Status</TableHead>
-              <TableHead style={{ color: '#8892a4' }}>Criado em</TableHead>
-              <TableHead style={{ color: '#8892a4' }}></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8" style={{ color: '#8892a4' }}>
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            ) : usuarios.map(u => (
-              <TableRow key={u.id} style={{ borderColor: '#2d3148', background: '#1a1d27' }}>
-                <TableCell className="font-medium" style={{ color: '#e2e8f0' }}>{u.nome}</TableCell>
-                <TableCell style={{ color: '#8892a4' }}>{u.email}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    style={{
-                      borderColor: u.perfil === 'admin' ? '#4f8ef7' : '#2d3148',
-                      color: u.perfil === 'admin' ? '#4f8ef7' : '#8892a4',
-                    }}
-                  >
-                    {u.perfil}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    style={{
-                      borderColor: u.ativo ? '#10b981' : '#ef4444',
-                      color: u.ativo ? '#10b981' : '#ef4444',
-                    }}
-                  >
-                    {u.ativo ? 'Ativo' : 'Inativo'}
-                  </Badge>
-                </TableCell>
-                <TableCell style={{ color: '#8892a4' }}>
-                  {new Date(u.criado_em).toLocaleDateString('pt-BR')}
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" style={{ color: '#8892a4' }}>
-                        ···
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      style={{ background: '#1a1d27', borderColor: '#2d3148' }}
-                    >
-                      <DropdownMenuItem
-                        onClick={() => abrirEditar(u)}
-                        style={{ color: '#e2e8f0', cursor: 'pointer' }}
-                      >
-                        ✏️ Editar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => { setUsuarioSenha(u); setModalSenha(true) }}
-                        style={{ color: '#e2e8f0', cursor: 'pointer' }}
-                      >
-                        🔑 Redefinir Senha
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => toggleAtivo(u)}
-                        style={{ color: u.ativo ? '#ef4444' : '#10b981', cursor: 'pointer' }}
-                      >
-                        {u.ativo ? '🚫 Desativar' : '✅ Ativar'}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => { setUsuarioDeletar(u); setModalDeletar(true) }}
-                        style={{ color: '#ef4444', cursor: 'pointer' }}
-                      >
-                        🗑️ Deletar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#2d3148', background: '#1a1d27' }}>
+              {loading ? (
+                <div style={{ padding: '32px 16px', textAlign: 'center', color: '#8892a4', fontSize: 13 }}>Carregando...</div>
+              ) : (
+                <div style={{ padding: '0 16px' }}>
+                  {usuarios.map(u => {
+                    const iniciais = (() => {
+                      const partes = u.nome.trim().split(' ')
+                      if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase()
+                      return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+                    })()
+                    const isAdmin    = u.perfil === 'admin'
+                    const avatarColor = !u.ativo ? '#8892a4' : isAdmin ? '#4f8ef7' : '#10b981'
+                    const avatarBg    = !u.ativo ? '#8892a422' : isAdmin ? '#4f8ef722' : '#10b98122'
+                    return (
+                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '0.5px solid #2d3148' }}>
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: avatarBg, border: `0.5px solid ${avatarColor}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: avatarColor, flexShrink: 0 }}>
+                          {iniciais}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#e2e8f0' }}>{u.nome}</div>
+                          <div style={{ fontSize: 11, color: '#8892a4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#8892a4', flexShrink: 0 }}>
+                          {new Date(u.criado_em).toLocaleDateString('pt-BR')}
+                        </div>
+                        <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: isAdmin ? '#4f8ef722' : '#8892a422', color: isAdmin ? '#4f8ef7' : '#8892a4', border: `0.5px solid ${isAdmin ? '#4f8ef744' : '#8892a444'}`, flexShrink: 0 }}>
+                          {isAdmin ? 'Admin' : 'Usuário'}
+                        </span>
+                        <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: u.ativo ? '#10b98122' : '#ef444422', color: u.ativo ? '#10b981' : '#ef4444', border: `0.5px solid ${u.ativo ? '#10b98144' : '#ef444444'}`, flexShrink: 0 }}>
+                          {u.ativo ? 'Ativo' : 'Inativo'}
+                        </span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" style={{ color: '#8892a4', flexShrink: 0 }}>···</Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
+                            <DropdownMenuItem onClick={() => abrirEditar(u)} style={{ color: '#e2e8f0', cursor: 'pointer' }}>✏️ Editar</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setUsuarioSenha(u); setModalSenha(true) }} style={{ color: '#e2e8f0', cursor: 'pointer' }}>🔑 Redefinir Senha</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toggleAtivo(u)} style={{ color: u.ativo ? '#ef4444' : '#10b981', cursor: 'pointer' }}>{u.ativo ? '🚫 Desativar' : '✅ Ativar'}</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setUsuarioDeletar(u); setModalDeletar(true) }} style={{ color: '#ef4444', cursor: 'pointer' }}>🗑️ Deletar</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
       {/* Modal Criar/Editar */}
       <Dialog open={modalAberto} onOpenChange={setModalAberto}>

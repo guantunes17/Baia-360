@@ -217,12 +217,17 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario }: { usu
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setPaginaAtiva('perfil')}
-                  className="text-sm"
-                  style={{ color: '#8892a4', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = '#e2e8f0')}
-                  onMouseLeave={e => (e.currentTarget.style.color = '#8892a4')}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
                 >
-                  👤 {usuario.nome}
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f8ef722', border: '1px solid #4f8ef744', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#4f8ef7' }}>
+                    {(usuario.nome.trim().split(' ').length === 1
+                      ? usuario.nome.slice(0, 2)
+                      : usuario.nome.trim().split(' ')[0][0] + usuario.nome.trim().split(' ').slice(-1)[0][0]
+                    ).toUpperCase()}
+                  </div>
+                  <span style={{ fontSize: 13, color: '#8892a4' }}>{usuario.nome.split(' ')[0]}</span>
                 </button>
                 <Button
                   variant="outline"
