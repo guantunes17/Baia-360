@@ -262,6 +262,16 @@ export default function App() {
   })
   const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas'>('hub')
 
+  // Desloga automaticamente ao fechar o app
+  useEffect(() => {
+    const handleClose = () => {
+      localStorage.removeItem('token')
+      localStorage.removeItem('usuario')
+    }
+    window.addEventListener('beforeunload', handleClose)
+    return () => window.removeEventListener('beforeunload', handleClose)
+  }, [])
+
   const handleLogin  = (u: Usuario) => { setUsuario(u); setTela('hub') }
 const handleLogout = () => {
   localStorage.removeItem('token')
