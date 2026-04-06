@@ -28,7 +28,9 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import os
 
-load_dotenv()
+from pathlib import Path
+_env_path = Path(__file__).resolve().parent / '.env'
+load_dotenv(dotenv_path=_env_path, override=True)
 
 app = Flask(__name__)
 app.config['SECRET_KEY']                     = os.getenv('SECRET_KEY')
@@ -1121,267 +1123,181 @@ def atualizar_perfil():
     db.session.commit()
     return jsonify(user.to_dict()), 200
 
-import google.generativeai as genai
-from google import genai as genai_new
-from google.genai import types as genai_types
+from openai import OpenAI
 import json
 
 @app.route('/api/atlas/chat', methods=['POST'])
 @jwt_required()
 def atlas_chat():
     data          = request.get_json()
-    api_key       = os.getenv('GEMINI_API_KEY', '').strip()
-    model_id      = data.get('model', 'gemini-2.5-flash')
+    api_key       = os.getenv('OPENAI_API_KEY', '').strip()
+    model_id      = data.get('model', 'gpt-5.4-mini')
     history       = data.get('history', [])
     tools_def     = data.get('tools', [])
     temp          = float(data.get('temperature', 1.0))
     system_prompt = data.get('system_prompt', '')
 
     if not api_key:
-        return jsonify({'erro': 'GEMINI_API_KEY não configurada no servidor'}), 500
+        return jsonify({'erro': 'OPENAI_API_KEY não configurada no servidor'}), 500
 
     try:
-        client = genai_new.Client(api_key=api_key)
+        client = OpenAI(api_key=api_key)
 
-        def converter_contents(history):
-            contents = []
+        # ── Converter histórico do formato interno para Responses API ─────────
+        def converter_input(history):
+            input_list = []
             for m in history:
-                parts = []
-                for p in m.get('parts', []):
+                role = 'assistant' if m['role'] == 'model' else m['role']
+                parts = m.get('parts', [])
+
+                # Mensagem de tool result (role=user com functionResponse)
+                fn_responses = [p for p in parts if 'functionResponse' in p]
+                if fn_responses:
+                    for fr in fn_responses:
+                        input_list.append({
+                            'type': 'function_call_output',
+                            'call_id': fr['functionResponse'].get('call_id', fr['functionResponse']['name']),
+                            'output': json.dumps(fr['functionResponse']['response'], ensure_ascii=False)
+                        })
+                    continue
+
+                # Mensagem de function call (role=assistant com functionCall)
+                fn_calls = [p for p in parts if 'functionCall' in p]
+                if fn_calls:
+                    for fc in fn_calls:
+                        input_list.append({
+                            'type': 'function_call',
+                            'call_id': fc['functionCall'].get('call_id', fc['functionCall']['name']),
+                            'name': fc['functionCall']['name'],
+                            'arguments': json.dumps(fc['functionCall'].get('args', {}), ensure_ascii=False)
+                        })
+                    continue
+
+                # Mensagem normal (texto e/ou arquivo)
+                content = []
+                for p in parts:
                     if 'text' in p:
-                        parts.append(genai_types.Part(text=p['text']))
+                        # user → input_text | assistant (model) → output_text
+                        text_type = 'output_text' if role == 'assistant' else 'input_text'
+                        content.append({'type': text_type, 'text': p['text']})
                     elif 'file_data' in p:
-                        parts.append(genai_types.Part(
-                            file_data=genai_types.FileData(
-                                mime_type=p['file_data']['mime_type'],
-                                file_uri=p['file_data']['file_uri']
-                            )
-                        ))
-                    elif 'functionCall' in p:
-                        parts.append(genai_types.Part(
-                            function_call=genai_types.FunctionCall(
-                                name=p['functionCall']['name'],
-                                args=p['functionCall']['args']
-                            )
-                        ))
-                    elif 'functionResponse' in p:
-                        parts.append(genai_types.Part(
-                            function_response=genai_types.FunctionResponse(
-                                name=p['functionResponse']['name'],
-                                response=p['functionResponse']['response']
-                            )
-                        ))
-                role = 'model' if m['role'] == 'model' else 'user'
-                contents.append(genai_types.Content(role=role, parts=parts))
-            return contents
+                        content.append({'type': 'input_file', 'file_id': p['file_data']['file_id']})
 
-        def build_declarations(tools_def):
-            declarations = []
+                if content:
+                    input_list.append({'role': role, 'content': content})
+
+            return input_list
+
+        # ── Converter tools para formato OpenAI (com Structured Outputs) ─────
+        def build_tools(tools_def):
+            tools = []
             for t in tools_def:
-                params = t.get('parameters', {})
-                properties = {}
-                for prop_name, prop_def in params.get('properties', {}).items():
-                    properties[prop_name] = genai_types.Schema(
-                        type=genai_types.Type.STRING,
-                        description=prop_def.get('description', '')
-                    )
-                schema = genai_types.Schema(
-                    type=genai_types.Type.OBJECT,
-                    properties=properties,
-                    required=params.get('required', [])
+                params = t.get('parameters', {'type': 'object', 'properties': {}})
+                # Adiciona additionalProperties: false exigido pelo strict mode
+                params = {**params, 'additionalProperties': False}
+                tools.append({
+                    'type': 'function',
+                    'name': t['name'],
+                    'description': t.get('description', ''),
+                    'parameters': params,
+                    'strict': True
+                })
+            return tools
+
+        input_list        = converter_input(history)
+        openai_tools      = build_tools(tools_def) if tools_def else []
+        reasoning_effort  = data.get('reasoning_effort', 'medium')
+        use_code_interp   = data.get('code_interpreter', False)
+        previous_resp_id  = data.get('previous_response_id', None)
+
+        # ── Chamada à Responses API com streaming SSE ─────────────────────────
+        def generate():
+            try:
+                # Tools: funções customizadas + web_search + code_interpreter
+                all_tools = []
+                if openai_tools:
+                    all_tools.extend(openai_tools)
+                all_tools.append({'type': 'web_search_preview'})
+                if use_code_interp:
+                    all_tools.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
+
+                kwargs = dict(
+                    model=model_id,
+                    input=input_list,
+                    instructions=system_prompt or None,
+                    temperature=temp,
+                    tools=all_tools,
+                    stream=True,
+                    reasoning={'effort': reasoning_effort},
+                    store=True,
                 )
-                declarations.append(genai_types.FunctionDeclaration(
-                    name=t['name'],
-                    description=t.get('description', ''),
-                    parameters=schema
-                ))
-            return declarations
+                if previous_resp_id:
+                    kwargs['previous_response_id'] = previous_resp_id
 
-        contents = converter_contents(history)
+                stream = client.responses.create(**kwargs)
 
-        # ── Chamada 1: Router — google_search apenas ──────────────────────────
-        router_system = system_prompt + """
+                text_buffer = ''
+                fn_calls_buffer = {}   # call_id → {name, arguments}
 
-INSTRUÇÃO ESPECIAL DE ROTEAMENTO:
-Antes de responder, classifique internamente o que o usuário precisa:
-- Se precisar de dados internos da operação (KPIs, relatórios, dashboard, faturamento, SLA, estoque, gerar relatório, agenda) → responda EXATAMENTE com: USAR_FUNCTION_CALLING
-- Se precisar de informações atuais da internet (cotações, notícias, eventos recentes, dados externos) → use o google_search e responda normalmente
-- Para qualquer outra pergunta → responda normalmente sem busca
+                for event in stream:
+                    etype = event.type
 
-Responda APENAS com USAR_FUNCTION_CALLING quando for o caso, sem nenhuma outra palavra."""
+                    # Chunk de texto chegando
+                    if etype == 'response.output_text.delta':
+                        delta = event.delta or ''
+                        text_buffer += delta
+                        yield f"data: {json.dumps({'type': 'text_delta', 'delta': delta})}\n\n"
 
-        config_router = genai_types.GenerateContentConfig(
-            system_instruction=router_system,
-            tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
-            temperature=temp
-        )
+                    # Início de function call
+                    elif etype == 'response.output_item.added':
+                        item = event.item
+                        if getattr(item, 'type', None) == 'function_call':
+                            fn_calls_buffer[item.call_id] = {'name': item.name, 'arguments': ''}
 
-        response1 = client.models.generate_content(
-            model=model_id,
-            contents=contents,
-            config=config_router
-        )
+                    # Delta dos argumentos de function call
+                    elif etype == 'response.function_call_arguments.delta':
+                        if fn_calls_buffer:
+                            call_id = list(fn_calls_buffer.keys())[-1]
+                            fn_calls_buffer[call_id]['arguments'] += (event.delta or '')
 
-        texto1 = ''
-        for part in response1.candidates[0].content.parts:
-            if part.text:
-                texto1 += part.text
+                    # Function call completa
+                    elif etype == 'response.output_item.done':
+                        item = event.item
+                        if getattr(item, 'type', None) == 'function_call':
+                            call_id = item.call_id
+                            try:
+                                args = json.loads(item.arguments or '{}')
+                            except Exception:
+                                args = {}
+                            fn_calls_buffer[call_id] = {'name': item.name, 'arguments': item.arguments}
+                            yield f"data: {json.dumps({'type': 'function_call', 'call_id': call_id, 'name': item.name, 'args': args})}\n\n"
 
-        # ── Se o router decidiu usar function calling ─────────────────────────
-        if texto1.strip() == 'USAR_FUNCTION_CALLING':
-            declarations = build_declarations(tools_def)
-            fc_tools = [genai_types.Tool(function_declarations=declarations)] if declarations else []
+                    # Resposta completa — retorna response_id para conversation state
+                    elif etype == 'response.completed':
+                        resp_id = getattr(event.response, 'id', None)
+                        yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id})}\n\n"
 
-            config_fc = genai_types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                tools=fc_tools or None,
-                temperature=temp
-            )
+                    elif etype == 'error':
+                        yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
 
-            response2 = client.models.generate_content(
-                model=model_id,
-                contents=contents,
-                config=config_fc
-            )
+                    # Todos os outros eventos ignorados silenciosamente
+                    # (web search, content parts, response.in_progress, etc.)
 
-            parts_out = []
-            for part in response2.candidates[0].content.parts:
-                if part.text:
-                    parts_out.append({'text': part.text})
-                elif part.function_call:
-                    parts_out.append({'functionCall': {
-                        'name': part.function_call.name,
-                        'args': dict(part.function_call.args)
-                    }})
-            return jsonify({'parts': parts_out}), 200
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                msg = str(e)
+                if '429' in msg or 'quota' in msg.lower() or 'rate_limit' in msg.lower():
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'cota_openai'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
 
-        # ── Resposta direta (texto ou web search já processado) ───────────────
-        parts_out = []
-        for part in response1.candidates[0].content.parts:
-            if part.text:
-                parts_out.append({'text': part.text})
-            elif part.function_call:
-                parts_out.append({'functionCall': {
-                    'name': part.function_call.name,
-                    'args': dict(part.function_call.args)
-                }})
-
-        return jsonify({'parts': parts_out}), 200
+        return app.response_class(generate(), mimetype='text/event-stream',
+                                   headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        msg = str(e)
-        if '429' in msg or 'quota' in msg.lower() or 'resource_exhausted' in msg.lower():
-            return jsonify({'erro': 'cota_gemini'}), 429
-        return jsonify({'erro': msg}), 500
-    
-@app.route('/api/atlas/chat/tool_response', methods=['POST'])
-@jwt_required()
-def atlas_tool_response():
-    data          = request.get_json()
-    api_key       = os.getenv('GEMINI_API_KEY', '').strip()
-    model_id      = data.get('model', 'gemini-2.5-flash')
-    history       = data.get('history', [])
-    tools_def     = data.get('tools', [])
-    temp          = float(data.get('temperature', 1.0))
-    system_prompt = data.get('system_prompt', '')
+        return jsonify({'erro': str(e)}), 500
 
-    if not api_key:
-        return jsonify({'erro': 'GEMINI_API_KEY não configurada no servidor'}), 500
-
-    try:
-        client = genai_new.Client(api_key=api_key)
-
-        def converter_contents(history):
-            contents = []
-            for m in history:
-                parts = []
-                for p in m.get('parts', []):
-                    if 'text' in p:
-                        parts.append(genai_types.Part(text=p['text']))
-                    elif 'file_data' in p:
-                        parts.append(genai_types.Part(
-                            file_data=genai_types.FileData(
-                                mime_type=p['file_data']['mime_type'],
-                                file_uri=p['file_data']['file_uri']
-                            )
-                        ))
-                    elif 'functionCall' in p:
-                        parts.append(genai_types.Part(
-                            function_call=genai_types.FunctionCall(
-                                name=p['functionCall']['name'],
-                                args=p['functionCall']['args']
-                            )
-                        ))
-                    elif 'functionResponse' in p:
-                        parts.append(genai_types.Part(
-                            function_response=genai_types.FunctionResponse(
-                                name=p['functionResponse']['name'],
-                                response=p['functionResponse']['response']
-                            )
-                        ))
-                role = 'model' if m['role'] == 'model' else 'user'
-                contents.append(genai_types.Content(role=role, parts=parts))
-            return contents
-
-        def build_declarations(tools_def):
-            declarations = []
-            for t in tools_def:
-                params = t.get('parameters', {})
-                properties = {}
-                for prop_name, prop_def in params.get('properties', {}).items():
-                    properties[prop_name] = genai_types.Schema(
-                        type=genai_types.Type.STRING,
-                        description=prop_def.get('description', '')
-                    )
-                schema = genai_types.Schema(
-                    type=genai_types.Type.OBJECT,
-                    properties=properties,
-                    required=params.get('required', [])
-                )
-                declarations.append(genai_types.FunctionDeclaration(
-                    name=t['name'],
-                    description=t.get('description', ''),
-                    parameters=schema
-                ))
-            return declarations
-
-        contents = converter_contents(history)
-        declarations = build_declarations(tools_def)
-
-        # tool_response sempre continua o ciclo de function calling — sem google_search
-        fc_tools = [genai_types.Tool(function_declarations=declarations)] if declarations else None
-
-        config = genai_types.GenerateContentConfig(
-            system_instruction=system_prompt or None,
-            tools=fc_tools,
-            temperature=temp
-        )
-
-        response = client.models.generate_content(
-            model=model_id,
-            contents=contents,
-            config=config
-        )
-
-        parts_out = []
-        for part in response.candidates[0].content.parts:
-            if part.text:
-                parts_out.append({'text': part.text})
-            elif part.function_call:
-                parts_out.append({'functionCall': {
-                    'name': part.function_call.name,
-                    'args': dict(part.function_call.args)
-                }})
-
-        return jsonify({'parts': parts_out}), 200
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        msg = str(e)
-        if '429' in msg or 'quota' in msg.lower() or 'resource_exhausted' in msg.lower():
-            return jsonify({'erro': 'cota_gemini'}), 429
-        return jsonify({'erro': msg}), 500
 
 @app.route('/api/atlas/upload_arquivo', methods=['POST'])
 @jwt_required()
@@ -1393,14 +1309,12 @@ def atlas_upload_arquivo():
     nome = arquivo.filename or 'arquivo'
 
     extensoes_suportadas = {
-        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        '.xls': 'application/vnd.ms-excel',
-        '.pdf': 'application/pdf',
-        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.webp': 'image/webp',
+        '.xlsx', '.xls', '.csv',
+        '.pdf',
+        '.docx', '.doc', '.rtf',
+        '.pptx', '.ppt',
+        '.png', '.jpg', '.jpeg', '.webp', '.gif',
+        '.txt', '.md', '.json', '.html', '.xml',
     }
 
     import os as _os
@@ -1408,10 +1322,9 @@ def atlas_upload_arquivo():
     if ext not in extensoes_suportadas:
         return jsonify({'erro': f'Tipo de arquivo não suportado: {ext}'}), 400
 
-    mime = extensoes_suportadas[ext]
-    api_key = os.getenv('GEMINI_API_KEY', '').strip()
+    api_key = os.getenv('OPENAI_API_KEY', '').strip()
     if not api_key:
-        return jsonify({'erro': 'GEMINI_API_KEY não configurada'}), 500
+        return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
 
     try:
         import tempfile
@@ -1419,14 +1332,14 @@ def atlas_upload_arquivo():
         arquivo.save(tmp.name)
         tmp.close()
 
-        genai.configure(api_key=api_key)
-        uploaded = genai.upload_file(tmp.name, mime_type=mime, display_name=nome)
+        client = OpenAI(api_key=api_key)
+        with open(tmp.name, 'rb') as f:
+            uploaded = client.files.create(file=(nome, f), purpose='user_data')
 
         _deletar_temp(tmp.name)
 
         return jsonify({
-            'file_uri': uploaded.uri,
-            'mime_type': mime,
+            'file_id': uploaded.id,
             'nome': nome
         }), 200
 

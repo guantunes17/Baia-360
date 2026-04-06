@@ -56,8 +56,7 @@ interface ArquivoPendente {
 }
 
 interface ArquivoContexto {
-  file_uri: string
-  mime_type: string
+  file_id: string
   nome: string
 }
 
@@ -276,7 +275,10 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [memorias, setMemorias] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('atlas_memorias') || '[]') } catch { return [] } })
   const [novaMemoria, setNovaMemoria] = useState('')
   const [tokenCount, setTokenCount] = useState(0)
-  const [modeloSelecionado, setModeloSelecionado] = useState<string>(() => localStorage.getItem('atlas_modelo') || 'gemini-2.5-flash')
+  const [modeloSelecionado, setModeloSelecionado] = useState<string>(() => localStorage.getItem('atlas_modelo') || 'gpt-5.4-mini')
+  const [reasoningEffort, setReasoningEffort] = useState<string>(() => localStorage.getItem('atlas_reasoning') || 'medium')
+  const [codeInterpreter, setCodeInterpreter] = useState<boolean>(() => localStorage.getItem('atlas_code_interp') === 'true')
+  const [previousResponseId, setPreviousResponseId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -321,7 +323,9 @@ Sobre arquivos enviados pelo usuário:
 - Quando receber um arquivo, você TEM acesso ao conteúdo real dele — leia e analise de verdade, nunca diga que não consegue ler
 
 Sobre geração de relatórios operacionais:
-- Quando o usuário pedir para GERAR um relatório operacional (Pedidos, Fretes, etc.), use a ferramenta gerar_relatorio e informe que um botão aparecerá para enviar o arquivo Excel correspondente
+- Quando o usuário pedir para GERAR um relatório operacional (Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem), use IMEDIATAMENTE a ferramenta gerar_relatorio — nunca diga que não consegue gerar
+- Após usar a ferramenta, informe que um botão aparecerá na tela para o usuário enviar o arquivo Excel correspondente
+- Gerar relatório e analisar um arquivo são coisas distintas: gerar usa a ferramenta gerar_relatorio; analisar lê um arquivo enviado pelo usuário
 
 Sobre busca na internet:
 - Você TEM acesso à internet via Google Search — nunca diga que não consegue pesquisar
@@ -422,11 +426,7 @@ Sobre busca na internet:
     const nova = novaConversa()
     setConversas(prev => [nova, ...prev])
     setAtivaId(nova.id)
-    setInput('')
-    setUploadInfo(null)
-    setArquivoPendente(null)
-    setArquivoContexto(null)
-    inputRef.current?.focus()
+    setPreviousResponseId(null)
   }
 
   const deletarConversa = (id: string, e: React.MouseEvent) => {
@@ -549,7 +549,7 @@ Sobre busca na internet:
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.erro || 'Erro ao enviar arquivo')
-      setArquivoContexto({ file_uri: data.file_uri, mime_type: data.mime_type, nome: data.nome })
+      setArquivoContexto({ file_id: data.file_id, nome: data.nome })
     } catch (e: any) {
       addMsgToConversa(ativaId, { role: 'note', text: 'Erro ao enviar arquivo: ' + e.message })
     } finally {
@@ -580,7 +580,10 @@ Sobre busca na internet:
       model: modeloSelecionado,
       temperature: temperatura,
       system_prompt: SYSTEM_PROMPT + modoSuffix + instrucoesSuffix + memoriasSuffix,
-      tools: activeTools
+      tools: activeTools,
+      reasoning_effort: reasoningEffort,
+      code_interpreter: codeInterpreter,
+      previous_response_id: previousResponseId
     }
 
     // ── Fluxo com arquivo pendente para geração de relatório ──
@@ -661,95 +664,176 @@ Sobre busca na internet:
       titulo: c.titulo === 'Nova conversa' ? userMsgText.slice(0, 40) : c.titulo,
       msgs: [...c.msgs, { role: 'user', text: userMsgText, arquivo: ctx ? { nome: ctx.nome } : undefined }, { role: 'assistant', text: '', streaming: true }],
       history: [...c.history, { role: 'user', parts: ctx
-        ? [{ text: userPrompt }, { file_data: { mime_type: ctx.mime_type, file_uri: ctx.file_uri } }]
+        ? [{ text: userPrompt }, { file_data: { file_id: ctx.file_id } }]
         : [{ text: userPrompt }]
       }]
     }))
 
     const currentHistory = [...(conversa.history), { role: 'user', parts: ctx
-      ? [{ text: userPrompt }, { file_data: { mime_type: ctx.mime_type, file_uri: ctx.file_uri } }]
+      ? [{ text: userPrompt }, { file_data: { file_id: ctx.file_id } }]
       : [{ text: userPrompt }]
     }]
 
     try {
-      const res = await axios.post(`${API}/api/atlas/chat`,
-        { ...base, history: currentHistory },
-        { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal }
-      )
-      const finalParts: any[] = res.data.parts || []
-      const streamedText = finalParts.find((p: any) => p.text)?.text || ''
-
-      updateConversa(convId, c => {
-        const msgs = [...c.msgs]
-        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: streamedText, streaming: false }
-        return { ...c, msgs }
+      const res = await fetch(`${API}/api/atlas/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...base, history: currentHistory }),
+        signal: ctrl.signal
       })
 
-      const fnCalls = finalParts.filter((p: any) => p.functionCall)
-      const toolNames = fnCalls.map((p: any) => p.functionCall.name)
-      const newHistory = [...currentHistory, { role: 'model', parts: finalParts }]
-
-      if (fnCalls.length > 0) {
-        updateConversa(convId, c => {
-          const msgs = [...c.msgs]
-          msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: 'Consultando...', streaming: true, tools: toolNames }
-          return { ...c, msgs }
-        })
-
-        const gerarCall = fnCalls.find((p: any) => p.functionCall.name === 'gerar_relatorio')
-
-        if (gerarCall) {
-          const { modulo, mes_ref } = gerarCall.functionCall.args
-          setUploadInfo({ modulo, mes_ref })
-          const fnResponses = fnCalls.map((p: any) => ({
-            functionResponse: {
-              name: p.functionCall.name,
-              response: { result: { status: 'aguardando_arquivo', mensagem: `Aguardando upload do arquivo Excel para ${modulo} (${mes_ref}).` } }
-            }
-          }))
-          const h3 = [...newHistory, { role: 'user', parts: fnResponses }]
-          const data2 = await callBackend('/api/atlas/chat/tool_response', { ...base, history: h3 })
-          const parts2: any[] = data2.parts || []
-          updateConversa(convId, c => {
-            const msgs = [...c.msgs]
-            msgs[msgs.length - 1] = {
-              role: 'assistant',
-              text: parts2.find((p: any) => p.text)?.text || `Por favor, envie o arquivo Excel de **${modulo}** usando o botão abaixo.`,
-              tools: toolNames, streaming: false
-            }
-            return { ...c, msgs, history: [...h3, { role: 'model', parts: parts2 }] }
-          })
-        } else {
-          const fnResponses = await Promise.all(fnCalls.map(async (p: any) => {
-            const fn = p.functionCall
-            const handler = MOCK_RESPONSES[fn.name]
-            const result = handler ? await handler(fn.args || {}, token) : { erro: 'não implementado' }
-            return { functionResponse: { name: fn.name, response: { result } } }
-          }))
-          const h3 = [...newHistory, { role: 'user', parts: fnResponses }]
-          const data2 = await callBackend('/api/atlas/chat/tool_response', { ...base, history: h3 })
-          const parts2: any[] = data2.parts || []
-          updateConversa(convId, c => {
-            const msgs = [...c.msgs]
-            msgs[msgs.length - 1] = {
-              role: 'assistant',
-              text: parts2.find((p: any) => p.text)?.text || '(sem resposta)',
-              tools: toolNames, streaming: false
-            }
-            return { ...c, msgs, history: [...h3, { role: 'model', parts: parts2 }] }
-          })
-        }
-      } else {
-        updateConversa(convId, c => {
-          const msgs = [...c.msgs]
-          msgs[msgs.length - 1] = { role: 'assistant', text: streamedText || '(sem resposta)', streaming: false }
-          return { ...c, msgs, history: newHistory }
-        })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ erro: 'Erro desconhecido' }))
+        throw new Error(err.erro || 'Erro na requisição')
       }
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let streamedText = ''
+      const fnCallsColetados: { call_id: string; name: string; args: any }[] = []
+      let newHistory = [...currentHistory]
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const payload = line.slice(6).trim()
+          if (!payload) continue
+
+          let evt: any
+          try { evt = JSON.parse(payload) } catch { continue }
+
+          if (evt.type === 'text_delta') {
+            streamedText += evt.delta
+            updateConversa(convId, c => {
+              const msgs = [...c.msgs]
+              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: streamedText, streaming: true }
+              return { ...c, msgs }
+            })
+
+          } else if (evt.type === 'function_call') {
+            fnCallsColetados.push({ call_id: evt.call_id, name: evt.name, args: evt.args })
+            const toolNames = fnCallsColetados.map(f => f.name)
+            updateConversa(convId, c => {
+              const msgs = [...c.msgs]
+              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: 'Consultando...', streaming: true, tools: toolNames }
+              return { ...c, msgs }
+            })
+
+          } else if (evt.type === 'done') {
+            // Salva response_id para Conversation State (próxima mensagem não precisa mandar histórico)
+            if (evt.response_id) setPreviousResponseId(evt.response_id)
+            newHistory = [...currentHistory,
+              { role: 'model', parts: fnCallsColetados.length > 0
+                ? fnCallsColetados.map(f => ({ functionCall: { call_id: f.call_id, name: f.name, args: f.args } }))
+                : [{ text: streamedText }]
+              }
+            ]
+
+            if (fnCallsColetados.length > 0) {
+              const gerarCall = fnCallsColetados.find(f => f.name === 'gerar_relatorio')
+              const toolNames = fnCallsColetados.map(f => f.name)
+
+              if (gerarCall) {
+                const { modulo, mes_ref } = gerarCall.args
+                setUploadInfo({ modulo, mes_ref })
+                const fnResponses = fnCallsColetados.map(f => ({
+                  functionResponse: {
+                    call_id: f.call_id,
+                    name: f.name,
+                    response: { result: { status: 'aguardando_arquivo', mensagem: `Aguardando upload do arquivo Excel para ${modulo} (${mes_ref}).` } }
+                  }
+                }))
+                const h3 = [...newHistory, { role: 'user', parts: fnResponses }]
+
+                // Segunda chamada via SSE para tool_response
+                const res2 = await fetch(`${API}/api/atlas/chat`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                  body: JSON.stringify({ ...base, history: h3 })
+                })
+                const reader2 = res2.body!.getReader()
+                let buf2 = '', text2 = ''
+                while (true) {
+                  const { done: d2, value: v2 } = await reader2.read()
+                  if (d2) break
+                  buf2 += decoder.decode(v2, { stream: true })
+                  const lines2 = buf2.split('\n'); buf2 = lines2.pop() || ''
+                  for (const l2 of lines2) {
+                    if (!l2.startsWith('data: ')) continue
+                    try { const e2 = JSON.parse(l2.slice(6)); if (e2.type === 'done') text2 = e2.text } catch {}
+                  }
+                }
+                updateConversa(convId, c => {
+                  const msgs = [...c.msgs]
+                  msgs[msgs.length - 1] = {
+                    role: 'assistant',
+                    text: text2 || `Por favor, envie o arquivo Excel de **${modulo}** usando o botão abaixo.`,
+                    tools: toolNames, streaming: false
+                  }
+                  return { ...c, msgs, history: [...h3, { role: 'model', parts: [{ text: text2 }] }] }
+                })
+
+              } else {
+                const fnResponses = await Promise.all(fnCallsColetados.map(async f => {
+                  const handler = MOCK_RESPONSES[f.name]
+                  const result = handler ? await (handler as any)(f.args || {}, token) : { erro: 'não implementado' }
+                  return { functionResponse: { call_id: f.call_id, name: f.name, response: { result } } }
+                }))
+                const h3 = [...newHistory, { role: 'user', parts: fnResponses }]
+
+                const res2 = await fetch(`${API}/api/atlas/chat`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                  body: JSON.stringify({ ...base, history: h3 })
+                })
+                const reader2 = res2.body!.getReader()
+                let buf2 = '', text2 = ''
+                while (true) {
+                  const { done: d2, value: v2 } = await reader2.read()
+                  if (d2) break
+                  buf2 += decoder.decode(v2, { stream: true })
+                  const lines2 = buf2.split('\n'); buf2 = lines2.pop() || ''
+                  for (const l2 of lines2) {
+                    if (!l2.startsWith('data: ')) continue
+                    try { const e2 = JSON.parse(l2.slice(6)); if (e2.type === 'done') text2 = e2.text } catch {}
+                  }
+                }
+                updateConversa(convId, c => {
+                  const msgs = [...c.msgs]
+                  msgs[msgs.length - 1] = {
+                    role: 'assistant',
+                    text: text2 || '(sem resposta)',
+                    tools: toolNames, streaming: false
+                  }
+                  return { ...c, msgs, history: [...h3, { role: 'model', parts: [{ text: text2 }] }] }
+                })
+              }
+
+            } else {
+              updateConversa(convId, c => {
+                const msgs = [...c.msgs]
+                msgs[msgs.length - 1] = { role: 'assistant', text: streamedText || '(sem resposta)', streaming: false }
+                return { ...c, msgs, history: newHistory }
+              })
+            }
+          } else if (evt.type === 'error') {
+            throw new Error(evt.message)
+          }
+        }
+      }
+
     } catch (e: any) {
-      if (e.name === 'CanceledError' || e.name === 'AbortError') return
-      const rawErr = e.response?.data?.erro || e.message || 'Erro desconhecido'
-      const errMsg = rawErr === 'cota_gemini'
+      if (e.name === 'AbortError') return
+      const rawErr = e.message || 'Erro desconhecido'
+      const errMsg = rawErr === 'cota_openai'
         ? '⚠️ O limite de requisições do Atlas foi atingido. Tente novamente em alguns minutos.'
         : 'Erro: ' + rawErr
       updateConversa(convId, c => {
@@ -985,13 +1069,59 @@ Sobre busca na internet:
               onChange={e => setModeloSelecionado(e.target.value)}
               style={{ width: '100%', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, color: '#e2e8f0', fontSize: 12, padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
             >
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash — Rápido e eficiente</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro — Mais capaz, mais lento</option>
+              <option value="gpt-5.4-mini">GPT-5.4 mini — Rápido e eficiente</option>
+              <option value="gpt-5.4">GPT-5.4 — Máxima capacidade, mais lento</option>
             </select>
-            <div style={{ marginTop: 8, fontSize: 11, color: '#8892a455' }}>Modelos adicionais disponíveis após ativação do billing.</div>
+            <div style={{ marginTop: 8, fontSize: 11, color: '#8892a455' }}>GPT-5.4 consome mais créditos. Recomendado: GPT-5.4 mini para uso diário.</div>
           </div>
 
-          <button onClick={salvarConfig} style={{ padding: '9px 20px', borderRadius: 8, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}>
+          {/* Reasoning Effort */}
+          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Velocidade vs. Qualidade</div>
+            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Controla o esforço de raciocínio do modelo. Maior esforço = respostas mais precisas, porém mais lentas.</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[
+                { value: 'low', label: '⚡ Rápido', desc: 'Perguntas simples' },
+                { value: 'medium', label: '⚖️ Equilibrado', desc: 'Uso geral' },
+                { value: 'high', label: '🧠 Profundo', desc: 'Análises complexas' }
+              ].map(opt => (
+                <button key={opt.value} onClick={() => setReasoningEffort(opt.value)}
+                  style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 500, cursor: 'pointer', border: '0.5px solid', textAlign: 'center' as any,
+                    background: reasoningEffort === opt.value ? '#4f8ef722' : 'none',
+                    borderColor: reasoningEffort === opt.value ? '#4f8ef7' : '#2d3148',
+                    color: reasoningEffort === opt.value ? '#4f8ef7' : '#8892a4', transition: 'all .12s' }}>
+                  <div>{opt.label}</div>
+                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Code Interpreter */}
+          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 2 }}>🐍 Code Interpreter</div>
+                <div style={{ fontSize: 11, color: '#8892a4', lineHeight: 1.5 }}>Permite que o Atlas execute código Python para análises, cálculos e geração de gráficos.</div>
+              </div>
+              <button onClick={() => setCodeInterpreter(v => !v)}
+                style={{ flexShrink: 0, width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', transition: 'background .2s',
+                  background: codeInterpreter ? '#4f8ef7' : '#2d3148', position: 'relative' as any }}>
+                <div style={{ position: 'absolute' as any, top: 3, left: codeInterpreter ? 20 : 4, width: 16, height: 16, borderRadius: 8, background: '#fff', transition: 'left .2s' }} />
+              </button>
+            </div>
+          </div>
+
+          <button onClick={() => {
+            localStorage.setItem('atlas_modo', modo)
+            localStorage.setItem('atlas_temp', temperatura.toString())
+            localStorage.setItem('atlas_instrucoes', instrucoes)
+            localStorage.setItem('atlas_memorias', JSON.stringify(memorias))
+            localStorage.setItem('atlas_modelo', modeloSelecionado)
+            localStorage.setItem('atlas_reasoning', reasoningEffort)
+            localStorage.setItem('atlas_code_interp', codeInterpreter.toString())
+            setPainelConfig(false)
+          }} style={{ padding: '9px 20px', borderRadius: 8, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}>
             Salvar configurações
           </button>
         </div>
