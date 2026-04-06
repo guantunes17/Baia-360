@@ -52,6 +52,28 @@ class AtlasLog(db.Model):
     total_msgs  = db.Column(db.Integer, default=0)
     criado_em   = db.Column(db.DateTime, default=datetime.utcnow)
 
+class AtlasConversa(db.Model):
+    __tablename__ = 'atlas_conversas'
+    id          = db.Column(db.Integer, primary_key=True)
+    usuario_id  = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    conv_id     = db.Column(db.String(20), nullable=False)       # id gerado no frontend
+    titulo      = db.Column(db.String(200), default='Nova conversa')
+    msgs_json   = db.Column(db.Text, nullable=False, default='[]')
+    history_json = db.Column(db.Text, nullable=False, default='[]')
+    atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criada_em   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id':           self.id,
+            'conv_id':      self.conv_id,
+            'titulo':       self.titulo,
+            'msgs':         json.loads(self.msgs_json),
+            'history':      json.loads(self.history_json),
+            'criadaEm':     self.criada_em.isoformat(),
+            'atualizadaEm': self.atualizada_em.isoformat() if self.atualizada_em else self.criada_em.isoformat()
+        }
+
 class User(db.Model):
     __tablename__ = 'users'
     id         = db.Column(db.Integer, primary_key=True)
@@ -1193,8 +1215,16 @@ def atlas_chat():
             tools = []
             for t in tools_def:
                 params = t.get('parameters', {'type': 'object', 'properties': {}})
-                # Adiciona additionalProperties: false exigido pelo strict mode
-                params = {**params, 'additionalProperties': False}
+                properties = params.get('properties', {})
+                # Strict mode exige que TODOS os campos estejam em required
+                # Campos opcionais devem usar type: [string, null] no frontend
+                all_keys = list(properties.keys())
+                params = {
+                    'type': 'object',
+                    'properties': properties,
+                    'required': all_keys,
+                    'additionalProperties': False
+                }
                 tools.append({
                     'type': 'function',
                     'name': t['name'],
@@ -1453,6 +1483,89 @@ def atlas_log_conversas():
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
+
+@app.route('/api/atlas/conversas', methods=['GET'])
+@jwt_required()
+def atlas_listar_conversas():
+    usuario_id = int(get_jwt_identity())
+    conversas = (
+        AtlasConversa.query
+        .filter_by(usuario_id=usuario_id)
+        .order_by(AtlasConversa.atualizada_em.desc())
+        .limit(50)
+        .all()
+    )
+    return jsonify([c.to_dict() for c in conversas]), 200
+
+
+@app.route('/api/atlas/conversas', methods=['POST'])
+@jwt_required()
+def atlas_salvar_conversa():
+    usuario_id = int(get_jwt_identity())
+    data = request.get_json()
+    conv_id = data.get('conv_id')
+    if not conv_id:
+        return jsonify({'erro': 'conv_id obrigatório'}), 400
+
+    conversa = AtlasConversa.query.filter_by(usuario_id=usuario_id, conv_id=conv_id).first()
+    if conversa:
+        conversa.titulo       = data.get('titulo', conversa.titulo)
+        conversa.msgs_json    = json.dumps(data.get('msgs', []), ensure_ascii=False)
+        conversa.history_json = json.dumps(data.get('history', []), ensure_ascii=False)
+        conversa.atualizada_em = datetime.utcnow()
+    else:
+        conversa = AtlasConversa(
+            usuario_id   = usuario_id,
+            conv_id      = conv_id,
+            titulo       = data.get('titulo', 'Nova conversa'),
+            msgs_json    = json.dumps(data.get('msgs', []), ensure_ascii=False),
+            history_json = json.dumps(data.get('history', []), ensure_ascii=False),
+        )
+        db.session.add(conversa)
+
+    db.session.commit()
+    return jsonify({'ok': True}), 200
+
+
+@app.route('/api/atlas/conversas/<conv_id>', methods=['DELETE'])
+@jwt_required()
+def atlas_deletar_conversa(conv_id):
+    usuario_id = int(get_jwt_identity())
+    conversa = AtlasConversa.query.filter_by(usuario_id=usuario_id, conv_id=conv_id).first()
+    if conversa:
+        db.session.delete(conversa)
+        db.session.commit()
+    return jsonify({'ok': True}), 200
+
+
+@app.route('/api/atlas/conversas/buscar', methods=['GET'])
+@jwt_required()
+def atlas_buscar_conversas():
+    """Busca conversas por texto — usada pelo Atlas para se atualizar."""
+    usuario_id = int(get_jwt_identity())
+    q = request.args.get('q', '').strip().lower()
+    conversas = (
+        AtlasConversa.query
+        .filter_by(usuario_id=usuario_id)
+        .order_by(AtlasConversa.atualizada_em.desc())
+        .limit(50)
+        .all()
+    )
+    if q:
+        conversas = [c for c in conversas if q in c.titulo.lower() or q in c.msgs_json.lower()]
+    # Retorna apenas título, data e primeiras msgs para não explodir o contexto
+    resultado = []
+    for c in conversas[:10]:
+        msgs = json.loads(c.msgs_json)
+        resumo = [m for m in msgs if m.get('role') in ('user', 'assistant')][:6]
+        resultado.append({
+            'conv_id':    c.conv_id,
+            'titulo':     c.titulo,
+            'criadaEm':   c.criada_em.isoformat(),
+            'resumo':     resumo
+        })
+    return jsonify(resultado), 200
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)

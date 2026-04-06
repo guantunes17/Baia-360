@@ -8,16 +8,19 @@ const API = 'http://localhost:5001'
 
 const TOOLS_DEF = [
   { id: 'get_dashboard', name: 'get_dashboard', on: true,
-    declaration: { name: 'get_dashboard', description: 'Retorna KPIs e histórico de relatórios gerados. Use quando o usuário perguntar sobre métricas, faturamento, SLA, estoque, ou qualquer dado operacional.', parameters: { type: 'object', properties: { modulo: { type: 'string', description: 'Filtrar por módulo específico (opcional).' } }, required: [] } }
+    declaration: { name: 'get_dashboard', description: 'Retorna KPIs e histórico de relatórios gerados. Use quando o usuário perguntar sobre métricas, faturamento, SLA, estoque, ou qualquer dado operacional.', parameters: { type: 'object', properties: { modulo: { type: ['string', 'null'], description: 'Filtrar por módulo específico. Passar null para retornar todos os módulos.' } }, required: ['modulo'] } }
   },
   { id: 'gerar_relatorio', name: 'gerar_relatorio', on: true,
     declaration: { name: 'gerar_relatorio', description: 'Inicia a geração de um relatório para um módulo e mês de referência. Após chamar esta ferramenta, informe ao usuário que ele precisa enviar o arquivo Excel correspondente para continuar.', parameters: { type: 'object', properties: { modulo: { type: 'string', description: 'Nome do módulo: Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem' }, mes_ref: { type: 'string', description: 'Mês de referência no formato YYYY-MM. Ex: 2025-03' } }, required: ['modulo', 'mes_ref'] } }
   },
   { id: 'get_agenda', name: 'get_agenda', on: true,
-    declaration: { name: 'get_agenda', description: 'Retorna eventos da agenda do usuário no Outlook.', parameters: { type: 'object', properties: { data_inicio: { type: 'string', description: 'Data inicial YYYY-MM-DD' }, data_fim: { type: 'string', description: 'Data final YYYY-MM-DD' } }, required: [] } }
+    declaration: { name: 'get_agenda', description: 'Retorna eventos da agenda do usuário no Outlook.', parameters: { type: 'object', properties: { data_inicio: { type: 'string', description: 'Data inicial YYYY-MM-DD' }, data_fim: { type: 'string', description: 'Data final YYYY-MM-DD' } }, required: ['data_inicio', 'data_fim'] } }
   },
   { id: 'criar_evento', name: 'criar_evento', on: true,
-    declaration: { name: 'criar_evento', description: 'Cria um novo evento na agenda do Outlook.', parameters: { type: 'object', properties: { titulo: { type: 'string' }, data: { type: 'string', description: 'YYYY-MM-DD' }, hora_inicio: { type: 'string', description: 'HH:MM' }, hora_fim: { type: 'string', description: 'HH:MM' }, descricao: { type: 'string' } }, required: ['titulo', 'data', 'hora_inicio', 'hora_fim'] } }
+    declaration: { name: 'criar_evento', description: 'Cria um novo evento na agenda do Outlook.', parameters: { type: 'object', properties: { titulo: { type: 'string' }, data: { type: 'string', description: 'YYYY-MM-DD' }, hora_inicio: { type: 'string', description: 'HH:MM' }, hora_fim: { type: 'string', description: 'HH:MM' }, descricao: { type: 'string' } }, required: ['titulo', 'data', 'hora_inicio', 'hora_fim', 'descricao'] } }
+  },
+  { id: 'buscar_conversas', name: 'buscar_conversas', on: true,
+    declaration: { name: 'buscar_conversas', description: 'Busca conversas anteriores do usuário com o Atlas. Use quando o usuário pedir para se atualizar, revisar o que foi discutido, ou referenciar algo de conversas passadas.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Palavras-chave para buscar nas conversas. Pode ser vazio para trazer as mais recentes.' } }, required: ['query'] } }
   }
 ]
 
@@ -31,7 +34,15 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
   },
   gerar_relatorio: ({ modulo, mes_ref }: any) => ({ status: 'aguardando_arquivo', modulo, mes_ref, mensagem: `Aguardando arquivo Excel para ${modulo} (${mes_ref}).` }),
   get_agenda: () => ({ eventos: [] }),
-  criar_evento: ({ titulo, data, hora_inicio, hora_fim }: any) => ({ status: 'mock', mensagem: `Integração Outlook pendente. Evento "${titulo}" para ${data} das ${hora_inicio} às ${hora_fim} anotado.` })
+  criar_evento: ({ titulo, data, hora_inicio, hora_fim }: any) => ({ status: 'mock', mensagem: `Integração Outlook pendente. Evento "${titulo}" para ${data} das ${hora_inicio} às ${hora_fim} anotado.` }),
+  buscar_conversas: async ({ query }: any, token: string) => {
+    const q = encodeURIComponent(query || '')
+    const res = await fetch(`${API}/api/atlas/conversas/buscar?q=${q}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!res.ok) return { erro: 'Não foi possível buscar conversas.' }
+    return res.json()
+  }
 }
 
 const ENDPOINT_MAP: Record<string, string> = {
@@ -250,8 +261,8 @@ function IcBtn({ onClick, tip, children, active, color }: {
 }
 
 export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
-  const [conversas, setConversas] = useState<Conversa[]>([novaConversa()])
-  const [ativaId, setAtivaId] = useState<string>(() => conversas[0].id)
+  const [conversas, setConversas] = useState<Conversa[]>([])
+  const [ativaId, setAtivaId] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [abortCtrl, setAbortCtrl] = useState<AbortController | null>(null)
@@ -286,6 +297,57 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const fileContextoRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const token = localStorage.getItem('token') || ''
+
+  // ── Persistência de conversas ─────────────────────────────────────────────
+  const salvarConversa = useCallback(async (conv: Conversa) => {
+    if (!token) return
+    try {
+      await fetch(`${API}/api/atlas/conversas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          conv_id: conv.id,
+          titulo:  conv.titulo,
+          msgs:    conv.msgs,
+          history: conv.history
+        })
+      })
+    } catch {}
+  }, [token])
+
+  const deletarConversaRemota = useCallback(async (conv_id: string) => {
+    if (!token) return
+    try {
+      await fetch(`${API}/api/atlas/conversas/${conv_id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    } catch {}
+  }, [token])
+
+  // Carrega conversas salvas ao montar — começa na tela home
+  useEffect(() => {
+    if (!token) return
+    fetch(`${API}/api/atlas/conversas`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const convertidas: Conversa[] = data.map((c: any) => ({
+            id:       c.conv_id,
+            titulo:   c.titulo,
+            msgs:     c.msgs,
+            history:  c.history,
+            criadaEm: new Date(c.criadaEm),
+            pinned:   false
+          }))
+          setConversas(convertidas)
+          // Não define ativa — começa na tela home
+        }
+      })
+      .catch(() => {})
+  }, [token])
 
   const SYSTEM_PROMPT = `Você é o Atlas, assistente de inteligência artificial da Baia 4 Logística e Transportes.
 
@@ -326,6 +388,11 @@ Sobre geração de relatórios operacionais:
 - Quando o usuário pedir para GERAR um relatório operacional (Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem), use IMEDIATAMENTE a ferramenta gerar_relatorio — nunca diga que não consegue gerar
 - Após usar a ferramenta, informe que um botão aparecerá na tela para o usuário enviar o arquivo Excel correspondente
 - Gerar relatório e analisar um arquivo são coisas distintas: gerar usa a ferramenta gerar_relatorio; analisar lê um arquivo enviado pelo usuário
+
+Sobre conversas anteriores:
+- Você TEM acesso às conversas anteriores do usuário via ferramenta buscar_conversas
+- Use essa ferramenta quando o usuário pedir para você se atualizar, revisar o histórico, ou referenciar algo que foi discutido antes
+- Após buscar, leia os resumos e responda com base no que foi encontrado
 
 Sobre busca na internet:
 - Você TEM acesso à internet via Google Search — nunca diga que não consegue pesquisar
@@ -423,22 +490,18 @@ Sobre busca na internet:
   }, [])
 
   const criarNovaConversa = () => {
-    const nova = novaConversa()
-    setConversas(prev => [nova, ...prev])
-    setAtivaId(nova.id)
+    setAtivaId(null)
     setPreviousResponseId(null)
   }
 
   const deletarConversa = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    deletarConversaRemota(id)
     setConversas(prev => {
       const restantes = prev.filter(c => c.id !== id)
-      if (restantes.length === 0) {
-        const nova = novaConversa()
-        setAtivaId(nova.id)
-        return [nova]
+      if (ativaId === id) {
+        setTimeout(() => setAtivaId(restantes.length > 0 ? restantes[0].id : null), 0)
       }
-      if (ativaId === id) setAtivaId(restantes[0].id)
       return restantes
     })
   }
@@ -465,7 +528,7 @@ Sobre busca na internet:
   const stopGeneration = () => {
     abortCtrl?.abort()
     setLoading(false)
-    updateConversa(ativaId, c => {
+    updateConversa(ativaId!, c => {
       const msgs = [...c.msgs]
       const last = msgs[msgs.length - 1]
       if (last?.streaming) {
@@ -503,7 +566,7 @@ Sobre busca na internet:
     if (!texto) return
 
     // Trunca a conversa até a mensagem editada e reenvía
-    updateConversa(ativaId, c => {
+    updateConversa(ativaId!, c => {
       const msgs = c.msgs.slice(0, editandoIdx)
       const history = c.history.slice(0, Math.max(0, editandoIdx - 1))
       return { ...c, msgs, history }
@@ -527,7 +590,7 @@ Sobre busca na internet:
     if (!userMsg || userMsg.role !== 'user') return
 
     // Remove a última resposta e reenvía
-    updateConversa(ativaId, c => ({
+    updateConversa(ativaId!, c => ({
       ...c,
       msgs: c.msgs.slice(0, assistantIdx),
       history: c.history.slice(0, -1)
@@ -551,7 +614,7 @@ Sobre busca na internet:
       if (!res.ok) throw new Error(data.erro || 'Erro ao enviar arquivo')
       setArquivoContexto({ file_id: data.file_id, nome: data.nome })
     } catch (e: any) {
-      addMsgToConversa(ativaId, { role: 'note', text: 'Erro ao enviar arquivo: ' + e.message })
+      addMsgToConversa(ativaId!, { role: 'note', text: 'Erro ao enviar arquivo: ' + e.message })
     } finally {
       setUploadandoArquivo(false)
     }
@@ -567,7 +630,16 @@ Sobre busca na internet:
     setLoading(true)
     const ctrl = new AbortController()
     setAbortCtrl(ctrl)
-    const convId = ativaId
+
+    // Se não há conversa ativa, cria uma nova agora
+    let convId = ativaId
+    if (!convId) {
+      const nova = novaConversa()
+      convId = nova.id
+      setConversas(prev => [nova, ...prev])
+      setAtivaId(nova.id)
+      setPreviousResponseId(null)
+    }
 
     const activeTools = TOOLS_DEF.filter(t => t.on).map(t => t.declaration)
     const modoSuffix = modo === 'Resumido' ? '\n\nIMPORTANTE: Seja extremamente conciso, máximo 3 linhas por resposta.'
@@ -663,13 +735,14 @@ Sobre busca na internet:
       ...c,
       titulo: c.titulo === 'Nova conversa' ? userMsgText.slice(0, 40) : c.titulo,
       msgs: [...c.msgs, { role: 'user', text: userMsgText, arquivo: ctx ? { nome: ctx.nome } : undefined }, { role: 'assistant', text: '', streaming: true }],
-      history: [...c.history, { role: 'user', parts: ctx
+      history: [...(c.history ?? []), { role: 'user', parts: ctx
         ? [{ text: userPrompt }, { file_data: { file_id: ctx.file_id } }]
         : [{ text: userPrompt }]
       }]
     }))
 
-    const currentHistory = [...(conversa.history), { role: 'user', parts: ctx
+    const convAtual = conversas.find(c => c.id === convId)
+    const currentHistory = [...(convAtual?.history ?? []), { role: 'user', parts: ctx
       ? [{ text: userPrompt }, { file_data: { file_id: ctx.file_id } }]
       : [{ text: userPrompt }]
     }]
@@ -846,6 +919,14 @@ Sobre busca na internet:
     setLoading(false)
     setAbortCtrl(null)
     inputRef.current?.focus()
+    // Auto-save após cada resposta
+    setTimeout(() => {
+      setConversas(prev => {
+        const conv = prev.find(c => c.id === convId)
+        if (conv) salvarConversa(conv)
+        return prev
+      })
+    }, 300)
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -854,6 +935,9 @@ Sobre busca na internet:
   }
 
   const grupos = agruparConversas(conversas, busca)
+
+  // Tela home — exibida quando não há conversa ativa
+  const telaHome = !ativaId || !conversa
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -969,9 +1053,85 @@ Sobre busca na internet:
         </div>
       </div>
 
-      {/* Chat ou Painel de Configurações */}
-      {/* Painel de Configurações */}
-      {painelConfig ? (
+      {/* Tela Home, Chat ou Painel de Configurações */}
+      {telaHome && !painelConfig ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0f1117', padding: '0 10%', gap: 32 }}>
+
+          {/* Logo e saudação */}
+          <div style={{ textAlign: 'center' as any, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+            <svg width="56" height="56" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="14" cy="14" r="11" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="1" fill="none" />
+              <g clipPath="url(#globoClipHome)">
+                <ellipse cx="14" cy="14" rx="11" ry="4" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="0.8" fill="none" />
+                <ellipse cx="14" cy="14" rx="5" ry="11" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="0.8" fill="none" />
+                <ellipse cx="14" cy="14" rx="9" ry="11" stroke="#ffffff" strokeOpacity="0.4" strokeWidth="0.6" fill="none" />
+              </g>
+              <defs><clipPath id="globoClipHome"><circle cx="14" cy="14" r="11" /></clipPath></defs>
+            </svg>
+            <div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: '#e2e8f0', marginBottom: 6 }}>
+                {(() => {
+                  const h = new Date().getHours()
+                  const saudacao = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'
+                  return `${saudacao}, ${nomeUsuario}.`
+                })()}
+              </div>
+              <div style={{ fontSize: 15, color: '#8892a4' }}>Como posso ajudar você hoje?</div>
+            </div>
+          </div>
+
+          {/* Sugestões rápidas */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as any, justifyContent: 'center', maxWidth: 640 }}>
+            {[
+              { icon: '📊', texto: 'Como está o desempenho operacional este mês?' },
+              { icon: '🌐', texto: 'Qual a cotação do dólar hoje?' },
+              { icon: '📋', texto: 'Gerar relatório de Fretes' },
+              { icon: '💡', texto: 'Me atualize sobre nossas últimas conversas' },
+            ].map(s => (
+              <button key={s.texto} onClick={() => { setInput(s.texto); setTimeout(() => inputRef.current?.focus(), 50) }}
+                style={{ padding: '10px 16px', borderRadius: 10, background: '#1a1d27', border: '0.5px solid #2d3148', color: '#8892a4', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'all .15s', textAlign: 'left' as any }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+              >
+                <span>{s.icon}</span><span>{s.texto}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Input centralizado */}
+          <div style={{ width: '100%', maxWidth: 680 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 14, padding: '10px 10px 10px 14px' }}>
+              <button onClick={() => fileContextoRef.current?.click()} disabled={uploadandoArquivo}
+                title="Enviar arquivo para o Atlas analisar"
+                style={{ flexShrink: 0, width: 34, height: 34, borderRadius: 8, background: 'none', border: 'none', color: uploadandoArquivo ? '#4f8ef7' : '#8892a4', cursor: uploadandoArquivo ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, transition: 'color .15s' }}
+                onMouseEnter={e => { if (!uploadandoArquivo) (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = uploadandoArquivo ? '#4f8ef7' : '#8892a4' }}
+              >
+                {uploadandoArquivo ? '⏳' : '📎'}
+              </button>
+              <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey}
+                placeholder="Mensagem para o Atlas..."
+                rows={1}
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#e2e8f0', fontSize: 14, fontFamily: 'inherit', resize: 'none', lineHeight: 1.5, maxHeight: 120, overflowY: 'auto', padding: '6px 0' }}
+              />
+              <button onClick={send} disabled={uploadandoArquivo || (!input.trim() && !arquivoContexto)}
+                style={{ padding: '9px 18px', borderRadius: 9, background: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? '#2d3148' : '#4f8ef7', color: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? '#8892a4' : '#fff', border: 'none', fontWeight: 600, fontSize: 13, cursor: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s' }}
+              >
+                Enviar
+              </button>
+            </div>
+            {arquivoContexto && (
+              <div style={{ marginTop: 8, padding: '6px 12px', background: '#1a1d27', border: '1px solid #7c3aed33', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 12, color: '#a78bfa' }}>📎 {arquivoContexto.nome}</span>
+                <button onClick={() => setArquivoContexto(null)} style={{ background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', fontSize: 12 }}>✕</button>
+              </div>
+            )}
+            <p style={{ textAlign: 'center' as any, fontSize: 11, color: '#2d3148', marginTop: 10 }}>
+              Enter para enviar · Shift+Enter para nova linha · 📎 para enviar arquivo
+            </p>
+          </div>
+        </div>
+      ) : painelConfig ? (
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 10%', background: '#0f1117', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', paddingLeft: 10, borderLeft: '2px solid #4f8ef7', margin: 0 }}>Configurações do Atlas</h2>
 
@@ -1312,7 +1472,7 @@ Sobre busca na internet:
                       </IcBtn>
                       <div style={{ width: 1, height: 16, background: '#2d3148', margin: '0 2px' }} />
                       <IcBtn
-                        onClick={() => darFeedback(ativaId, i, 'up')}
+                        onClick={() => darFeedback(ativaId!, i, 'up')}
                         tip="Boa resposta"
                         active={m.feedback === 'up'}
                         color="green"
@@ -1320,7 +1480,7 @@ Sobre busca na internet:
                         <IconThumbUp />
                       </IcBtn>
                       <IcBtn
-                        onClick={() => darFeedback(ativaId, i, 'down')}
+                        onClick={() => darFeedback(ativaId!, i, 'down')}
                         tip="Resposta ruim"
                         active={m.feedback === 'down'}
                         color="red"
