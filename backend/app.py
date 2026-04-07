@@ -1250,6 +1250,13 @@ def atlas_chat():
                 all_tools.append({'type': 'web_search_preview'})
                 if use_code_interp:
                     all_tools.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
+                # File Search — ativa se houver Vector Store configurado
+                vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
+                if vs_id:
+                    all_tools.append({
+                        'type': 'file_search',
+                        'vector_store_ids': [vs_id]
+                    })
 
                 kwargs = dict(
                     model=model_id,
@@ -1565,6 +1572,140 @@ def atlas_buscar_conversas():
             'resumo':     resumo
         })
     return jsonify(resultado), 200
+
+
+# ── Helper: obter ou criar Vector Store ───────────────────────────────────────
+def _get_vector_store_id():
+    """Retorna o vector_store_id do .env ou cria um novo e persiste."""
+    vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
+    if vs_id:
+        return vs_id
+    # Cria um novo Vector Store na OpenAI
+    api_key = os.getenv('OPENAI_API_KEY', '').strip()
+    client = OpenAI(api_key=api_key)
+    vs = client.vector_stores.create(name='Baia 4 — Base de Conhecimento')
+    # Persiste no .env para próximas reinicializações
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    try:
+        with open(env_path, 'a') as f:
+            f.write(f'\nOPENAI_VECTOR_STORE_ID={vs.id}\n')
+    except Exception:
+        pass
+    os.environ['OPENAI_VECTOR_STORE_ID'] = vs.id
+    return vs.id
+
+
+@app.route('/api/atlas/base_conhecimento', methods=['GET'])
+@jwt_required()
+def base_conhecimento_listar():
+    """Lista todos os documentos indexados no Vector Store."""
+    api_key = os.getenv('OPENAI_API_KEY', '').strip()
+    if not api_key:
+        return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
+    try:
+        client = OpenAI(api_key=api_key)
+        vs_id = _get_vector_store_id()
+        files = client.vector_stores.files.list(vector_store_id=vs_id)
+        resultado = []
+        for f in files.data:
+            # Busca metadados do arquivo original
+            try:
+                file_info = client.files.retrieve(f.id)
+                nome = file_info.filename
+                tamanho = file_info.bytes
+                criado_em = file_info.created_at
+            except Exception:
+                nome = f.id
+                tamanho = 0
+                criado_em = 0
+            resultado.append({
+                'file_id':   f.id,
+                'nome':      nome,
+                'tamanho':   tamanho,
+                'status':    f.status,
+                'criado_em': criado_em
+            })
+        return jsonify({
+            'vector_store_id': vs_id,
+            'documentos': resultado
+        }), 200
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/atlas/base_conhecimento', methods=['POST'])
+@jwt_required()
+def base_conhecimento_upload():
+    """Faz upload de um documento para o Vector Store."""
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
+
+    arquivo = request.files['arquivo']
+    nome = arquivo.filename or 'documento'
+    ext = os.path.splitext(nome)[1].lower()
+
+    extensoes_suportadas = {'.pdf', '.docx', '.doc', '.txt', '.md', '.pptx', '.ppt', '.xlsx', '.csv'}
+    if ext not in extensoes_suportadas:
+        return jsonify({'erro': f'Tipo não suportado: {ext}. Use PDF, Word, TXT, PowerPoint ou Excel.'}), 400
+
+    api_key = os.getenv('OPENAI_API_KEY', '').strip()
+    if not api_key:
+        return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
+
+    try:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+        arquivo.save(tmp.name)
+        tmp.close()
+
+        client = OpenAI(api_key=api_key)
+        vs_id = _get_vector_store_id()
+
+        # Upload do arquivo para a OpenAI Files API
+        with open(tmp.name, 'rb') as f:
+            uploaded = client.files.create(file=(nome, f), purpose='assistants')
+
+        _deletar_temp(tmp.name)
+
+        # Adiciona ao Vector Store — a OpenAI indexa automaticamente
+        client.vector_stores.files.create(
+            vector_store_id=vs_id,
+            file_id=uploaded.id
+        )
+
+        return jsonify({
+            'file_id': uploaded.id,
+            'nome':    nome,
+            'status':  'indexando'
+        }), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/atlas/base_conhecimento/<file_id>', methods=['DELETE'])
+@jwt_required()
+def base_conhecimento_deletar(file_id):
+    """Remove um documento do Vector Store e da Files API."""
+    api_key = os.getenv('OPENAI_API_KEY', '').strip()
+    if not api_key:
+        return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
+    try:
+        client = OpenAI(api_key=api_key)
+        vs_id = _get_vector_store_id()
+        # Remove do Vector Store
+        client.vector_stores.files.delete(vector_store_id=vs_id, file_id=file_id)
+        # Remove da Files API
+        try:
+            client.files.delete(file_id)
+        except Exception:
+            pass
+        return jsonify({'ok': True}), 200
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
 
 
 if __name__ == '__main__':

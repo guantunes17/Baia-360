@@ -23,6 +23,7 @@ import { Perfil } from '@/pages/Perfil'
 import { ToastContainer, ToastData } from '@/components/Toast'
 import { Atlas } from '@/pages/Atlas'
 import { LogoBaia360 } from '@/components/LogoBaia360'
+import { BaseConhecimento } from '@/pages/BaseConhecimento'
 
 const API = 'http://localhost:5001'
 
@@ -124,8 +125,8 @@ function Login({ onLogin }: { onLogin: (u: Usuario) => void }) {
   )
 }
 
-function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void, onAtualizarUsuario: (u: Usuario) => void }) {
-  const [paginaAtiva, setPaginaAtiva] = useState('home')
+function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaInicial = 'home' }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void, onAtualizarUsuario: (u: Usuario) => void, paginaInicial?: string }) {
+  const [paginaAtiva, setPaginaAtiva] = useState(paginaInicial)
   const [toasts, setToasts] = useState<ToastData[]>([])
   const adicionarToast = (tipo: 'sucesso' | 'erro' | 'aviso', mensagem: string) => {
     const id = Date.now()
@@ -164,6 +165,8 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario }: { usu
         return <DashboardPage />
         case 'perfil':
         return <Perfil usuario={usuario} onAtualizar={onAtualizarUsuario} />
+      case 'base_conhecimento':
+        return <BaseConhecimento />
       default:
         return (
           <div className="p-8">
@@ -260,7 +263,7 @@ export default function App() {
     const u = localStorage.getItem('usuario')
     return u ? JSON.parse(u) : null
   })
-  const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas'>('hub')
+  const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas' | 'dashboard' | 'agenda' | 'usuarios' | 'base_conhecimento'>('hub')
 
   // Desloga automaticamente ao fechar o app
   useEffect(() => {
@@ -282,14 +285,58 @@ const handleLogout = () => {
 
   if (!usuario) return <Login onLogin={handleLogin} />
   if (tela === 'hub') return (
-  <Hub
-    usuario={usuario}
-    onEntrarRelatorios={() => setTela('relatorios')}
-    onEntrarAtlas={() => setTela('atlas')}
-    onLogout={handleLogout}
-  />
-)
-if (tela === 'atlas') return (
+    <Hub
+      usuario={usuario}
+      onEntrarRelatorios={() => setTela('relatorios')}
+      onEntrarAtlas={() => setTela('atlas')}
+      onEntrarDashboard={() => setTela('dashboard')}
+      onEntrarAgenda={() => setTela('agenda')}
+      onEntrarUsuarios={() => setTela('usuarios')}
+      onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
+      onLogout={handleLogout}
+    />
+  )
+if (tela === 'dashboard') return (
+    <Dashboard
+      usuario={usuario}
+      onLogout={handleLogout}
+      onVoltarHub={() => setTela('hub')}
+      onAtualizarUsuario={u => setUsuario(u)}
+      paginaInicial="dashboard"
+    />
+  )
+
+  if (tela === 'agenda') return (
+    <Dashboard
+      usuario={usuario}
+      onLogout={handleLogout}
+      onVoltarHub={() => setTela('hub')}
+      onAtualizarUsuario={u => setUsuario(u)}
+      paginaInicial="agenda"
+    />
+  )
+
+  if (tela === 'usuarios') return (
+    <Dashboard
+      usuario={usuario}
+      onLogout={handleLogout}
+      onVoltarHub={() => setTela('hub')}
+      onAtualizarUsuario={u => setUsuario(u)}
+      paginaInicial="usuarios"
+    />
+  )
+
+  if (tela === 'base_conhecimento') return (
+    <Dashboard
+      usuario={usuario}
+      onLogout={handleLogout}
+      onVoltarHub={() => setTela('hub')}
+      onAtualizarUsuario={u => setUsuario(u)}
+      paginaInicial="base_conhecimento"
+    />
+  )
+
+  if (tela === 'atlas') return (
   <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
     <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: 48, borderBottom: '1px solid #2d3148', background: '#13161f', flexShrink: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

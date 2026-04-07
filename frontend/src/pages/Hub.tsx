@@ -12,38 +12,87 @@ interface Props {
   usuario: Usuario
   onEntrarRelatorios: () => void
   onEntrarAtlas: () => void
+  onEntrarDashboard: () => void
+  onEntrarAgenda: () => void
+  onEntrarUsuarios: () => void
+  onEntrarBaseConhecimento: () => void
   onLogout: () => void
 }
 
-const produtos = [
-  {
-    icone: '📊',
-    nome: 'Central de Relatórios',
-    descricao: 'Geração e análise de relatórios operacionais e financeiros.',
-    cor: '#4f8ef7',
-    disponivel: true,
-  },
-  {
-    icone: '🤖',
-    nome: 'Atlas',
-    descricao: 'Assistente IA — agendador de tarefas e análises via linguagem natural.',
-    cor: '#7c3aed',
-    disponivel: true,
-  },
-  {
-    icone: '📅',
-    nome: 'Agenda',
-    descricao: 'Agenda sincronizada com o Outlook. Gerenciada pelo Assistente IA.',
-    cor: '#10b981',
-    disponivel: false,
-  },
-]
-
-export function Hub({ usuario, onEntrarRelatorios, onEntrarAtlas, onLogout }: Props) {
+export function Hub({
+  usuario,
+  onEntrarRelatorios,
+  onEntrarAtlas,
+  onEntrarDashboard,
+  onEntrarAgenda,
+  onEntrarUsuarios,
+  onEntrarBaseConhecimento,
+  onLogout
+}: Props) {
   const hoje = new Date()
   const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
   const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
   const dataFormatada = `${diasSemana[hoje.getDay()]}, ${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`
+  const isAdmin = usuario.perfil === 'admin'
+  const primeiroNome = usuario.nome.split(' ')[0]
+
+  const cardPrincipal = (icone: string, titulo: string, descricao: string, cor: string, onClick: () => void) => (
+    <div
+      onClick={onClick}
+      style={{
+        background: '#1a1d27', border: `1px solid ${cor}55`, borderRadius: 12,
+        padding: '24px 20px', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', gap: 12, cursor: 'pointer', transition: 'all 0.2s',
+      }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLElement
+        el.style.borderColor = cor
+        el.style.boxShadow = `0 0 20px ${cor}22`
+        el.style.transform = 'scale(1.03)'
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLElement
+        el.style.borderColor = `${cor}55`
+        el.style.boxShadow = 'none'
+        el.style.transform = 'scale(1)'
+      }}
+    >
+      <span style={{ fontSize: 36 }}>{icone}</span>
+      <div style={{ textAlign: 'center' }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', margin: '0 0 4px' }}>{titulo}</p>
+        <p style={{ fontSize: 11, color: '#8892a4', margin: 0 }}>{descricao}</p>
+      </div>
+    </div>
+  )
+
+  const cardSecundario = (icone: string, titulo: string, descricao: string, cor: string, onClick: () => void) => (
+    <div
+      onClick={onClick}
+      style={{
+        background: '#1a1d27', border: `1px solid ${cor}44`, borderRadius: 10,
+        padding: '16px 14px', display: 'flex', alignItems: 'center',
+        gap: 12, cursor: 'pointer', transition: 'all 0.2s',
+      }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLElement
+        el.style.borderColor = cor
+        el.style.boxShadow = `0 0 16px ${cor}18`
+        el.style.transform = 'scale(1.02)'
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLElement
+        el.style.borderColor = `${cor}44`
+        el.style.boxShadow = 'none'
+        el.style.transform = 'scale(1)'
+      }}
+    >
+      <span style={{ fontSize: 22, flexShrink: 0 }}>{icone}</span>
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', margin: '0 0 2px' }}>{titulo}</p>
+        <p style={{ fontSize: 10, color: '#8892a4', margin: 0 }}>{descricao}</p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="min-h-screen" style={{ background: '#0f1117' }}>
@@ -60,12 +109,15 @@ export function Hub({ usuario, onEntrarRelatorios, onEntrarAtlas, onLogout }: Pr
             <p className="text-xs" style={{ color: '#8892a4' }}>Baia 4 Logística e Transportes</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <span style={{ fontSize: 10, background: '#4f8ef722', color: '#4f8ef7', border: '0.5px solid #4f8ef733', padding: '2px 8px', borderRadius: 4 }}>
+              admin
+            </span>
+          )}
           <span className="text-sm" style={{ color: '#8892a4' }}>{usuario.nome}</span>
           <Button
-            variant="outline"
-            size="sm"
-            onClick={onLogout}
+            variant="outline" size="sm" onClick={onLogout}
             style={{ borderColor: '#2d3148', color: '#8892a4', background: 'transparent' }}
           >
             Sair
@@ -74,68 +126,45 @@ export function Hub({ usuario, onEntrarRelatorios, onEntrarAtlas, onLogout }: Pr
       </header>
 
       {/* Conteúdo */}
-      <main className="flex flex-col items-center justify-center px-8 py-16">
+      <main className="flex flex-col items-center px-8 py-14 gap-10">
 
         {/* Saudação */}
-        <div className="text-center mb-12">
+        <div className="text-center">
           <div className="w-16 h-1 rounded mx-auto mb-6" style={{ background: '#4f8ef7' }} />
           <h1 className="text-4xl font-bold mb-3" style={{ color: '#e2e8f0' }}>
-            Olá, {usuario.nome.split(' ')[0]}! 👋
+            Olá, {primeiroNome}! 👋
           </h1>
-          <p className="text-sm" style={{ color: '#8892a4', letterSpacing: '0.03em' }}>{dataFormatada}</p>
-          <p className="text-xs mt-2" style={{ color: '#8892a4' }}>
-            Selecione um módulo para começar.
-          </p>
+          <p className="text-sm" style={{ color: '#8892a4' }}>{dataFormatada}</p>
         </div>
 
-        {/* Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-4xl">
-          {produtos.map(p => (
-            <div
-              key={p.nome}
-              onClick={p.nome === 'Central de Relatórios' ? onEntrarRelatorios : p.nome === 'Atlas' ? onEntrarAtlas : undefined}
-              className="rounded-xl border p-8 flex flex-col items-center text-center gap-4 transition-all"
-              style={{
-                background: '#1a1d27',
-                borderColor: p.disponivel ? p.cor + '55' : '#2d3148',
-                cursor: p.disponivel ? 'pointer' : 'not-allowed',
-                opacity: p.disponivel ? 1 : 0.5,
-                boxShadow: p.disponivel ? `0 0 0 0 ${p.cor}` : 'none',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => {
-                if (p.disponivel) {
-                  (e.currentTarget as HTMLElement).style.borderColor = p.cor
-                  ;(e.currentTarget as HTMLElement).style.boxShadow = `0 0 20px ${p.cor}22`
-                  ;(e.currentTarget as HTMLElement).style.transform = 'scale(1.03)'
-                }
-              }}
-              onMouseLeave={e => {
-                if (p.disponivel) {
-                  (e.currentTarget as HTMLElement).style.borderColor = p.cor + '55'
-                  ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
-                  ;(e.currentTarget as HTMLElement).style.transform = 'scale(1)'
-                }
-              }}
-            >
-              <span className="text-5xl">{p.icone}</span>
-              <div>
-                <p className="text-lg font-bold mb-1" style={{ color: p.disponivel ? '#e2e8f0' : '#8892a4' }}>
-                  {p.nome}
-                </p>
-                <p className="text-sm" style={{ color: '#8892a4' }}>{p.descricao}</p>
-              </div>
-              {!p.disponivel && (
-                <span
-                  className="text-xs px-3 py-1 rounded-full"
-                  style={{ background: '#2d3148', color: '#8892a4' }}
-                >
-                  em breve
-                </span>
-              )}
-            </div>
-          ))}
+        {/* Cards principais */}
+        <div style={{ width: '100%', maxWidth: 820, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+          {cardPrincipal('📊', 'Central de Relatórios', 'Geração e análise de relatórios operacionais e financeiros.', '#4f8ef7', onEntrarRelatorios)}
+          {cardPrincipal('🤖', 'Atlas', 'Assistente IA — análises e consultas via linguagem natural.', '#7c3aed', onEntrarAtlas)}
+          {cardPrincipal('📈', 'Dashboard', 'KPIs consolidados e histórico de relatórios gerados.', '#4f8ef7', onEntrarDashboard)}
         </div>
+
+        {/* Cards secundários — todos os usuários */}
+        <div style={{ width: '100%', maxWidth: 820, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+          {cardSecundario('📅', 'Agenda', 'Minha agenda pessoal', '#10b981', onEntrarAgenda)}
+        </div>
+
+        {/* Seção admin */}
+        {isAdmin && (
+          <div style={{ width: '100%', maxWidth: 820 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ flex: 1, height: '0.5px', background: '#2d3148' }} />
+              <span style={{ fontSize: 10, color: '#4f8ef7', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Administração
+              </span>
+              <div style={{ flex: 1, height: '0.5px', background: '#2d3148' }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+              {cardSecundario('👥', 'Usuários', 'Gerenciar acessos e perfis', '#4f8ef7', onEntrarUsuarios)}
+              {cardSecundario('🧠', 'Base de Conhecimento', 'Documentos indexados do Atlas', '#7c3aed', onEntrarBaseConhecimento)}
+            </div>
+          </div>
+        )}
 
       </main>
     </div>

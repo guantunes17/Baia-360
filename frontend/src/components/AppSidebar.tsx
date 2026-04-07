@@ -178,10 +178,27 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
                     background: paginaAtiva === 'usuarios' ? '#1e2235' : 'transparent',
                     transition: 'transform 0.15s ease',
                   }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
                 >
                   👥  Usuários
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={paginaAtiva === 'base_conhecimento'}
+                  onClick={() => onNavegar('base_conhecimento')}
+                  className="cursor-pointer text-sm sidebar-item-hover"
+                  style={{
+                    color: paginaAtiva === 'base_conhecimento' ? '#e2e8f0' : '#8892a4',
+                    background: paginaAtiva === 'base_conhecimento' ? '#1e2235' : 'transparent',
+                    transition: 'transform 0.15s ease',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
+                >
+                  🧠  Base de Conhecimento
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
