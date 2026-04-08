@@ -1605,9 +1605,21 @@ def base_conhecimento_listar():
     try:
         client = OpenAI(api_key=api_key)
         vs_id = _get_vector_store_id()
-        files = client.vector_stores.files.list(vector_store_id=vs_id)
+        # Paginar para buscar TODOS os arquivos (OpenAI retorna até 100 por página)
+        todos_files = []
+        after = None
+        while True:
+            kwargs = {'vector_store_id': vs_id, 'limit': 100}
+            if after:
+                kwargs['after'] = after
+            page = client.vector_stores.files.list(**kwargs)
+            todos_files.extend(page.data)
+            if not page.has_more:
+                break
+            after = page.data[-1].id
+        files_data = todos_files
         resultado = []
-        for f in files.data:
+        for f in files_data:
             # Busca metadados do arquivo original
             try:
                 file_info = client.files.retrieve(f.id)
