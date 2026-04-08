@@ -4,6 +4,8 @@ import tempfile
 import threading
 import uuid
 import pandas as pd
+import msal
+import requests as http_requests
 
 def _deletar_temp(path: str):
     """Remove arquivo temporário com tolerância ao PermissionError do Windows."""
@@ -1717,6 +1719,338 @@ def base_conhecimento_deletar(file_id):
         return jsonify({'ok': True}), 200
     except Exception as e:
         import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+
+# ── Model OutlookToken ────────────────────────────────────────────────────────
+class OutlookToken(db.Model):
+    """Armazena tokens OAuth do Microsoft Graph por usuário."""
+    __tablename__ = 'outlook_tokens'
+    id            = db.Column(db.Integer, primary_key=True)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False)
+    access_token  = db.Column(db.Text, nullable=False)
+    refresh_token = db.Column(db.Text, nullable=True)
+    expires_at    = db.Column(db.DateTime, nullable=False)
+    email_outlook = db.Column(db.String(120), nullable=True)  # e-mail Microsoft do usuário
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def esta_expirado(self):
+        """Retorna True se o token expira em menos de 5 minutos."""
+        return datetime.utcnow() >= (self.expires_at - timedelta(minutes=5))
+
+    def to_dict(self):
+        return {
+            'conectado':     True,
+            'email_outlook': self.email_outlook,
+            'expira_em':     self.expires_at.isoformat()
+        }
+
+
+# ── Helpers Outlook ───────────────────────────────────────────────────────────
+
+def _msal_app():
+    """Cria instância do MSAL ConfidentialClientApplication."""
+    return msal.ConfidentialClientApplication(
+        client_id=os.getenv('AZURE_CLIENT_ID'),
+        client_credential=os.getenv('AZURE_CLIENT_SECRET'),
+        authority=f"https://login.microsoftonline.com/{os.getenv('AZURE_TENANT_ID')}"
+    )
+
+OUTLOOK_SCOPES = ["Calendars.ReadWrite", "Mail.Read", "User.Read", "offline_access"]
+
+def _renovar_token_se_necessario(token_obj: OutlookToken) -> bool:
+    """
+    Renova o access_token usando o refresh_token se estiver próximo do vencimento.
+    Retorna True se renovado com sucesso, False se falhou.
+    """
+    if not token_obj.esta_expirado():
+        return True
+    if not token_obj.refresh_token:
+        return False
+    try:
+        msal_app = _msal_app()
+        resultado = msal_app.acquire_token_by_refresh_token(
+            token_obj.refresh_token,
+            scopes=OUTLOOK_SCOPES
+        )
+        if "access_token" not in resultado:
+            return False
+        token_obj.access_token  = resultado["access_token"]
+        token_obj.refresh_token = resultado.get("refresh_token", token_obj.refresh_token)
+        token_obj.expires_at    = datetime.utcnow() + timedelta(seconds=resultado.get("expires_in", 3600))
+        db.session.commit()
+        return True
+    except Exception:
+        return False
+
+def _get_access_token(usuario_id: int):
+    """
+    Retorna o access_token válido do usuário ou None se não conectado.
+    Renova automaticamente se necessário.
+    """
+    token_obj = OutlookToken.query.filter_by(usuario_id=usuario_id).first()
+    if not token_obj:
+        return None, "Outlook não conectado. Use /api/oauth/outlook/login para conectar."
+    if not _renovar_token_se_necessario(token_obj):
+        return None, "Token do Outlook expirado. Reconecte em /api/oauth/outlook/login."
+    return token_obj.access_token, None
+
+def _chamar_mcp(tool: str, body: dict):
+    """Chama uma tool do MCP Outlook Server (porta 5002)."""
+    mcp_url = os.getenv('MCP_OUTLOOK_URL', 'http://localhost:5002')
+    resp = http_requests.post(f"{mcp_url}/tools/{tool}", json=body, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ── Rotas OAuth Outlook ───────────────────────────────────────────────────────
+
+@app.route('/api/oauth/outlook/login', methods=['GET'])
+@jwt_required()
+def outlook_login():
+    """Inicia o fluxo Authorization Code — redireciona para a página de login da Microsoft."""
+    usuario_id = get_jwt_identity()
+    msal_app   = _msal_app()
+    auth_url   = msal_app.get_authorization_request_url(
+        scopes=OUTLOOK_SCOPES,
+        state=str(usuario_id),  # passamos o id do usuário no state para recuperar no callback
+        redirect_uri=os.getenv('AZURE_REDIRECT_URI')
+    )
+    return jsonify({'auth_url': auth_url})
+
+
+@app.route('/api/oauth/outlook/callback', methods=['GET'])
+def outlook_callback():
+    """
+    Callback do Azure AD após o usuário autorizar.
+    Troca o código de autorização pelo access_token + refresh_token.
+    """
+    code       = request.args.get('code')
+    state      = request.args.get('state')   # usuario_id que passamos no login
+    error      = request.args.get('error')
+    error_desc = request.args.get('error_description', '')
+
+    if error:
+        return f"<h3>Erro na autenticação: {error}</h3><p>{error_desc}</p>", 400
+
+    if not code or not state:
+        return "<h3>Parâmetros inválidos no callback.</h3>", 400
+
+    try:
+        usuario_id = int(state)
+    except ValueError:
+        return "<h3>State inválido.</h3>", 400
+
+    msal_app  = _msal_app()
+    resultado = msal_app.acquire_token_by_authorization_code(
+        code,
+        scopes=OUTLOOK_SCOPES,
+        redirect_uri=os.getenv('AZURE_REDIRECT_URI')
+    )
+
+    if "access_token" not in resultado:
+        erro_msg = resultado.get("error_description", "Erro desconhecido")
+        return f"<h3>Falha ao obter token: {erro_msg}</h3>", 400
+
+    # Busca o e-mail da conta Microsoft conectada
+    email_outlook = None
+    try:
+        me = http_requests.get(
+            "https://graph.microsoft.com/v1.0/me",
+            headers={"Authorization": f"Bearer {resultado['access_token']}"}
+        ).json()
+        email_outlook = me.get("mail") or me.get("userPrincipalName")
+    except Exception:
+        pass
+
+    # Salva ou atualiza o token no banco
+    token_obj = OutlookToken.query.filter_by(usuario_id=usuario_id).first()
+    if not token_obj:
+        token_obj = OutlookToken(usuario_id=usuario_id)
+        db.session.add(token_obj)
+
+    token_obj.access_token  = resultado["access_token"]
+    token_obj.refresh_token = resultado.get("refresh_token")
+    token_obj.expires_at    = datetime.utcnow() + timedelta(seconds=resultado.get("expires_in", 3600))
+    token_obj.email_outlook = email_outlook
+    db.session.commit()
+
+    # Fecha a janela popup e notifica o frontend
+    return """
+    <html><body>
+    <script>
+      if (window.opener) {
+        window.opener.postMessage({ type: 'OUTLOOK_CONNECTED', email: '""" + (email_outlook or '') + """' }, '*');
+        window.close();
+      }
+    </script>
+    <p>Outlook conectado com sucesso! Pode fechar esta janela.</p>
+    </body></html>
+    """
+
+
+@app.route('/api/oauth/outlook/status', methods=['GET'])
+@jwt_required()
+def outlook_status():
+    """Retorna se o usuário atual tem o Outlook conectado."""
+    usuario_id = get_jwt_identity()
+    token_obj  = OutlookToken.query.filter_by(usuario_id=usuario_id).first()
+    if not token_obj:
+        return jsonify({'conectado': False})
+    return jsonify(token_obj.to_dict())
+
+
+@app.route('/api/oauth/outlook/desconectar', methods=['DELETE'])
+@jwt_required()
+def outlook_desconectar():
+    """Remove o token do Outlook do usuário."""
+    usuario_id = get_jwt_identity()
+    token_obj  = OutlookToken.query.filter_by(usuario_id=usuario_id).first()
+    if token_obj:
+        db.session.delete(token_obj)
+        db.session.commit()
+    return jsonify({'ok': True})
+
+
+# ── Rotas de Tools Outlook (Flask → MCP Server) ───────────────────────────────
+
+@app.route('/api/outlook/agenda', methods=['GET'])
+@jwt_required()
+def outlook_get_agenda():
+    """Retorna eventos do calendário do usuário via MCP Server."""
+    usuario_id  = get_jwt_identity()
+    data_inicio = request.args.get('data_inicio')
+    data_fim    = request.args.get('data_fim')
+
+    if not data_inicio or not data_fim:
+        return jsonify({'erro': 'Parâmetros obrigatórios: data_inicio, data_fim'}), 400
+
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+
+    try:
+        resultado = _chamar_mcp('get_agenda', {
+            'access_token': access_token,
+            'data_inicio':  data_inicio,
+            'data_fim':     data_fim
+        })
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/outlook/agenda/admin', methods=['GET'])
+@jwt_required()
+def outlook_agenda_admin():
+    """
+    Consolida a agenda de todos os usuários (apenas admin).
+    Retorna eventos agrupados por usuário.
+    """
+    usuario_id = get_jwt_identity()
+    usuario    = User.query.get(usuario_id)
+    if not usuario or usuario.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    data_inicio = request.args.get('data_inicio')
+    data_fim    = request.args.get('data_fim')
+    if not data_inicio or not data_fim:
+        return jsonify({'erro': 'Parâmetros obrigatórios: data_inicio, data_fim'}), 400
+
+    todos_tokens = OutlookToken.query.all()
+    resultado    = []
+
+    for token_obj in todos_tokens:
+        if not _renovar_token_se_necessario(token_obj):
+            continue
+        usuario_alvo = User.query.get(token_obj.usuario_id)
+        if not usuario_alvo or not usuario_alvo.ativo:
+            continue
+        try:
+            agenda = _chamar_mcp('get_agenda', {
+                'access_token': token_obj.access_token,
+                'data_inicio':  data_inicio,
+                'data_fim':     data_fim
+            })
+            resultado.append({
+                'usuario_id':   token_obj.usuario_id,
+                'nome':         usuario_alvo.nome,
+                'email':        usuario_alvo.email,
+                'email_outlook': token_obj.email_outlook,
+                'eventos':      agenda.get('eventos', [])
+            })
+        except Exception:
+            continue
+
+    return jsonify({'agendas': resultado, 'total_usuarios': len(resultado)})
+
+
+@app.route('/api/outlook/evento', methods=['POST'])
+@jwt_required()
+def outlook_criar_evento():
+    """Cria um evento no calendário do usuário via MCP Server."""
+    usuario_id = get_jwt_identity()
+    data       = request.get_json()
+
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+
+    try:
+        resultado = _chamar_mcp('criar_evento', {
+            'access_token': access_token,
+            **data
+        })
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/outlook/emails', methods=['GET'])
+@jwt_required()
+def outlook_buscar_emails():
+    """Busca e-mails do usuário via MCP Server."""
+    usuario_id       = get_jwt_identity()
+    query            = request.args.get('q', '')
+    apenas_nao_lidos = request.args.get('nao_lidos', 'false').lower() == 'true'
+    limite           = int(request.args.get('limite', 20))
+
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+
+    try:
+        resultado = _chamar_mcp('buscar_emails', {
+            'access_token':    access_token,
+            'query':           query,
+            'apenas_nao_lidos': apenas_nao_lidos,
+            'limite':          limite
+        })
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/outlook/eventos_proximos', methods=['GET'])
+@jwt_required()
+def outlook_eventos_proximos():
+    """Retorna eventos das próximas horas — usado pelo notificador do frontend."""
+    usuario_id  = get_jwt_identity()
+    horas_ahead = int(request.args.get('horas', 24))
+
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        # Usuário não conectou o Outlook — retorna lista vazia sem erro
+        return jsonify({'eventos': [], 'conectado': False})
+
+    try:
+        resultado = _chamar_mcp('eventos_proximos', {
+            'access_token': access_token,
+            'horas_ahead':  horas_ahead
+        })
+        resultado['conectado'] = True
+        return jsonify(resultado)
+    except Exception as e:
         return jsonify({'erro': str(e)}), 500
 
 

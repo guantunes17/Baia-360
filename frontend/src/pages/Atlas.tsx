@@ -3,7 +3,8 @@ import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { API } from '../config'
+
+import { API } from '@/config'
 
 const TOOLS_DEF = [
   { id: 'get_dashboard', name: 'get_dashboard', on: true,
@@ -20,6 +21,9 @@ const TOOLS_DEF = [
   },
   { id: 'buscar_conversas', name: 'buscar_conversas', on: true,
     declaration: { name: 'buscar_conversas', description: 'Busca conversas anteriores do usuário com o Atlas. Use quando o usuário pedir para se atualizar, revisar o que foi discutido, ou referenciar algo de conversas passadas.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Palavras-chave para buscar nas conversas. Pode ser vazio para trazer as mais recentes.' } }, required: ['query'] } }
+  },
+  { id: 'buscar_emails', name: 'buscar_emails', on: true,
+    declaration: { name: 'buscar_emails', description: 'Busca e-mails do usuário no Outlook. Use quando o usuário perguntar sobre e-mails, mensagens recebidas, ou quiser encontrar um e-mail específico.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Texto para buscar no assunto ou remetente. Pode ser vazio para trazer os mais recentes.' }, apenas_nao_lidos: { type: 'boolean', description: 'Se true, retorna apenas e-mails não lidos.' }, limite: { type: 'number', description: 'Quantidade máxima de e-mails a retornar. Default 20, máximo 50.' } }, required: ['query', 'apenas_nao_lidos', 'limite'] } }
   }
 ]
 
@@ -32,8 +36,46 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
     return res.json()
   },
   gerar_relatorio: ({ modulo, mes_ref }: any) => ({ status: 'aguardando_arquivo', modulo, mes_ref, mensagem: `Aguardando arquivo Excel para ${modulo} (${mes_ref}).` }),
-  get_agenda: () => ({ eventos: [] }),
-  criar_evento: ({ titulo, data, hora_inicio, hora_fim }: any) => ({ status: 'mock', mensagem: `Integração Outlook pendente. Evento "${titulo}" para ${data} das ${hora_inicio} às ${hora_fim} anotado.` }),
+  get_agenda: async ({ data_inicio, data_fim }: any, token: string) => {
+    const res = await fetch(`${API}/api/outlook/agenda?data_inicio=${data_inicio}&data_fim=${data_fim}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao buscar agenda.' }
+    }
+    return data
+  },
+  criar_evento: async (args: any, token: string) => {
+    const res = await fetch(`${API}/api/outlook/evento`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao criar evento.' }
+    }
+    return data
+  },
+  buscar_emails: async ({ query, apenas_nao_lidos, limite }: any, token: string) => {
+    const params = new URLSearchParams({
+      q: query || '',
+      nao_lidos: String(apenas_nao_lidos || false),
+      limite: String(limite || 20)
+    })
+    const res = await fetch(`${API}/api/outlook/emails?${params}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao buscar e-mails.' }
+    }
+    return data
+  },
   buscar_conversas: async ({ query }: any, token: string) => {
     const q = encodeURIComponent(query || '')
     const res = await fetch(`${API}/api/atlas/conversas/buscar?q=${q}`, {

@@ -22,9 +22,11 @@ import { Hub } from '@/pages/Hub'
 import { Perfil } from '@/pages/Perfil'
 import { ToastContainer, ToastData } from '@/components/Toast'
 import { Atlas } from '@/pages/Atlas'
+import { useOutlookNotifier } from '@/hooks/useOutlookNotifier'
 import { LogoBaia360 } from '@/components/LogoBaia360'
 import { BaseConhecimento } from '@/pages/BaseConhecimento'
-import { API } from './config'
+
+import { API } from '@/config'
 
 interface Usuario {
   id: number
@@ -264,6 +266,23 @@ export default function App() {
   })
   const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas' | 'dashboard' | 'agenda' | 'usuarios' | 'base_conhecimento'>('hub')
 
+  // ── Toasts globais (visíveis em qualquer tela) ──────────────────────────────
+  const [toastsGlobais, setToastsGlobais] = useState<ToastData[]>([])
+  const adicionarToastGlobal = (tipo: ToastData['tipo'], mensagem: string) => {
+    const id = Date.now()
+    setToastsGlobais(prev => [...prev, { id, tipo, mensagem }])
+  }
+  const removerToastGlobal = (id: number) => {
+    setToastsGlobais(prev => prev.filter(t => t.id !== id))
+  }
+
+  // ── Notificador de eventos do Outlook ───────────────────────────────────────
+  useOutlookNotifier({
+    token:    localStorage.getItem('token'),
+    onAviso:  (msg) => adicionarToastGlobal('aviso', msg),
+    horasAhead: 2
+  })
+
   // Desloga automaticamente ao fechar o app
   useEffect(() => {
     const handleClose = () => {
@@ -284,7 +303,9 @@ const handleLogout = () => {
 
   if (!usuario) return <Login onLogin={handleLogin} />
   if (tela === 'hub') return (
-    <Hub
+    <>
+      <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
+      <Hub
       usuario={usuario}
       onEntrarRelatorios={() => setTela('relatorios')}
       onEntrarAtlas={() => setTela('atlas')}
@@ -294,6 +315,7 @@ const handleLogout = () => {
       onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
       onLogout={handleLogout}
     />
+    </>
   )
 if (tela === 'dashboard') return (
     <Dashboard
@@ -336,6 +358,8 @@ if (tela === 'dashboard') return (
   )
 
   if (tela === 'atlas') return (
+  <>
+  <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
   <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
     <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: 48, borderBottom: '1px solid #2d3148', background: '#13161f', flexShrink: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -357,6 +381,7 @@ if (tela === 'dashboard') return (
     </header>
     <Atlas nomeUsuario={usuario.nome} />
   </div>
+  </>
 )
 return (
   <Dashboard
