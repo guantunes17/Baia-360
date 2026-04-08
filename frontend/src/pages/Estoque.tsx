@@ -6,8 +6,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { DicaExtracao } from '@/components/DicaExtracao'
+import { API } from '../config'
 
-const API = 'http://localhost:5001'
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
 
 type Status = 'idle' | 'processando' | 'concluido' | 'erro'

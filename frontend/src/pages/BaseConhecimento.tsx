@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
+import { API } from '../config'
 
-const API = 'http://localhost:5001'
 const token = () => localStorage.getItem('token') || ''
 const headers = () => ({ Authorization: `Bearer ${token()}` })
 

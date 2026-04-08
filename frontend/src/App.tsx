@@ -24,8 +24,7 @@ import { ToastContainer, ToastData } from '@/components/Toast'
 import { Atlas } from '@/pages/Atlas'
 import { LogoBaia360 } from '@/components/LogoBaia360'
 import { BaseConhecimento } from '@/pages/BaseConhecimento'
-
-const API = 'http://localhost:5001'
+import { API } from './config'
 
 interface Usuario {
   id: number

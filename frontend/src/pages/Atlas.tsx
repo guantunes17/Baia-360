@@ -3,8 +3,7 @@ import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-
-const API = 'http://localhost:5001'
+import { API } from '../config'
 
 const TOOLS_DEF = [
   { id: 'get_dashboard', name: 'get_dashboard', on: true,
