@@ -25,6 +25,7 @@ import { Atlas } from '@/pages/Atlas'
 import { useOutlookNotifier } from '@/hooks/useOutlookNotifier'
 import { LogoBaia360 } from '@/components/LogoBaia360'
 import { BaseConhecimento } from '@/pages/BaseConhecimento'
+import { Agenda } from '@/pages/Agenda'
 
 import { API } from '@/config'
 
@@ -166,6 +167,8 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
         return <DashboardPage />
         case 'perfil':
         return <Perfil usuario={usuario} onAtualizar={onAtualizarUsuario} />
+      case 'agenda':
+        return <Agenda />
       case 'base_conhecimento':
         return <BaseConhecimento />
       default:
