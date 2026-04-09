@@ -40,7 +40,12 @@ app.config['JWT_SECRET_KEY']                 = os.getenv('JWT_SECRET_KEY')
 app.config['SQLALCHEMY_DATABASE_URI']        = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+# CORS — em produção lê FRONTEND_URL do ambiente; em dev aceita localhost
+_frontend_origins = ["http://localhost:5173", "http://localhost:3000"]
+_prod_url = os.getenv("FRONTEND_URL", "").strip()
+if _prod_url:
+    _frontend_origins.append(_prod_url)
+CORS(app, origins=_frontend_origins)
 db  = SQLAlchemy(app)
 jwt = JWTManager(app)
 
@@ -1756,7 +1761,7 @@ def _msal_app():
         authority=f"https://login.microsoftonline.com/{os.getenv('AZURE_TENANT_ID')}"
     )
 
-OUTLOOK_SCOPES = ["Calendars.ReadWrite", "Mail.Read", "User.Read"]
+OUTLOOK_SCOPES = ["Calendars.ReadWrite", "Mail.Read", "Mail.Send", "User.Read"]
 
 def _renovar_token_se_necessario(token_obj: OutlookToken) -> bool:
     """
@@ -2049,6 +2054,46 @@ def outlook_eventos_proximos():
             'horas_ahead':  horas_ahead
         })
         resultado['conectado'] = True
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+
+@app.route('/api/outlook/enviar_email', methods=['POST'])
+@jwt_required()
+def outlook_enviar_email():
+    """
+    Envia um e-mail pelo Outlook do usuário autenticado.
+
+    Body JSON esperado:
+      destinatario      : str   — endereço de e-mail do destinatário
+      assunto           : str
+      corpo             : str   — texto do e-mail
+      nome_destinatario : str   (opcional)
+    """
+    usuario_id = get_jwt_identity()
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+
+    data = request.get_json()
+    destinatario      = data.get('destinatario', '').strip()
+    assunto           = data.get('assunto', '').strip()
+    corpo             = data.get('corpo', '').strip()
+    nome_destinatario = data.get('nome_destinatario', '').strip()
+
+    if not all([destinatario, assunto, corpo]):
+        return jsonify({'erro': 'Campos obrigatórios: destinatario, assunto, corpo'}), 400
+
+    try:
+        resultado = _chamar_mcp('enviar_email', {
+            'access_token':      access_token,
+            'destinatario':      destinatario,
+            'nome_destinatario': nome_destinatario,
+            'assunto':           assunto,
+            'corpo':             corpo
+        })
         return jsonify(resultado)
     except Exception as e:
         return jsonify({'erro': str(e)}), 500

@@ -270,6 +270,73 @@ def eventos_proximos():
         return erro(str(e), 500)
 
 
+
+@app.route("/tools/enviar_email", methods=["POST"])
+def enviar_email():
+    """
+    Envia um e-mail pelo Outlook do usuário.
+
+    Body esperado:
+      access_token      : str  — token OAuth do usuário
+      destinatario      : str  — endereço de e-mail
+      assunto           : str
+      corpo             : str  — texto do e-mail (plain text)
+      nome_destinatario : str  (opcional)
+    """
+    data = request.get_json()
+    token             = data.get("access_token")
+    destinatario      = data.get("destinatario")
+    assunto           = data.get("assunto")
+    corpo             = data.get("corpo")
+    nome_destinatario = data.get("nome_destinatario", "")
+
+    if not all([token, destinatario, assunto, corpo]):
+        return erro("Campos obrigatórios: access_token, destinatario, assunto, corpo")
+
+    try:
+        # Monta o payload conforme Microsoft Graph sendMail
+        payload = {
+            "message": {
+                "subject": assunto,
+                "body": {
+                    "contentType": "Text",
+                    "content": corpo
+                },
+                "toRecipients": [
+                    {
+                        "emailAddress": {
+                            "address": destinatario,
+                            "name": nome_destinatario or destinatario
+                        }
+                    }
+                ]
+            },
+            "saveToSentItems": True   # salva na pasta Enviados do Outlook
+        }
+        # POST /me/sendMail não retorna body (204 No Content) — apenas verifica status
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        resp = requests.post(
+            f"{GRAPH_BASE}/me/sendMail",
+            headers=headers,
+            json=payload
+        )
+        resp.raise_for_status()
+        return jsonify({
+            "ok": True,
+            "destinatario": destinatario,
+            "assunto": assunto,
+            "mensagem": "E-mail enviado com sucesso e salvo em Enviados."
+        })
+
+    except requests.HTTPError as e:
+        return erro(f"Erro ao enviar e-mail: {e.response.status_code} — {e.response.text}", 502)
+    except Exception as e:
+        return erro(str(e), 500)
+
+
 # ── Health check ──────────────────────────────────────────────────────────────
 
 @app.route("/health", methods=["GET"])

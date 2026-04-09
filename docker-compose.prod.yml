@@ -1,0 +1,53 @@
+services:
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: baia360-backend
+    container_name: baia360-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.production
+    ports:
+      - "5001:5001"
+    networks:
+      - baia360
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mcp-outlook:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp
+    image: baia360-mcp
+    container_name: baia360-mcp
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.production
+    ports:
+      - "5002:5002"
+    networks:
+      - baia360
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: baia360-frontend
+    container_name: baia360-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - mcp-outlook
+    networks:
+      - baia360
+
+networks:
+  baia360:
+    driver: bridge

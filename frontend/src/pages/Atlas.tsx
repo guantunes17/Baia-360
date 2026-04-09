@@ -24,6 +24,9 @@ const TOOLS_DEF = [
   },
   { id: 'buscar_emails', name: 'buscar_emails', on: true,
     declaration: { name: 'buscar_emails', description: 'Busca e-mails do usuário no Outlook. Use quando o usuário perguntar sobre e-mails, mensagens recebidas, ou quiser encontrar um e-mail específico.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Texto para buscar no assunto ou remetente. Pode ser vazio para trazer os mais recentes.' }, apenas_nao_lidos: { type: 'boolean', description: 'Se true, retorna apenas e-mails não lidos.' }, limite: { type: 'number', description: 'Quantidade máxima de e-mails a retornar. Default 20, máximo 50.' } }, required: ['query', 'apenas_nao_lidos', 'limite'] } }
+  },
+  { id: 'enviar_email', name: 'enviar_email', on: true,
+    declaration: { name: 'enviar_email', description: 'Envia um e-mail pelo Outlook do usuário. Use quando o usuário pedir para enviar, encaminhar ou redigir um e-mail para alguém.', parameters: { type: 'object', properties: { destinatario: { type: 'string', description: 'Endereço de e-mail do destinatário.' }, nome_destinatario: { type: ['string', 'null'], description: 'Nome de exibição do destinatário. Pode ser null.' }, assunto: { type: 'string', description: 'Assunto do e-mail.' }, corpo: { type: 'string', description: 'Corpo do e-mail em texto simples.' } }, required: ['destinatario', 'nome_destinatario', 'assunto', 'corpo'] } }
   }
 ]
 
@@ -83,6 +86,19 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
     })
     if (!res.ok) return { erro: 'Não foi possível buscar conversas.' }
     return res.json()
+  },
+  enviar_email: async (args: any, token: string) => {
+    const res = await fetch(`${API}/api/outlook/enviar_email`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao enviar e-mail.' }
+    }
+    return data
   }
 }
 
@@ -253,6 +269,16 @@ function ToolBadge({ tool }: { tool: string }) {
       label: 'Evento criado',
       color: '#a78bfa', bg: '#7c3aed11', border: '#7c3aed33',
       icon: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 7h12M5 1v4M11 1v4M8 10v-2M7 10h2"/></svg>
+    },
+    buscar_emails: {
+      label: 'E-mails consultados',
+      color: '#a78bfa', bg: '#7c3aed11', border: '#7c3aed33',
+      icon: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 5l7 5 7-5"/></svg>
+    },
+    enviar_email: {
+      label: 'E-mail enviado',
+      color: '#34d399', bg: '#34d39911', border: '#34d39933',
+      icon: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M14 2L2 7l5 2 2 5 5-12z"/></svg>
     },
   }
   const c = config[tool] || { label: tool, color: '#8892a4', bg: '#8892a411', border: '#8892a433', icon: null }
