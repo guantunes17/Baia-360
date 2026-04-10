@@ -1,11 +1,11 @@
 FROM python:3.13-slim
+
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir flask flask-cors requests python-dotenv
 
 COPY mcp_outlook_server.py .
-COPY .env.production .env
 
 EXPOSE 5002
 
