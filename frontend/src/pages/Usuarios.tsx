@@ -274,7 +274,7 @@ export function Usuarios() {
             <Button
               variant="outline"
               onClick={() => setModalAberto(false)}
-              style={{ borderColor: '#2d3148', color: '#8892a4', background: 'transparent' }}
+              style={{ borderColor: '#4a5568', color: '#e2e8f0', background: 'transparent' }}
             >
               Cancelar
             </Button>
@@ -313,7 +313,7 @@ export function Usuarios() {
             <Button
               variant="outline"
               onClick={() => setModalSenha(false)}
-              style={{ borderColor: '#2d3148', color: '#8892a4', background: 'transparent' }}
+              style={{ borderColor: '#4a5568', color: '#e2e8f0', background: 'transparent' }}
             >
               Cancelar
             </Button>
@@ -342,7 +342,7 @@ export function Usuarios() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel
-              style={{ background: 'transparent', borderColor: '#2d3148', color: '#8892a4' }}
+              style={{ background: 'transparent', borderColor: '#4a5568', color: '#e2e8f0' }}
             >
               Cancelar
             </AlertDialogCancel>

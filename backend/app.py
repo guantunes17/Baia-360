@@ -158,6 +158,41 @@ def login():
     return jsonify({'token': token, 'usuario': user.to_dict()}), 200
 
 
+
+@app.route('/api/auth/cadastro', methods=['POST'])
+def cadastro():
+    """
+    Rota pública — qualquer pessoa pode criar uma conta.
+    Perfil sempre 'usuario', ativo=True imediatamente.
+    """
+    from flask import request, jsonify
+    data  = request.get_json()
+    nome  = data.get('nome', '').strip()
+    email = data.get('email', '').strip().lower()
+    senha = data.get('senha', '')
+    senha_confirmacao = data.get('senha_confirmacao', '')
+
+    # Validações
+    if not all([nome, email, senha, senha_confirmacao]):
+        return jsonify({'erro': 'Todos os campos são obrigatórios'}), 400
+    if len(nome) < 2:
+        return jsonify({'erro': 'Nome deve ter pelo menos 2 caracteres'}), 400
+    if len(senha) < 8:
+        return jsonify({'erro': 'A senha deve ter pelo menos 8 caracteres'}), 400
+    if senha != senha_confirmacao:
+        return jsonify({'erro': 'As senhas não coincidem'}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({'erro': 'Este e-mail já está cadastrado'}), 409
+
+    novo = User(nome=nome, email=email, perfil='usuario', ativo=True)
+    novo.set_senha(senha)
+    db.session.add(novo)
+    db.session.commit()
+
+    # Já retorna o token para o usuário logar direto
+    token = create_access_token(identity=str(novo.id), expires_delta=timedelta(hours=8))
+    return jsonify({'token': token, 'usuario': novo.to_dict()}), 201
+
 @app.route('/api/auth/me', methods=['GET'])
 @jwt_required()
 def me():

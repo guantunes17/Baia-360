@@ -36,7 +36,139 @@ interface Usuario {
   perfil: string
 }
 
-function Login({ onLogin }: { onLogin: (u: Usuario) => void }) {
+
+function Cadastro({ onVoltar, onCadastro }: { onVoltar: () => void; onCadastro: (u: any) => void }) {
+  const [nome, setNome]                   = useState('')
+  const [email, setEmail]                 = useState('')
+  const [senha, setSenha]                 = useState('')
+  const [senhaConf, setSenhaConf]         = useState('')
+  const [erro, setErro]                   = useState('')
+  const [loading, setLoading]             = useState(false)
+
+  const forcaSenha = senha.length === 0 ? 0 : senha.length < 6 ? 1 : senha.length < 8 ? 2 : senha.length < 12 ? 3 : 4
+  const coresForca = ['#2d3148', '#ef4444', '#f59e0b', '#4f8ef7', '#1D9E75']
+  const labelsForca = ['', 'Fraca', 'Razoável', 'Boa', 'Forte']
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setErro('')
+    if (senha !== senhaConf) { setErro('As senhas não coincidem'); return }
+    if (senha.length < 8)    { setErro('A senha deve ter pelo menos 8 caracteres'); return }
+    setLoading(true)
+    try {
+      const res = await axios.post(`${API}/api/auth/cadastro`, {
+        nome, email, senha, senha_confirmacao: senhaConf
+      })
+      localStorage.setItem('token',   res.data.token)
+      localStorage.setItem('usuario', JSON.stringify(res.data.usuario))
+      onCadastro(res.data.usuario)
+    } catch (err: any) {
+      setErro(err.response?.data?.erro || 'Erro ao criar conta')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#0f1117' }}>
+      <Card className="w-full max-w-md border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
+        <CardHeader className="text-center space-y-1">
+          <div className="flex justify-center mb-3">
+            <LogoBaia360 size={72} />
+          </div>
+          <CardTitle className="text-2xl font-bold" style={{ color: '#e2e8f0' }}>Criar conta</CardTitle>
+          <CardDescription style={{ color: '#8892a4' }}>Baia 4 Logística e Transportes</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="nome" style={{ color: '#8892a4' }}>Nome completo</Label>
+              <Input
+                id="nome"
+                type="text"
+                placeholder="Seu nome completo"
+                value={nome}
+                onChange={e => setNome(e.target.value)}
+                required
+                style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-cad" style={{ color: '#8892a4' }}>E-mail</Label>
+              <Input
+                id="email-cad"
+                type="email"
+                placeholder="seu@email.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="senha-cad" style={{ color: '#8892a4' }}>Senha</Label>
+              <Input
+                id="senha-cad"
+                type="password"
+                placeholder="Mínimo 8 caracteres"
+                value={senha}
+                onChange={e => setSenha(e.target.value)}
+                required
+                style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+              />
+              {senha.length > 0 && (
+                <div>
+                  <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                    {[1,2,3,4].map(i => (
+                      <div key={i} style={{ flex: 1, height: 3, borderRadius: 99, background: i <= forcaSenha ? coresForca[forcaSenha] : '#2d3148', transition: 'background .2s' }} />
+                    ))}
+                  </div>
+                  <p style={{ fontSize: 11, color: coresForca[forcaSenha], marginTop: 4 }}>{labelsForca[forcaSenha]}</p>
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="senha-conf" style={{ color: '#8892a4' }}>Confirmar senha</Label>
+              <Input
+                id="senha-conf"
+                type="password"
+                placeholder="Repita a senha"
+                value={senhaConf}
+                onChange={e => setSenhaConf(e.target.value)}
+                required
+                style={{
+                  background: '#0f1117',
+                  borderColor: senhaConf.length > 0 ? (senhaConf === senha ? '#1D9E75' : '#ef4444') : '#2d3148',
+                  color: '#e2e8f0'
+                }}
+              />
+              {senhaConf.length > 0 && senhaConf !== senha && (
+                <p style={{ fontSize: 12, color: '#ef4444' }}>As senhas não coincidem</p>
+              )}
+            </div>
+            {erro && <p className="text-sm text-center" style={{ color: '#ef4444' }}>{erro}</p>}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={loading}
+              style={{ background: '#4f8ef7', color: 'white' }}
+            >
+              {loading ? 'Criando conta...' : 'Criar conta'}
+            </Button>
+          </form>
+          <div className="text-center mt-4" style={{ fontSize: 13, color: '#8892a4' }}>
+            Já tem conta?{' '}
+            <button onClick={onVoltar} style={{ color: '#4f8ef7', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
+              Entrar
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function Login({ onLogin, onCadastro }: { onLogin: (u: Usuario) => void; onCadastro: () => void }) {
   const [email, setEmail]     = useState('')
   const [senha, setSenha]     = useState('')
   const [erro, setErro]       = useState('')
@@ -121,6 +253,12 @@ function Login({ onLogin }: { onLogin: (u: Usuario) => void }) {
               {loading ? 'Entrando...' : 'Entrar'}
             </Button>
           </form>
+          <div className="text-center mt-4" style={{ fontSize: 13, color: '#8892a4' }}>
+            Não tem conta?{' '}
+            <button onClick={onCadastro} style={{ color: '#4f8ef7', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
+              Criar conta
+            </button>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -268,6 +406,7 @@ export default function App() {
     return u ? JSON.parse(u) : null
   })
   const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas' | 'dashboard' | 'agenda' | 'usuarios' | 'base_conhecimento'>('hub')
+  const [telaNaoLogado, setTelaNaoLogado] = useState<'login' | 'cadastro'>('login')
 
   // ── Toasts globais (visíveis em qualquer tela) ──────────────────────────────
   const [toastsGlobais, setToastsGlobais] = useState<ToastData[]>([])
@@ -296,7 +435,7 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handleClose)
   }, [])
 
-  const handleLogin  = (u: Usuario) => { setUsuario(u); setTela('hub') }
+  const handleLogin  = (u: Usuario) => { setUsuario(u); setTela('hub'); setTelaNaoLogado('login') }
 const handleLogout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('usuario')
@@ -304,7 +443,15 @@ const handleLogout = () => {
   setTela('hub')
   }
 
-  if (!usuario) return <Login onLogin={handleLogin} />
+  if (!usuario) {
+    if (telaNaoLogado === 'cadastro') return (
+      <Cadastro
+        onVoltar={() => setTelaNaoLogado('login')}
+        onCadastro={(u) => handleLogin(u)}
+      />
+    )
+    return <Login onLogin={handleLogin} onCadastro={() => setTelaNaoLogado('cadastro')} />
+  }
   if (tela === 'hub') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
