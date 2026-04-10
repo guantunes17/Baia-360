@@ -72,8 +72,8 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
+      - mcp-outlook
     networks:
       - baia360
 
