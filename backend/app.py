@@ -6,6 +6,8 @@ import uuid
 import pandas as pd
 import msal
 import requests as http_requests
+import os
+import json
 
 def _deletar_temp(path: str):
     """Remove arquivo temporário com tolerância ao PermissionError do Windows."""
