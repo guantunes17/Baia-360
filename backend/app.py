@@ -133,8 +133,7 @@ class RelatorioGerado(db.Model):
             'kpis':      self.kpis()
         }
 
-with app.app_context():
-    db.create_all()
+# db.create_all() é executado pelo entrypoint.sh antes do gunicorn subir
 
 
 # ── Rotas Auth ────────────────────────────────────────────────────────────────
