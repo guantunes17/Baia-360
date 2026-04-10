@@ -35,7 +35,7 @@ class RelatorioGerado(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     modulo     = db.Column(db.String(50), nullable=False)
     mes_ref    = db.Column(db.String(10), nullable=True)
-    usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=True)
     gerado_em  = db.Column(db.DateTime, default=datetime.utcnow)
 
     usuario = db.relationship('User', backref='relatorios')

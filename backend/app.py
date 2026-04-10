@@ -54,7 +54,7 @@ jwt = JWTManager(app)
 class AtlasLog(db.Model):
     __tablename__ = 'atlas_logs'
     id          = db.Column(db.Integer, primary_key=True)
-    usuario_id  = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    usuario_id  = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
     primeira_msg = db.Column(db.String(200), nullable=True)
     total_msgs  = db.Column(db.Integer, default=0)
     criado_em   = db.Column(db.DateTime, default=datetime.utcnow)
@@ -62,7 +62,7 @@ class AtlasLog(db.Model):
 class AtlasConversa(db.Model):
     __tablename__ = 'atlas_conversas'
     id          = db.Column(db.Integer, primary_key=True)
-    usuario_id  = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    usuario_id  = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
     conv_id     = db.Column(db.String(20), nullable=False)       # id gerado no frontend
     titulo      = db.Column(db.String(200), default='Nova conversa')
     msgs_json   = db.Column(db.Text, nullable=False, default='[]')
@@ -82,7 +82,7 @@ class AtlasConversa(db.Model):
         }
 
 class User(db.Model):
-    __tablename__ = 'users'
+    __tablename__ = 'baia360_users'
     id         = db.Column(db.Integer, primary_key=True)
     nome       = db.Column(db.String(100), nullable=False)
     email      = db.Column(db.String(120), unique=True, nullable=False)
@@ -113,7 +113,7 @@ class RelatorioGerado(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     modulo     = db.Column(db.String(50), nullable=False)
     mes_ref    = db.Column(db.String(10), nullable=True)
-    usuario_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=True)
     gerado_em  = db.Column(db.DateTime, default=datetime.utcnow)
     kpis_json  = db.Column(db.Text, nullable=True)  # KPIs em JSON
 
@@ -134,7 +134,7 @@ class RelatorioGerado(db.Model):
         }
 
 with app.app_context():
-    db.create_all(checkfirst=True)
+    db.create_all()
 
 
 # ── Rotas Auth ────────────────────────────────────────────────────────────────
@@ -1767,7 +1767,7 @@ class OutlookToken(db.Model):
     """Armazena tokens OAuth do Microsoft Graph por usuário."""
     __tablename__ = 'outlook_tokens'
     id            = db.Column(db.Integer, primary_key=True)
-    usuario_id    = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), unique=True, nullable=False)
     access_token  = db.Column(db.Text, nullable=False)
     refresh_token = db.Column(db.Text, nullable=True)
     expires_at    = db.Column(db.DateTime, nullable=False)
