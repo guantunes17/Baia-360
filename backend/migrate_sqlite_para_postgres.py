@@ -29,11 +29,11 @@ cur = pg.cursor()
 
 try:
     # ── Usuários ──────────────────────────────────────────────────
-    rows = sqlite.execute("SELECT * FROM users").fetchall()
+    rows = sqlite.execute("SELECT * FROM baia360_users").fetchall()
     print(f"  Migrando {len(rows)} usuários...")
     for r in rows:
         cur.execute("""
-            INSERT INTO users (id, nome, email, senha_hash, perfil, ativo, criado_em)
+            INSERT INTO baia360_users (id, nome, email, senha_hash, perfil, ativo, criado_em)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
         """, (r['id'], r['nome'], r['email'], r['senha_hash'],
