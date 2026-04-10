@@ -29,7 +29,7 @@ cur = pg.cursor()
 
 try:
     # ── Usuários ──────────────────────────────────────────────────
-    rows = sqlite.execute("SELECT * FROM baia360_users").fetchall()
+    rows = sqlite.execute("SELECT * FROM users").fetchall()
     print(f"  Migrando {len(rows)} usuários...")
     for r in rows:
         cur.execute("""
@@ -37,7 +37,7 @@ try:
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
         """, (r['id'], r['nome'], r['email'], r['senha_hash'],
-              r['perfil'], r['ativo'], r['criado_em']))
+              r['perfil'], bool(r['ativo']), r['criado_em']))
 
     # ── Relatórios gerados ────────────────────────────────────────
     rows = sqlite.execute("SELECT * FROM relatorios_gerados").fetchall()
@@ -58,12 +58,12 @@ try:
         for r in rows:
             cur.execute("""
                 INSERT INTO atlas_conversas
-                    (id, usuario_id, titulo, mensagens_json, criado_em, atualizado_em, fixada)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (id, usuario_id, conv_id, titulo, msgs_json, history_json, criada_em, atualizada_em)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
-            """, (r['id'], r['usuario_id'], r['titulo'],
-                  r['mensagens_json'], r['criado_em'],
-                  r['atualizado_em'], r['fixada']))
+            """, (r['id'], r['usuario_id'], r['conv_id'], r['titulo'],
+                  r['msgs_json'], r['history_json'],
+                  r['criada_em'], r['atualizada_em']))
     except sqlite3.OperationalError:
         print("  Tabela atlas_conversas não encontrada, pulando.")
 
