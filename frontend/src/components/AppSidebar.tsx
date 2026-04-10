@@ -9,16 +9,43 @@ import { LogoBaia360 } from '@/components/LogoBaia360'
 interface Props {
   paginaAtiva: string
   onNavegar: (key: string) => void
+  perfil: string
 }
 
-const modulos_operacional = MODULOS.filter(m => m.grupo === 'operacional')
-const modulos_financeiro  = MODULOS.filter(m => m.grupo === 'financeiro')
+export function AppSidebar({ paginaAtiva, onNavegar, perfil }: Props) {
+  const isAdmin      = perfil === 'admin'
+  const isAnalista   = perfil === 'analista'
+  const isFinanceiro = perfil === 'financeiro'
 
-export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
+  const temOperacional = isAdmin || isAnalista
+  const temFinanceiro  = isAdmin || isFinanceiro
+  const temAdmin       = isAdmin
+
+  const modulos_operacional = MODULOS.filter(m => m.grupo === 'operacional')
+  const modulos_financeiro  = MODULOS.filter(m => m.grupo === 'financeiro')
+
+  const menuItem = (key: string, label: string) => (
+    <SidebarMenuItem key={key}>
+      <SidebarMenuButton
+        isActive={paginaAtiva === key}
+        onClick={() => onNavegar(key)}
+        className="cursor-pointer text-sm"
+        style={{
+          color: paginaAtiva === key ? '#e2e8f0' : '#8892a4',
+          background: paginaAtiva === key ? '#1e2235' : 'transparent',
+          transition: 'transform 0.15s ease',
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
+      >
+        {label}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
+
   return (
     <Sidebar className="border-r border-[#2d3148]" style={{ background: '#13161f' }}>
 
-      {/* Header */}
       <SidebarHeader className="px-4 py-5" style={{ background: '#13161f' }}>
         <div className="flex flex-col items-center gap-1">
           <div className="w-full h-1 rounded mb-3" style={{ background: '#4f8ef7' }} />
@@ -33,66 +60,12 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
 
       <SidebarContent style={{ background: '#13161f' }}>
 
-        {/* Home + Assistente */}
+        {/* Home + Dashboard */}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={paginaAtiva === 'home'}
-                  onClick={() => onNavegar('home')}
-                  className="font-semibold cursor-pointer"
-                  style={{
-                    color: paginaAtiva === 'home' ? '#e2e8f0' : '#8892a4',
-                    background: paginaAtiva === 'home' ? '#1e2235' : 'transparent',
-                    transition: 'transform 0.15s ease',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
-                >
-                  🏠  Home
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={paginaAtiva === 'assistente'}
-                  onClick={() => onNavegar('assistente')}
-                  className="font-semibold cursor-pointer"
-                  style={{
-                    color: '#8892a4',
-                    background: 'transparent',
-                    opacity: 0.5,
-                    cursor: 'not-allowed',
-                  }}
-                  title="Em desenvolvimento"
-                >
-                  🤖  Atlas
-                  <span
-                    className="ml-auto text-xs rounded px-1.5 py-0.5"
-                    style={{ background: '#1e2235', color: '#4f8ef7', fontSize: '10px' }}
-                  >
-                    em breve
-                  </span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={paginaAtiva === 'dashboard'}
-                  onClick={() => onNavegar('dashboard')}
-                  className="font-semibold cursor-pointer sidebar-item-hover"
-                  style={{
-                    color: paginaAtiva === 'dashboard' ? '#e2e8f0' : '#8892a4',
-                    background: paginaAtiva === 'dashboard' ? '#1e2235' : 'transparent',
-                    transition: 'transform 0.15s ease',
-                    }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
-                  >
-                  📈  Dashboard
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {menuItem('home', '🏠  Home')}
+              {temAdmin && menuItem('dashboard', '📈  Dashboard')}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -100,114 +73,90 @@ export function AppSidebar({ paginaAtiva, onNavegar }: Props) {
         <SidebarSeparator style={{ background: '#2d3148' }} />
 
         {/* Operacional */}
-        <SidebarGroup>
-          <SidebarGroupLabel style={{ color: '#4f8ef7', fontWeight: 700 }}>
-            📊 Operacional
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {modulos_operacional.map(m => (
-                <SidebarMenuItem key={m.key}>
-                  <SidebarMenuButton
-                    isActive={paginaAtiva === m.key}
-                    onClick={() => onNavegar(m.key)}
-                    className="cursor-pointer text-sm"
-                    style={{
-                      color: paginaAtiva === m.key ? '#e2e8f0' : '#8892a4',
-                      background: paginaAtiva === m.key ? '#1e2235' : 'transparent',
-                      transition: 'transform 0.15s ease',
-                    }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
-                  >
-                    {m.icone}  {m.titulo}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator style={{ background: '#2d3148' }} />
+        {temOperacional && (
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel style={{ color: '#4f8ef7', fontWeight: 700 }}>
+                📊 Operacional
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {modulos_operacional.map(m => (
+                    <SidebarMenuItem key={m.key}>
+                      <SidebarMenuButton
+                        isActive={paginaAtiva === m.key}
+                        onClick={() => onNavegar(m.key)}
+                        className="cursor-pointer text-sm"
+                        style={{
+                          color: paginaAtiva === m.key ? '#e2e8f0' : '#8892a4',
+                          background: paginaAtiva === m.key ? '#1e2235' : 'transparent',
+                          transition: 'transform 0.15s ease',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
+                      >
+                        {m.icone}  {m.titulo}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            <SidebarSeparator style={{ background: '#2d3148' }} />
+          </>
+        )}
 
         {/* Financeiro */}
-        <SidebarGroup>
-          <SidebarGroupLabel style={{ color: '#10b981', fontWeight: 700 }}>
-            💰 Financeiro
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {modulos_financeiro.map(m => (
-                <SidebarMenuItem key={m.key}>
-                  <SidebarMenuButton
-                    isActive={paginaAtiva === m.key}
-                    onClick={() => onNavegar(m.key)}
-                    className="cursor-pointer text-sm"
-                    style={{
-                      color: paginaAtiva === m.key ? '#e2e8f0' : '#8892a4',
-                      background: paginaAtiva === m.key ? '#1e2235' : 'transparent',
-                      transition: 'transform 0.15s ease',
-                    }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
-                  >
-                    {m.icone}  {m.titulo}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator style={{ background: '#2d3148' }} />
+        {temFinanceiro && (
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel style={{ color: '#10b981', fontWeight: 700 }}>
+                💰 Financeiro
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {modulos_financeiro.map(m => (
+                    <SidebarMenuItem key={m.key}>
+                      <SidebarMenuButton
+                        isActive={paginaAtiva === m.key}
+                        onClick={() => onNavegar(m.key)}
+                        className="cursor-pointer text-sm"
+                        style={{
+                          color: paginaAtiva === m.key ? '#e2e8f0' : '#8892a4',
+                          background: paginaAtiva === m.key ? '#1e2235' : 'transparent',
+                          transition: 'transform 0.15s ease',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
+                      >
+                        {m.icone}  {m.titulo}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            <SidebarSeparator style={{ background: '#2d3148' }} />
+          </>
+        )}
 
         {/* Admin */}
-        <SidebarGroup>
-          <SidebarGroupLabel style={{ color: '#8892a4', fontWeight: 700 }}>
-            ⚙️ Administração
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={paginaAtiva === 'usuarios'}
-                  onClick={() => onNavegar('usuarios')}
-                  className="cursor-pointer text-sm sidebar-item-hover"
-                  style={{
-                    color: paginaAtiva === 'usuarios' ? '#e2e8f0' : '#8892a4',
-                    background: paginaAtiva === 'usuarios' ? '#1e2235' : 'transparent',
-                    transition: 'transform 0.15s ease',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
-                >
-                  👥  Usuários
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={paginaAtiva === 'base_conhecimento'}
-                  onClick={() => onNavegar('base_conhecimento')}
-                  className="cursor-pointer text-sm sidebar-item-hover"
-                  style={{
-                    color: paginaAtiva === 'base_conhecimento' ? '#e2e8f0' : '#8892a4',
-                    background: paginaAtiva === 'base_conhecimento' ? '#1e2235' : 'transparent',
-                    transition: 'transform 0.15s ease',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(2px)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateX(0)' }}
-                >
-                  🧠  Base de Conhecimento
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {temAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel style={{ color: '#8892a4', fontWeight: 700 }}>
+              ⚙️ Administração
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {menuItem('usuarios', '👥  Usuários')}
+                {menuItem('base_conhecimento', '🧠  Base de Conhecimento')}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
       </SidebarContent>
 
-      {/* Footer */}
       <SidebarFooter style={{ background: '#13161f' }}>
         <SidebarSeparator style={{ background: '#2d3148' }} />
         <p className="text-center text-xs py-2" style={{ color: '#2d3148' }}>

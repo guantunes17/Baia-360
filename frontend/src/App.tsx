@@ -56,12 +56,12 @@ function Cadastro({ onVoltar, onCadastro }: { onVoltar: () => void; onCadastro: 
     if (senha.length < 8)    { setErro('A senha deve ter pelo menos 8 caracteres'); return }
     setLoading(true)
     try {
-      const res = await axios.post(`${API}/api/auth/cadastro`, {
+      await axios.post(`${API}/api/auth/cadastro`, {
         nome, email, senha, senha_confirmacao: senhaConf
       })
-      localStorage.setItem('token',   res.data.token)
-      localStorage.setItem('usuario', JSON.stringify(res.data.usuario))
-      onCadastro(res.data.usuario)
+      setErro('')
+      alert('Cadastro realizado! Aguarde a aprovação do administrador.')
+      onVoltar()
     } catch (err: any) {
       setErro(err.response?.data?.erro || 'Erro ao criar conta')
     } finally {
@@ -279,42 +279,45 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
     return () => { delete (window as any)._toast }
   }, [])
 
+  const perfil = usuario.perfil
+  const isAdmin      = perfil === 'admin'
+  const isAnalista   = perfil === 'analista'
+  const isFinanceiro = perfil === 'financeiro'
+
   const renderPagina = () => {
     switch (paginaAtiva) {
       case 'home':
         return <Home onNavegar={setPaginaAtiva} />
-        case 'usuarios':
-        return <Usuarios />
-        case 'fretes':
-        return <Fretes />
-        case 'armazenagem':
-        return <Armazenagem />
-        case 'pedidos':
-        return <Pedidos />
-        case 'recebimentos':
-        return <Recebimentos />
-        case 'cap_operacional':
-        return <CapOperacional />
-        case 'estoque':
-        return <Estoque />
-        case 'fat_dist':
-        return <FatDistribuicao />
-        case 'fat_arm':
-        return <FatArmazenagem />
-        case 'dashboard':
-        return <DashboardPage />
-        case 'perfil':
+      case 'usuarios':
+        return isAdmin ? <Usuarios /> : null
+      case 'fretes':
+        return (isAdmin || isAnalista) ? <Fretes /> : null
+      case 'armazenagem':
+        return (isAdmin || isAnalista) ? <Armazenagem /> : null
+      case 'pedidos':
+        return (isAdmin || isAnalista) ? <Pedidos /> : null
+      case 'recebimentos':
+        return (isAdmin || isAnalista) ? <Recebimentos /> : null
+      case 'cap_operacional':
+        return (isAdmin || isAnalista) ? <CapOperacional /> : null
+      case 'estoque':
+        return (isAdmin || isAnalista) ? <Estoque /> : null
+      case 'fat_dist':
+        return (isAdmin || isFinanceiro) ? <FatDistribuicao /> : null
+      case 'fat_arm':
+        return (isAdmin || isFinanceiro) ? <FatArmazenagem /> : null
+      case 'dashboard':
+        return isAdmin ? <DashboardPage /> : null
+      case 'perfil':
         return <Perfil usuario={usuario} onAtualizar={onAtualizarUsuario} />
       case 'agenda':
         return <Agenda />
       case 'base_conhecimento':
-        return <BaseConhecimento />
+        return isAdmin ? <BaseConhecimento /> : null
       default:
         return (
           <div className="p-8">
-            <h2 className="text-xl font-bold mb-2" style={{ color: '#e2e8f0' }}>
-              Em construção
-            </h2>
+            <h2 className="text-xl font-bold mb-2" style={{ color: '#e2e8f0' }}>Em construção</h2>
             <p style={{ color: '#8892a4' }}>
               O módulo <strong style={{ color: '#4f8ef7' }}>{paginaAtiva}</strong> será implementado em breve.
             </p>
@@ -329,7 +332,7 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
         <div className="flex min-h-screen w-full" style={{ background: '#0f1117' }}>
           <ToastContainer toasts={toasts} onRemover={removerToast} />
 
-          <AppSidebar paginaAtiva={paginaAtiva} onNavegar={setPaginaAtiva} />
+          <AppSidebar paginaAtiva={paginaAtiva} onNavegar={setPaginaAtiva} perfil={usuario.perfil} />
 
           <div className="flex flex-col flex-1 min-w-0">
             {/* Topbar */}

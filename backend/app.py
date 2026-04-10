@@ -89,8 +89,9 @@ class User(db.Model):
     nome       = db.Column(db.String(100), nullable=False)
     email      = db.Column(db.String(120), unique=True, nullable=False)
     senha_hash = db.Column(db.String(256), nullable=False)
-    perfil     = db.Column(db.String(20), default='usuario')
-    ativo      = db.Column(db.Boolean, default=True)
+    perfil     = db.Column(db.String(20), default='operacional')
+    ativo      = db.Column(db.Boolean, default=False)
+    status     = db.Column(db.String(20), default='pendente')
     criado_em  = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_senha(self, senha):
@@ -106,6 +107,7 @@ class User(db.Model):
             'email':     self.email,
             'perfil':    self.perfil,
             'ativo':     self.ativo,
+            'status':    self.status,
             'criado_em': self.criado_em.isoformat()
         }
 
@@ -155,6 +157,8 @@ def login():
     user = User.query.filter_by(email=email).first()
     if not user or not user.check_senha(senha):
         return jsonify({'erro': 'Credenciais inválidas'}), 401
+    if user.status == 'pendente':
+        return jsonify({'erro': 'Cadastro aguardando aprovação do administrador.'}), 403
     if not user.ativo:
         return jsonify({'erro': 'Usuário inativo'}), 403
 
@@ -188,14 +192,12 @@ def cadastro():
     if User.query.filter_by(email=email).first():
         return jsonify({'erro': 'Este e-mail já está cadastrado'}), 409
 
-    novo = User(nome=nome, email=email, perfil='usuario', ativo=True)
+    novo = User(nome=nome, email=email, perfil='operacional', ativo=False, status='pendente')
     novo.set_senha(senha)
     db.session.add(novo)
     db.session.commit()
 
-    # Já retorna o token para o usuário logar direto
-    token = create_access_token(identity=str(novo.id), expires_delta=timedelta(hours=8))
-    return jsonify({'token': token, 'usuario': novo.to_dict()}), 201
+    return jsonify({'mensagem': 'Cadastro realizado! Aguarde a aprovação do administrador.'}), 201
 
 @app.route('/api/auth/me', methods=['GET'])
 @jwt_required()
@@ -334,6 +336,45 @@ def deletar_usuario(user_id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({'msg': 'Usuário deletado com sucesso'}), 200
+
+@app.route('/api/auth/usuarios/<int:user_id>/aprovar', methods=['POST'])
+@jwt_required()
+def aprovar_usuario(user_id):
+    admin = User.query.get(int(get_jwt_identity()))
+    if not admin or admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    data   = request.get_json()
+    perfil = data.get('perfil', 'operacional')
+    if perfil not in ['admin', 'analista', 'financeiro', 'operacional']:
+        return jsonify({'erro': 'Perfil inválido'}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+
+    user.perfil = perfil
+    user.ativo  = True
+    user.status = 'ativo'
+    db.session.commit()
+    return jsonify({'ok': True, 'usuario': user.to_dict()}), 200
+
+
+@app.route('/api/auth/usuarios/<int:user_id>/rejeitar', methods=['POST'])
+@jwt_required()
+def rejeitar_usuario(user_id):
+    admin = User.query.get(int(get_jwt_identity()))
+    if not admin or admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+
+    user.status = 'rejeitado'
+    user.ativo  = False
+    db.session.commit()
+    return jsonify({'ok': True}), 200
 
 import tempfile, threading, uuid
 from flask import send_file
