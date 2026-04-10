@@ -137,6 +137,9 @@ class RelatorioGerado(db.Model):
 
 # db.create_all() é executado pelo entrypoint.sh antes do gunicorn subir
 
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok'}), 200
 
 # ── Rotas Auth ────────────────────────────────────────────────────────────────
 @app.route('/api/auth/login', methods=['POST'])
