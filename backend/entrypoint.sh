@@ -9,6 +9,6 @@ print('Banco inicializado com sucesso.')
 echo "Iniciando gunicorn..."
 exec gunicorn app:app \
     --bind 0.0.0.0:5001 \
-    --workers 4 \
-    --timeout 120 \
+    --workers 1 \
+    --timeout 300 \
     --worker-class sync
