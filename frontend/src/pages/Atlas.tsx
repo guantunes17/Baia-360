@@ -328,7 +328,7 @@ function IcBtn({ onClick, tip, children, active, color }: {
 }
 
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handler)
@@ -1039,7 +1039,8 @@ Sobre busca na internet:
         ...(isMobile ? {
           position: 'fixed', top: 0, left: 0, height: '100%', zIndex: 50,
           transform: sidebarAberta ? 'translateX(0)' : 'translateX(-100%)',
-          transition: 'transform 0.25s ease'
+          transition: 'transform 0.25s ease',
+          boxShadow: sidebarAberta ? '4px 0 20px #0006' : 'none'
         } : {})
       }}>
 
