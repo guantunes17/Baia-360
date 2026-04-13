@@ -327,11 +327,29 @@ function IcBtn({ onClick, tip, children, active, color }: {
   )
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return isMobile
+}
+
 export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [conversas, setConversas] = useState<Conversa[]>([])
   const [ativaId, setAtivaId] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const isMobile = useIsMobile()
+  const [sidebarAberta, setSidebarAberta] = useState(false)
+
+  useEffect(() => {
+    const handler = () => setSidebarAberta(v => !v)
+    window.addEventListener('atlas-toggle-sidebar', handler)
+    return () => window.removeEventListener('atlas-toggle-sidebar', handler)
+  }, [])
   const [abortCtrl, setAbortCtrl] = useState<AbortController | null>(null)
   const [arquivoPendente, setArquivoPendente] = useState<ArquivoPendente | null>(null)
   const [uploadInfo, setUploadInfo] = useState<{ modulo: string; mes_ref: string } | null>(null)
@@ -1006,12 +1024,24 @@ Sobre busca na internet:
   // Tela home — exibida quando não há conversa ativa
   const telaHome = !ativaId || !conversa
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden', height: '100%' }}>
 
+      {/* Overlay mobile */}
+      {isMobile && sidebarAberta && (
+        <div onClick={() => setSidebarAberta(false)} style={{ position: 'fixed', inset: 0, background: '#0008', zIndex: 40 }} />
+      )}
+
       {/* Sidebar */}
-      <div style={{ width: 240, background: '#13161f', borderRight: '1px solid #2d3148', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <div style={{
+        width: 240, background: '#13161f', borderRight: '1px solid #2d3148',
+        display: 'flex', flexDirection: 'column', flexShrink: 0,
+        ...(isMobile ? {
+          position: 'fixed', top: 0, left: 0, height: '100%', zIndex: 50,
+          transform: sidebarAberta ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 0.25s ease'
+        } : {})
+      }}>
 
         {/* Busca */}
         <div style={{ padding: '10px 10px 0', position: 'relative' }}>
@@ -1048,7 +1078,7 @@ Sobre busca na internet:
               {grupo.items.map(c => (
                 <div
                   key={c.id}
-                  onClick={() => { if (renomeandoId === c.id) return; setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null); setArquivoContexto(null) }}
+                  onClick={() => { if (renomeandoId === c.id) return; setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null); setArquivoContexto(null); if (isMobile) setSidebarAberta(false) }}
                   style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', borderRadius: 7, margin: '1px 8px', background: c.id === ativaId ? '#1a1d27' : 'transparent', border: c.id === ativaId ? '0.5px solid #2d3148' : '0.5px solid transparent', cursor: 'pointer', position: 'relative' }}
                   onMouseEnter={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '1' }}
                   onMouseLeave={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '0' }}
@@ -1375,7 +1405,7 @@ Sobre busca na internet:
           </button>
         )}
 
-        <div ref={chatBodyRef} style={{ flex: 1, overflowY: 'auto', padding: '24px 10%', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div ref={chatBodyRef} style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px 4%' : '24px 10%', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {conversa.msgs.map((m, i) => (
             <div key={i} style={{
               display: 'flex', flexDirection: 'column', gap: 4,

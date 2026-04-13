@@ -514,8 +514,9 @@ if (tela === 'dashboard') return (
   <>
   <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
   <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-    <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: 48, borderBottom: '1px solid #2d3148', background: '#13161f', flexShrink: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', height: 48, borderBottom: '1px solid #2d3148', background: '#13161f', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button onClick={() => { const evt = new CustomEvent('atlas-toggle-sidebar'); window.dispatchEvent(evt) }} style={{ width: 32, height: 32, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
         <button onClick={() => setTela('hub')} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, color: '#7c3aed', background: '#7c3aed11', border: '1px solid #7c3aed33', cursor: 'pointer' }}>
           ← Baia 360
         </button>
