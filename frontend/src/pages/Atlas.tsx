@@ -2114,22 +2114,8 @@ function PainelArtifact({
 : ''
 
   const iframeCallback = useCallback((node: HTMLIFrameElement | null) => {
-    if (node) {
-      iframeRef.current = node
-      if (iframeContent) {
-        const doc = node.contentDocument
-        if (doc) { doc.open(); doc.write(iframeContent); doc.close() }
-      }
-    }
-  }, [iframeContent])
-
-  useEffect(() => {
-    console.log('[IFRAME] ref:', iframeRef.current, 'content length:', iframeContent?.length)
-    if (!iframeRef.current || !iframeContent) return
-    const doc = iframeRef.current.contentDocument
-    console.log('[IFRAME] doc:', doc)
-    if (doc) { doc.open(); doc.write(iframeContent); doc.close() }
-  }, [iframeContent, aba])
+    if (node) iframeRef.current = node
+  }, [])
 
   return (
     <div style={{
@@ -2200,6 +2186,7 @@ function PainelArtifact({
           <iframe
             ref={iframeCallback}
             sandbox="allow-scripts"
+            srcDoc={iframeContent}
             style={{ width: '100%', height: '100%', border: 'none', background: '#0f1117' }}
             title={artifact.title}
           />
