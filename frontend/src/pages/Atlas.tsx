@@ -903,9 +903,15 @@ conteúdo completo do documento em markdown
 
           if (evt.type === 'text_delta') {
             streamedText += evt.delta
+            const temArtifact = streamedText.includes('<artifact')
             updateConversa(convId, c => {
               const msgs = [...c.msgs]
-              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: streamedText, streaming: true }
+              msgs[msgs.length - 1] = {
+                ...msgs[msgs.length - 1],
+                text: temArtifact ? '' : streamedText,
+                streaming: true,
+                tools: temArtifact ? ['__artifact__'] : msgs[msgs.length - 1].tools
+              }
               return { ...c, msgs }
             })
 
@@ -1546,9 +1552,14 @@ conteúdo completo do documento em markdown
                             }} />
                           ))}
                           <div style={{ fontSize: 11, fontStyle: 'italic', color: '#8892a4', display: 'flex', alignItems: 'center', gap: 2, marginTop: 2 }}>
-                            {m.tools?.includes('get_dashboard') ? 'Buscando KPIs do dashboard'
+                            {m.tools?.includes('__artifact__') ? 'Gerando documento'
+                              : m.tools?.includes('get_dashboard') ? 'Buscando KPIs do dashboard'
                               : m.tools?.includes('gerar_relatorio') ? 'Gerando relatório'
                               : m.tools?.includes('get_agenda') ? 'Consultando agenda'
+                              : m.tools?.includes('buscar_conversas') ? 'Buscando conversas anteriores'
+                              : m.tools?.includes('buscar_emails') ? 'Buscando e-mails'
+                              : m.tools?.includes('enviar_email') ? 'Enviando e-mail'
+                              : m.tools?.includes('criar_evento') ? 'Criando evento na agenda'
                               : m.tools?.includes('google_search') ? 'Realizando busca na internet'
                               : 'Consultando'}
                             {[0, 1, 2].map(k => (
