@@ -2114,14 +2114,20 @@ function PainelArtifact({
 : ''
 
   const iframeCallback = useCallback((node: HTMLIFrameElement | null) => {
-    if (!node || !iframeContent) return
-    const doc = node.contentDocument
-    if (doc) {
-      doc.open()
-      doc.write(iframeContent)
-      doc.close()
+    if (node) {
+      iframeRef.current = node
+      if (iframeContent) {
+        const doc = node.contentDocument
+        if (doc) { doc.open(); doc.write(iframeContent); doc.close() }
+      }
     }
   }, [iframeContent])
+
+  useEffect(() => {
+    if (!iframeRef.current || !iframeContent) return
+    const doc = iframeRef.current.contentDocument
+    if (doc) { doc.open(); doc.write(iframeContent); doc.close() }
+  }, [iframeContent, aba])
 
   return (
     <div style={{
