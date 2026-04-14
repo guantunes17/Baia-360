@@ -2124,8 +2124,10 @@ function PainelArtifact({
   }, [iframeContent])
 
   useEffect(() => {
+    console.log('[IFRAME] ref:', iframeRef.current, 'content length:', iframeContent?.length)
     if (!iframeRef.current || !iframeContent) return
     const doc = iframeRef.current.contentDocument
+    console.log('[IFRAME] doc:', doc)
     if (doc) { doc.open(); doc.write(iframeContent); doc.close() }
   }, [iframeContent, aba])
 
