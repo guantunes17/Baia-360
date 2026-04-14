@@ -72,16 +72,6 @@ class AtlasConversa(db.Model):
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     criada_em   = db.Column(db.DateTime, default=datetime.utcnow)
 
-class AtlasMemoria(db.Model):
-    __tablename__ = 'atlas_memoria'
-    id            = db.Column(db.Integer, primary_key=True)
-    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
-    conteudo      = db.Column(db.Text, nullable=False)
-    criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
-    atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    usuario = db.relationship('User', backref='memorias_atlas')
-
     def to_dict(self):
         return {
             'id':           self.id,
@@ -92,6 +82,16 @@ class AtlasMemoria(db.Model):
             'criadaEm':     self.criada_em.isoformat(),
             'atualizadaEm': self.atualizada_em.isoformat() if self.atualizada_em else self.criada_em.isoformat()
         }
+
+class AtlasMemoria(db.Model):
+    __tablename__ = 'atlas_memoria'
+    id            = db.Column(db.Integer, primary_key=True)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    conteudo      = db.Column(db.Text, nullable=False)
+    criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    usuario = db.relationship('User', backref='memorias_atlas')
 
 class User(db.Model):
     __tablename__ = 'baia360_users'
