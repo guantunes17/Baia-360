@@ -1469,11 +1469,18 @@ def atlas_chat():
                         text_buffer += delta
                         yield f"data: {json.dumps({'type': 'text_delta', 'delta': delta})}\n\n"
 
-                    # Início de function call
+                    # Início de function call ou reasoning
                     elif etype == 'response.output_item.added':
                         item = event.item
                         if getattr(item, 'type', None) == 'function_call':
                             fn_calls_buffer[item.call_id] = {'name': item.name, 'arguments': ''}
+                        elif getattr(item, 'type', None) == 'reasoning':
+                            yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
+
+                    # Delta do reasoning chegando
+                    elif etype == 'response.reasoning_summary_text.delta':
+                        delta = event.delta or ''
+                        yield f"data: {json.dumps({'type': 'reasoning_delta', 'delta': delta})}\n\n"
 
                     # Delta dos argumentos de function call
                     elif etype == 'response.function_call_arguments.delta':

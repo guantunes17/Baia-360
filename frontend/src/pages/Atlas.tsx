@@ -134,6 +134,8 @@ interface Msg {
   arquivo?: { nome: string }
   feedback?: 'up' | 'down'
   artifact?: Artifact
+  reasoning?: string
+  reasoningStreaming?: boolean
 }
 
 interface ArquivoPendente {
@@ -921,7 +923,22 @@ conteúdo completo do documento em markdown
           let evt: any
           try { evt = JSON.parse(payload) } catch { continue }
 
-          if (evt.type === 'text_delta') {
+          if (evt.type === 'reasoning_start') {
+            updateConversa(convId, c => {
+              const msgs = [...c.msgs]
+              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], reasoning: '', reasoningStreaming: true }
+              return { ...c, msgs }
+            })
+
+          } else if (evt.type === 'reasoning_delta') {
+            updateConversa(convId, c => {
+              const msgs = [...c.msgs]
+              const last = msgs[msgs.length - 1]
+              msgs[msgs.length - 1] = { ...last, reasoning: (last.reasoning || '') + evt.delta, reasoningStreaming: true }
+              return { ...c, msgs }
+            })
+
+          } else if (evt.type === 'text_delta') {
             streamedText += evt.delta
             const temArtifact = streamedText.includes('<artifact')
             updateConversa(convId, c => {
@@ -930,6 +947,7 @@ conteúdo completo do documento em markdown
                 ...msgs[msgs.length - 1],
                 text: temArtifact ? '' : streamedText,
                 streaming: true,
+                reasoningStreaming: false,
                 tools: temArtifact ? ['__artifact__'] : msgs[msgs.length - 1].tools
               }
               return { ...c, msgs }
@@ -1614,6 +1632,13 @@ conteúdo completo do documento em markdown
                       </svg>
                     </div>
                     <div style={{ flex: 1, color: '#e2e8f0', fontSize: 14, lineHeight: 1.75, paddingTop: 4 }}>
+                      {/* Bloco de raciocínio */}
+                      {m.reasoning && (
+                        <ReasoningBlock
+                          reasoning={m.reasoning}
+                          streaming={m.reasoningStreaming}
+                        />
+                      )}
                       {m.streaming && !m.text ? (
                         <div style={{ paddingTop: 2 }}>
                           {[85, 65, 75].map((w, j) => (
@@ -2152,6 +2177,57 @@ function PainelArtifact({
           Baixar .docx
         </button>
       </div>
+    </div>
+  )
+}
+// ── Componente ReasoningBlock ──────────────────────────────────────────────
+function ReasoningBlock({ reasoning, streaming }: { reasoning: string; streaming?: boolean }) {
+  const [aberto, setAberto] = useState(true)
+
+  useEffect(() => {
+    if (!streaming) setAberto(false)
+  }, [streaming])
+
+  return (
+    <div style={{ marginBottom: 10, border: '0.5px solid #2d3148', borderRadius: 8, overflow: 'hidden' }}>
+      <button
+        onClick={() => setAberto(v => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 6,
+          padding: '6px 10px', background: '#13161f', border: 'none',
+          cursor: 'pointer', textAlign: 'left', transition: 'background .12s'
+        }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a1d27'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#13161f'}
+      >
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#8892a4" strokeWidth="1.5" strokeLinecap="round">
+          <circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/>
+        </svg>
+        <span style={{ fontSize: 11, color: '#8892a4', flex: 1 }}>
+          {streaming ? 'Raciocinando...' : 'Ver raciocínio'}
+        </span>
+        {streaming && (
+          <span style={{ display: 'flex', gap: 2 }}>
+            {[0,1,2].map(k => (
+              <span key={k} style={{ width: 3, height: 3, borderRadius: '50%', background: '#8892a4', display: 'inline-block', animation: `fadedot 1.2s ease-in-out infinite ${k * 0.2}s` }} />
+            ))}
+          </span>
+        )}
+        <svg
+          width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#8892a4" strokeWidth="1.5" strokeLinecap="round"
+          style={{ transform: aberto ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s', flexShrink: 0 }}
+        >
+          <path d="M2 3l3 3 3-3"/>
+        </svg>
+      </button>
+      {aberto && (
+        <div style={{ padding: '8px 12px', background: '#0a0c14', borderTop: '0.5px solid #2d3148' }}>
+          <p style={{ fontSize: 12, color: '#8892a455', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+            {reasoning}
+            {streaming && <span style={{ display: 'inline-block', width: 2, height: 12, background: '#8892a4', marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s infinite' }} />}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
