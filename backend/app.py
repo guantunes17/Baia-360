@@ -1505,27 +1505,24 @@ def atlas_chat():
                         resp_id = getattr(event.response, 'id', None)
                         # Extrai anotações de citação do web search
                         citations = []
+
                         try:
                             output = getattr(event.response, 'output', None) or []
-                            print(f"[CITATIONS DEBUG] output type={type(output)} len={len(output)}", flush=True)
                             for item in output:
-                                print(f"[CITATIONS DEBUG] item type={getattr(item, 'type', '?')}", flush=True)
                                 content = getattr(item, 'content', None) or []
                                 for part in content:
                                     annotations = getattr(part, 'annotations', None) or []
                                     for ann in annotations:
-                                        print(f"[ANNOTATION] type={getattr(ann, 'type', '?')} url={getattr(ann, 'url', '?')}", flush=True)
                                         if getattr(ann, 'type', '') == 'url_citation':
                                             url = getattr(ann, 'url', '')
                                             title = getattr(ann, 'title', url)
                                             start = getattr(ann, 'start_index', None)
                                             end = getattr(ann, 'end_index', None)
-                                            print(f"[CITATION DETAIL] url={url} start={start} end={end}", flush=True)
                                             if url and not any(c['url'] == url for c in citations):
                                                 citations.append({'url': url, 'title': title, 'start': start, 'end': end})
-                            print(f"[CITATIONS] total={len(citations)}", flush=True)
-                        except Exception as e:
-                            print(f"[CITATIONS ERROR] {e}", flush=True)
+                        except Exception:
+                            pass
+
                         yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations})}\n\n"
 
                     elif etype == 'error':

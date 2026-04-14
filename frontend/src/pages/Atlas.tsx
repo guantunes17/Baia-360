@@ -396,7 +396,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [novaMemoria, setNovaMemoria] = useState('')
   const [tokenCount, setTokenCount] = useState(0)
   const [modeloSelecionado, setModeloSelecionado] = useState<string>(() => localStorage.getItem('atlas_modelo') || 'gpt-5.4-mini')
-  const [reasoningEffort, setReasoningEffort] = useState<string>(() => localStorage.getItem('atlas_reasoning') || 'medium')
+  const [reasoningEffort, setReasoningEffort] = useState<string>(() => localStorage.getItem('atlas_reasoning') || 'low')
   const [codeInterpreter, setCodeInterpreter] = useState<boolean>(() => localStorage.getItem('atlas_code_interp') === 'true')
   const [previousResponseId, setPreviousResponseId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
