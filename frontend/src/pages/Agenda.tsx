@@ -47,7 +47,7 @@ function toDateStr(date: Date): string {
 
 function formatarHoraBRT(isoStr: string): string {
   try {
-    return new Date(isoStr).toLocaleTimeString('pt-BR', {
+    return new Date(isoStr.endsWith('Z') ? isoStr : isoStr + 'Z').toLocaleTimeString('pt-BR', {
       hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'
     })
   } catch { return '' }

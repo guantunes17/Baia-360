@@ -16,6 +16,7 @@ interface Props {
   onEntrarAgenda: () => void
   onEntrarUsuarios: () => void
   onEntrarBaseConhecimento: () => void
+  onEntrarPerfil: () => void
   onLogout: () => void
 }
 
@@ -27,6 +28,7 @@ export function Hub({
   onEntrarAgenda,
   onEntrarUsuarios,
   onEntrarBaseConhecimento,
+  onEntrarPerfil,
   onLogout
 }: Props) {
   const hoje = new Date()
@@ -130,7 +132,15 @@ export function Hub({
               {bp.label}
             </span>
           )}
-          <span className="text-sm" style={{ color: '#8892a4' }}>{usuario.nome}</span>
+          <button
+            onClick={onEntrarPerfil}
+            title="Meu perfil"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8, transition: 'background .12s' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a1d27'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+          >
+            <span className="text-sm" style={{ color: '#8892a4' }}>{usuario.nome}</span>
+          </button>
           <Button variant="outline" size="sm" onClick={onLogout} style={{ borderColor: '#2d3148', color: '#8892a4', background: 'transparent' }}>
             Sair
           </Button>

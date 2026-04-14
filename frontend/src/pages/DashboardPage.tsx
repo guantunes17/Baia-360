@@ -34,7 +34,7 @@ const KPI_LABELS: Record<string, Record<string, string>> = {
 }
 
 function formatarData(iso: string) {
-  const d = new Date(iso)
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
   return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -80,7 +80,7 @@ function AtlasLogCard() {
               <div className="flex items-center gap-3">
                 <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#2d3148', color: '#8892a4' }}>{l.total_msgs} msgs</span>
                 <span className="text-xs" style={{ color: '#8892a455' }}>
-                  {new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  {new Date(l.criado_em.endsWith('Z') ? l.criado_em : l.criado_em + 'Z').toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             </div>

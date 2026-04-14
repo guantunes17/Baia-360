@@ -466,6 +466,7 @@ const handleLogout = () => {
       onEntrarAgenda={() => setTela('agenda')}
       onEntrarUsuarios={() => setTela('usuarios')}
       onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
+      onEntrarPerfil={() => setTela('relatorios')}
       onLogout={handleLogout}
     />
     </>
@@ -524,13 +525,21 @@ if (tela === 'dashboard') return (
         <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>🤖 Atlas</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f8ef722', border: '1px solid #4f8ef744', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#4f8ef7' }}>
-          {(usuario.nome.trim().split(' ').length === 1
-            ? usuario.nome.slice(0, 2)
-            : usuario.nome.trim().split(' ')[0][0] + usuario.nome.trim().split(' ').slice(-1)[0][0]
-          ).toUpperCase()}
-        </div>
-        <span style={{ fontSize: 13, color: '#8892a4' }}>{usuario.nome.split(' ')[0]}</span>
+        <button
+          onClick={() => setTela('relatorios')}
+          title="Meu perfil"
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8, transition: 'background .12s' }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a1d27'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+        >
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f8ef722', border: '1px solid #4f8ef744', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#4f8ef7' }}>
+            {(usuario.nome.trim().split(' ').length === 1
+              ? usuario.nome.slice(0, 2)
+              : usuario.nome.trim().split(' ')[0][0] + usuario.nome.trim().split(' ').slice(-1)[0][0]
+            ).toUpperCase()}
+          </div>
+          <span style={{ fontSize: 13, color: '#8892a4' }}>{usuario.nome.split(' ')[0]}</span>
+        </button>
       </div>
     </header>
     <Atlas nomeUsuario={usuario.nome} />

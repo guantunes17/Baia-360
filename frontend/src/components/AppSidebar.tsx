@@ -60,12 +60,11 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil }: Props) {
 
       <SidebarContent style={{ background: '#13161f' }}>
 
-        {/* Home + Dashboard */}
+        {/* Home */}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItem('home', '🏠  Home')}
-              {temAdmin && menuItem('dashboard', '📈  Dashboard')}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -138,21 +137,6 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil }: Props) {
             </SidebarGroup>
             <SidebarSeparator style={{ background: '#2d3148' }} />
           </>
-        )}
-
-        {/* Admin */}
-        {temAdmin && (
-          <SidebarGroup>
-            <SidebarGroupLabel style={{ color: '#8892a4', fontWeight: 700 }}>
-              ⚙️ Administração
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {menuItem('usuarios', '👥  Usuários')}
-                {menuItem('base_conhecimento', '🧠  Base de Conhecimento')}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
         )}
 
       </SidebarContent>
