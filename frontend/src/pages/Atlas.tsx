@@ -3,6 +3,8 @@ import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { Document, Paragraph, TextRun, HeadingLevel, Packer } from 'docx'
+import { saveAs } from 'file-saver'
 
 import { API } from '@/config'
 
@@ -108,6 +110,22 @@ const ENDPOINT_MAP: Record<string, string> = {
   'Recebimentos': 'recebimentos', 'Fat. Distribuição': 'fat_dist', 'Fat. Armazenagem': 'fat_arm'
 }
 
+interface Artifact {
+  type: string
+  title: string
+  content: string
+}
+
+// Detecta e extrai tag <artifact> do texto completo
+function parseArtifact(raw: string): { displayText: string; artifact: Artifact | null } {
+  const regex = /<artifact\s+type="([^"]+)"\s+title="([^"]+)">([\s\S]*?)<\/artifact>/i
+  const match = raw.match(regex)
+  if (!match) return { displayText: raw, artifact: null }
+  const artifact: Artifact = { type: match[1], title: match[2], content: match[3].trim() }
+  const displayText = raw.replace(regex, '').trim()
+  return { displayText, artifact }
+}
+
 interface Msg {
   role: 'user' | 'assistant' | 'note'
   text: string
@@ -115,6 +133,7 @@ interface Msg {
   streaming?: boolean
   arquivo?: { nome: string }
   feedback?: 'up' | 'down'
+  artifact?: Artifact
 }
 
 interface ArquivoPendente {
@@ -359,6 +378,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [editandoTexto, setEditandoTexto] = useState('')
   const [copiadoIdx, setCopiadoIdx] = useState<number | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [painelArtifact, setPainelArtifact] = useState<Artifact | null>(null)
+  const [copiadoArtifact, setCopiadoArtifact] = useState(false)
   // Grupo 2
   const [busca, setBusca] = useState('')
   const [renomeandoId, setRenomeandoId] = useState<string | null>(null)
@@ -483,7 +504,17 @@ Sobre busca na internet:
 - Você TEM acesso à internet via Google Search — nunca diga que não consegue pesquisar
 - Use a busca quando o usuário pedir informações atuais: cotações, câmbio, notícias, eventos recentes, dados de mercado
 - Use a busca também para complementar respostas sobre logística, regulações, notícias do setor farmacêutico
-- Sempre que usar a busca, mencione as fontes encontradas`
+- Sempre que usar a busca, mencione as fontes encontradas
+
+Sobre geração de documentos formais (artefatos):
+- Quando o usuário pedir para gerar um documento formal como ITO, POP, e-mail corporativo, contrato, procedimento, relatório narrativo ou qualquer documento extenso que será baixado ou impresso, SEMPRE use o formato de artefato abaixo
+- O artefato será renderizado em um painel lateral com preview e botões de download
+- Formato obrigatório para documentos formais:
+<artifact type="document" title="Título do documento">
+conteúdo completo do documento em markdown
+</artifact>
+- Para respostas normais, análises curtas, tabelas de dados e widgets, responda normalmente sem usar artifact
+- A decisão de usar artifact deve ser baseada em: o usuário vai querer baixar ou imprimir isso? Se sim, use artifact`
 
   const conversa = conversas.find(c => c.id === ativaId)!
 
@@ -973,14 +1004,30 @@ Sobre busca na internet:
                   }
                   return { ...c, msgs, history: [...h3, { role: 'model', parts: [{ text: text2 }] }] }
                 })
+                const parsed2 = parseArtifact(text2 || '')
+                if (parsed2.artifact) {
+                  updateConversa(convId, c => {
+                    const msgs = [...c.msgs]
+                    msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: parsed2.displayText, artifact: parsed2.artifact! }
+                    return { ...c, msgs }
+                  })
+                  setPainelArtifact(parsed2.artifact)
+                }
               }
 
             } else {
+              const parsed = parseArtifact(streamedText || '')
               updateConversa(convId, c => {
                 const msgs = [...c.msgs]
-                msgs[msgs.length - 1] = { role: 'assistant', text: streamedText || '(sem resposta)', streaming: false }
+                msgs[msgs.length - 1] = {
+                  role: 'assistant',
+                  text: parsed.displayText || (parsed.artifact ? '' : '(sem resposta)'),
+                  streaming: false,
+                  artifact: parsed.artifact || undefined
+                }
                 return { ...c, msgs, history: newHistory }
               })
+              if (parsed.artifact) setPainelArtifact(parsed.artifact)
             }
           } else if (evt.type === 'error') {
             throw new Error(evt.message)
@@ -1384,7 +1431,10 @@ Sobre busca na internet:
           </button>
         </div>
       ) : (
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+
+      {/* ── Área principal do chat ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', transition: 'all .25s' }}>
 
         {/* Botão scroll to bottom */}
         {showScrollBtn && (
@@ -1568,6 +1618,43 @@ Sobre busca na internet:
                       <IcBtn onClick={regenerar} tip="Regenerar resposta">
                         <IconRegenerate />
                       </IcBtn>
+                      {m.artifact && (
+                        <>
+                          <div style={{ width: 1, height: 16, background: '#2d3148', margin: '0 2px' }} />
+                          <button
+                            onClick={() => setPainelArtifact(m.artifact!)}
+                            title="Ver documento gerado"
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 5,
+                              padding: '3px 10px', borderRadius: 6,
+                              background: painelArtifact?.title === m.artifact.title ? '#4f8ef722' : '#1a1d27',
+                              border: '1px solid',
+                              borderColor: painelArtifact?.title === m.artifact.title ? '#4f8ef7' : '#2d3148',
+                              color: painelArtifact?.title === m.artifact.title ? '#4f8ef7' : '#8892a4',
+                              fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                              transition: 'all .15s'
+                            }}
+                            onMouseEnter={e => {
+                              if (painelArtifact?.title !== m.artifact?.title) {
+                                (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'
+                                ;(e.currentTarget as HTMLElement).style.color = '#e2e8f0'
+                              }
+                            }}
+                            onMouseLeave={e => {
+                              if (painelArtifact?.title !== m.artifact?.title) {
+                                (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'
+                                ;(e.currentTarget as HTMLElement).style.color = '#8892a4'
+                              }
+                            }}
+                          >
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="2" width="10" height="12" rx="1.5"/>
+                              <path d="M6 6h4M6 9h4M6 12h2"/>
+                            </svg>
+                            {m.artifact.title}
+                          </button>
+                        </>
+                      )}
                       <div style={{ width: 1, height: 16, background: '#2d3148', margin: '0 2px' }} />
                       <IcBtn
                         onClick={() => darFeedback(ativaId!, i, 'up')}
@@ -1674,7 +1761,7 @@ Sobre busca na internet:
               placeholder={
                 uploadandoArquivo ? 'Enviando arquivo...' :
                 arquivoContexto ? `📎 ${arquivoContexto.nome} — digite sua pergunta ou envie direto` :
-                arquivoPendente ? `📎 ${arquivoPendente.file.name} — clique em Enviar` :
+                arquivoPendente ? `📎 ${arquivoPendente.file?.name} — clique em Enviar` :
                 'Mensagem para o Atlas...'
               }
               rows={1}
@@ -1719,6 +1806,23 @@ Sobre busca na internet:
           </p>
         </div>
       </div>
+
+      {/* ── Painel lateral de artefatos ── */}
+      {painelArtifact && (
+        <PainelArtifact
+          artifact={painelArtifact}
+          copiado={copiadoArtifact}
+          onCopiar={() => {
+            navigator.clipboard.writeText(painelArtifact.content)
+            setCopiadoArtifact(true)
+            setTimeout(() => setCopiadoArtifact(false), 2000)
+          }}
+          onBaixar={() => baixarDocx(painelArtifact)}
+          onFechar={() => setPainelArtifact(null)}
+        />
+      )}
+
+      </div>
       )}
     </div>
   )
@@ -1750,5 +1854,219 @@ function CopyCodeBtn({ code }: { code: string }) {
         : <><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="8" height="10" rx="1.5"/><path d="M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1"/></svg> Copiar</>
       }
     </button>
+  )
+}
+
+// ── Gerador de .docx ───────────────────────────────────────────────────────
+async function baixarDocx(artifact: Artifact) {
+  const linhas = artifact.content.split('\n')
+  const children: Paragraph[] = []
+
+  for (const linha of linhas) {
+    const trimmed = linha.trimEnd()
+
+    if (trimmed.startsWith('### ')) {
+      children.push(new Paragraph({
+        text: trimmed.slice(4),
+        heading: HeadingLevel.HEADING_3,
+        spacing: { before: 200, after: 100 }
+      }))
+    } else if (trimmed.startsWith('## ')) {
+      children.push(new Paragraph({
+        text: trimmed.slice(3),
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 300, after: 120 }
+      }))
+    } else if (trimmed.startsWith('# ')) {
+      children.push(new Paragraph({
+        text: trimmed.slice(2),
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 400, after: 160 }
+      }))
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      children.push(new Paragraph({
+        text: trimmed.slice(2),
+        bullet: { level: 0 },
+        spacing: { after: 60 }
+      }))
+    } else if (/^\d+\.\s/.test(trimmed)) {
+      children.push(new Paragraph({
+        text: trimmed.replace(/^\d+\.\s/, ''),
+        numbering: { reference: 'default-numbering', level: 0 },
+        spacing: { after: 60 }
+      }))
+    } else if (trimmed === '' || trimmed === '---') {
+      children.push(new Paragraph({ text: '', spacing: { after: 80 } }))
+    } else {
+      // Processa bold (**texto**) inline
+      const partes = trimmed.split(/(\*\*[^*]+\*\*)/)
+      const runs = partes.map(p => {
+        if (p.startsWith('**') && p.endsWith('**')) {
+          return new TextRun({ text: p.slice(2, -2), bold: true })
+        }
+        return new TextRun({ text: p })
+      })
+      children.push(new Paragraph({ children: runs, spacing: { after: 80 } }))
+    }
+  }
+
+  const doc = new Document({
+    numbering: {
+      config: [{
+        reference: 'default-numbering',
+        levels: [{ level: 0, format: 'decimal', text: '%1.', alignment: 'left' }]
+      }]
+    },
+    sections: [{ properties: {}, children }]
+  })
+
+  const blob = await Packer.toBlob(doc)
+  const nomeArquivo = artifact.title
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '_')
+    + '.docx'
+  saveAs(blob, nomeArquivo)
+}
+
+// ── Componente PainelArtifact ──────────────────────────────────────────────
+function PainelArtifact({
+  artifact, copiado, onCopiar, onBaixar, onFechar
+}: {
+  artifact: Artifact
+  copiado: boolean
+  onCopiar: () => void
+  onBaixar: () => void
+  onFechar: () => void
+}) {
+  return (
+    <div style={{
+      width: 420, minWidth: 340, maxWidth: 480,
+      borderLeft: '1px solid #2d3148',
+      background: '#13161f',
+      display: 'flex', flexDirection: 'column',
+      animation: 'slideInRight .2s ease-out'
+    }}>
+      <style>{`
+        @keyframes slideInRight {
+          from { transform: translateX(24px); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+      `}</style>
+
+      {/* Header */}
+      <div style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid #2d3148',
+        display: 'flex', alignItems: 'center', gap: 10,
+        flexShrink: 0
+      }}>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4f8ef7" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="1" width="10" height="14" rx="1.5"/>
+          <path d="M6 5h4M6 8h4M6 11h2"/>
+        </svg>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {artifact.title}
+          </div>
+          <div style={{ fontSize: 10, color: '#8892a4', marginTop: 1 }}>Documento</div>
+        </div>
+        <button
+          onClick={onFechar}
+          title="Fechar painel"
+          style={{
+            width: 26, height: 26, borderRadius: 6,
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 14, transition: 'color .12s, background .12s', flexShrink: 0
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+        >✕</button>
+      </div>
+
+      {/* Preview */}
+      <div style={{
+        flex: 1, overflowY: 'auto',
+        padding: '20px 24px',
+        color: '#e2e8f0', fontSize: 13.5, lineHeight: 1.8
+      }}>
+        <ReactMarkdown
+          components={{
+            h1: ({ children }) => <h1 style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0', margin: '0 0 12px 0', paddingBottom: 8, borderBottom: '1px solid #2d3148' }}>{children}</h1>,
+            h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', margin: '20px 0 8px 0' }}>{children}</h2>,
+            h3: ({ children }) => <h3 style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa', margin: '16px 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{children}</h3>,
+            p: ({ children }) => <p style={{ margin: '0 0 10px 0', color: '#c8d0de' }}>{children}</p>,
+            strong: ({ children }) => <strong style={{ color: '#e2e8f0', fontWeight: 600 }}>{children}</strong>,
+            ul: ({ children }) => <ul style={{ margin: '4px 0 10px 0', paddingLeft: 18 }}>{children}</ul>,
+            ol: ({ children }) => <ol style={{ margin: '4px 0 10px 0', paddingLeft: 18 }}>{children}</ol>,
+            li: ({ children }) => <li style={{ marginBottom: 5, color: '#c8d0de' }}>{children}</li>,
+            hr: () => <hr style={{ border: 'none', borderTop: '1px solid #2d3148', margin: '16px 0' }} />,
+            table: ({ children }) => (
+              <div style={{ overflowX: 'auto', margin: '10px 0' }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>{children}</table>
+              </div>
+            ),
+            thead: ({ children }) => <thead style={{ background: '#1a1d27' }}>{children}</thead>,
+            th: ({ children }) => <th style={{ padding: '6px 12px', textAlign: 'left', color: '#8892a4', fontWeight: 500, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #2d3148' }}>{children}</th>,
+            td: ({ children }) => <td style={{ padding: '6px 12px', color: '#c8d0de', borderBottom: '0.5px solid #2d3148' }}>{children}</td>,
+            code: ({ children }: any) => <code style={{ fontFamily: 'monospace', background: '#0f1117', padding: '1px 5px', borderRadius: 3, fontSize: 12, color: '#a78bfa' }}>{children}</code>,
+            blockquote: ({ children }) => (
+              <blockquote style={{ borderLeft: '3px solid #4f8ef7', margin: '10px 0', padding: '4px 14px', color: '#8892a4', fontStyle: 'italic' }}>{children}</blockquote>
+            )
+          }}
+        >
+          {artifact.content}
+        </ReactMarkdown>
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        padding: '12px 16px',
+        borderTop: '1px solid #2d3148',
+        display: 'flex', gap: 8, flexShrink: 0
+      }}>
+        <button
+          onClick={onCopiar}
+          style={{
+            flex: 1, padding: '8px 0', borderRadius: 8,
+            background: copiado ? '#10b98122' : '#1a1d27',
+            border: '1px solid',
+            borderColor: copiado ? '#10b981' : '#2d3148',
+            color: copiado ? '#10b981' : '#8892a4',
+            fontSize: 12, fontWeight: 500, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            transition: 'all .15s'
+          }}
+          onMouseEnter={e => { if (!copiado) { (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' } }}
+          onMouseLeave={e => { if (!copiado) { (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
+        >
+          {copiado
+            ? <><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3 3 7-7"/></svg> Copiado</>
+            : <><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="8" height="10" rx="1.5"/><path d="M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1"/></svg> Copiar markdown</>
+          }
+        </button>
+        <button
+          onClick={onBaixar}
+          style={{
+            flex: 1, padding: '8px 0', borderRadius: 8,
+            background: '#4f8ef722',
+            border: '1px solid #4f8ef755',
+            color: '#4f8ef7',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            transition: 'all .15s'
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef733'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef7' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef722'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/>
+          </svg>
+          Baixar .docx
+        </button>
+      </div>
+    </div>
   )
 }
