@@ -1449,7 +1449,7 @@ def atlas_chat():
                     temperature=temp,
                     tools=all_tools,
                     stream=True,
-                    reasoning={'effort': reasoning_effort},
+                    reasoning={'effort': reasoning_effort, 'summary': 'auto'},
                     store=True,
                 )
                 if previous_resp_id:
