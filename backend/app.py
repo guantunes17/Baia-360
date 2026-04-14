@@ -72,6 +72,16 @@ class AtlasConversa(db.Model):
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     criada_em   = db.Column(db.DateTime, default=datetime.utcnow)
 
+class AtlasMemoria(db.Model):
+    __tablename__ = 'atlas_memoria'
+    id            = db.Column(db.Integer, primary_key=True)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    conteudo      = db.Column(db.Text, nullable=False)
+    criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    usuario = db.relationship('User', backref='memorias_atlas')
+
     def to_dict(self):
         return {
             'id':           self.id,
@@ -1235,6 +1245,93 @@ def atualizar_perfil():
 from openai import OpenAI
 import json
 
+def analisar_e_salvar_memorias(app_ctx, usuario_id: int, msgs: list):
+    """Roda em background — analisa a conversa e atualiza memórias do usuário."""
+    import threading
+    
+    # Gatilho: mínimo 6 mensagens do usuário
+    msgs_usuario = [m for m in msgs if m.get('role') == 'user']
+    if len(msgs_usuario) < 6:
+        return
+
+    with app_ctx:
+        try:
+            # Intervalo mínimo de 24h entre análises
+            ultima = AtlasMemoria.query.filter_by(usuario_id=usuario_id)\
+                .order_by(AtlasMemoria.atualizada_em.desc()).first()
+            if ultima:
+                delta = datetime.utcnow() - ultima.atualizada_em
+                if delta.total_seconds() < 86400:
+                    return
+
+            # Monta o texto apenas com mensagens do usuário
+            texto_usuario = '\n'.join([
+                f"- {m.get('text', '')}"
+                for m in msgs_usuario[-20:]  # últimas 20 mensagens do usuário
+                if m.get('text', '').strip()
+            ])
+
+            if not texto_usuario.strip():
+                return
+
+            # Prompt enxuto para extração de memórias
+            prompt = f"""Analise as mensagens abaixo de um usuário conversando com um assistente de IA chamado Atlas, usado em uma empresa de logística farmacêutica.
+
+Extraia de 1 a 5 fatos relevantes sobre esse usuário que ajudariam o Atlas a se comunicar melhor com ele nas próximas conversas. Foque em:
+- Estilo de comunicação preferido
+- Áreas de interesse ou responsabilidade
+- Preferências de formato de resposta
+- Contexto profissional relevante
+
+Mensagens do usuário:
+{texto_usuario}
+
+Responda APENAS com uma lista JSON no formato:
+["fato 1", "fato 2", "fato 3"]
+
+Sem explicações, sem markdown, apenas o JSON."""
+
+            api_key = os.getenv('OPENAI_API_KEY', '').strip()
+            client = OpenAI(api_key=api_key)
+
+            response = client.chat.completions.create(
+                model='gpt-5.4-mini',
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0.3,
+                max_tokens=300
+            )
+
+            raw = response.choices[0].message.content.strip()
+            # Remove markdown se vier com ```json
+            raw = raw.replace('```json', '').replace('```', '').strip()
+            novos_fatos = json.loads(raw)
+
+            if not isinstance(novos_fatos, list):
+                return
+
+            # Cap de 20 memórias por usuário — remove as mais antigas se necessário
+            memorias_atuais = AtlasMemoria.query.filter_by(usuario_id=usuario_id)\
+                .order_by(AtlasMemoria.atualizada_em.asc()).all()
+            
+            espaco_disponivel = 20 - len(memorias_atuais)
+            if espaco_disponivel < len(novos_fatos):
+                # Remove as mais antigas para abrir espaço
+                a_remover = len(novos_fatos) - espaco_disponivel
+                for m in memorias_atuais[:a_remover]:
+                    db.session.delete(m)
+
+            for fato in novos_fatos:
+                if fato.strip():
+                    db.session.add(AtlasMemoria(
+                        usuario_id=usuario_id,
+                        conteudo=fato.strip()
+                    ))
+
+            db.session.commit()
+
+        except Exception as e:
+            print(f'[AtlasMemoria] Erro na análise: {e}')
+
 @app.route('/api/atlas/chat', methods=['POST'])
 @jwt_required()
 def atlas_chat():
@@ -1414,6 +1511,15 @@ def atlas_chat():
                     yield f"data: {json.dumps({'type': 'error', 'message': 'cota_openai'})}\n\n"
                 else:
                     yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
+
+        # Dispara análise de memórias em background
+        usuario_id = int(get_jwt_identity())
+        msgs = data.get('msgs', [])
+        threading.Thread(
+            target=analisar_e_salvar_memorias,
+            args=(app.app_context(), usuario_id, msgs),
+            daemon=True
+        ).start()
 
         return app.response_class(generate(), mimetype='text/event-stream',
                                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
@@ -1631,6 +1737,28 @@ def atlas_deletar_conversa(conv_id):
         db.session.commit()
     return jsonify({'ok': True}), 200
 
+@app.route('/api/atlas/memorias', methods=['GET'])
+@jwt_required()
+def get_memorias():
+    usuario_id = get_jwt_identity()
+    memorias = AtlasMemoria.query.filter_by(usuario_id=usuario_id)\
+        .order_by(AtlasMemoria.atualizada_em.desc()).all()
+    return jsonify([{
+        'id':       m.id,
+        'conteudo': m.conteudo,
+        'criada_em': m.criada_em.isoformat()
+    } for m in memorias])
+
+@app.route('/api/atlas/memorias/<int:mem_id>', methods=['DELETE'])
+@jwt_required()
+def delete_memoria(mem_id):
+    usuario_id = get_jwt_identity()
+    m = AtlasMemoria.query.filter_by(id=mem_id, usuario_id=usuario_id).first()
+    if not m:
+        return jsonify({'erro': 'Memória não encontrada'}), 404
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({'ok': True}), 200
 
 @app.route('/api/atlas/conversas/buscar', methods=['GET'])
 @jwt_required()

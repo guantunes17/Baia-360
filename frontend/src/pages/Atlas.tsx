@@ -431,6 +431,26 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
     } catch {}
   }, [token])
 
+// Carrega memórias do banco ao montar
+  useEffect(() => {
+    if (!token) return
+    fetch(`${API}/api/atlas/memorias`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setMemorias(prev => {
+            // Mantém memórias manuais (localStorage) e adiciona as automáticas do banco
+            const automaticas = data.map((m: any) => `[auto] ${m.conteudo}`)
+            const manuais = prev.filter(m => !m.startsWith('[auto]'))
+            return [...manuais, ...automaticas]
+          })
+        }
+      })
+      .catch(() => {})
+  }, [token])
+  
   // Carrega conversas salvas ao montar — começa na tela home
   useEffect(() => {
     if (!token) return
@@ -1335,19 +1355,67 @@ conteúdo completo do documento em markdown
           <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Memória do Atlas</div>
             <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Fatos que o Atlas sempre lembrará sobre você e a operação.</div>
-            {memorias.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                {memorias.map((mem, idx) => (
-                  <span key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#4f8ef711', border: '0.5px solid #4f8ef733', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: '#4f8ef7' }}>
-                    {mem}
-                    <button onClick={() => removerMemoria(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f8ef755', fontSize: 11, lineHeight: 1, padding: 0, transition: 'color .12s' }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#ef4444'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#4f8ef755'}
-                    >✕</button>
-                  </span>
-                ))}
+
+            {/* Memórias automáticas */}
+            {memorias.filter(m => m.startsWith('[auto]')).length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, color: '#4f8ef7', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Aprendidas automaticamente</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {memorias.filter(m => m.startsWith('[auto]')).map((mem, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 6, padding: '5px 10px' }}>
+                      <span style={{ fontSize: 11, color: '#8892a4', flex: 1 }}>{mem.replace('[auto] ', '')}</span>
+                      <button
+                        onClick={() => {
+                          const conteudo = mem.replace('[auto] ', '')
+                          const memoriaObj = memorias.find(m => m === mem)
+                          if (!memoriaObj) return
+                          // Remove localmente
+                          setMemorias(prev => prev.filter(m => m !== mem))
+                          // Remove do banco
+                          fetch(`${API}/api/atlas/memorias`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                          })
+                            .then(r => r.json())
+                            .then((data: any[]) => {
+                              const found = data.find(m => m.conteudo === conteudo)
+                              if (found) {
+                                fetch(`${API}/api/atlas/memorias/${found.id}`, {
+                                  method: 'DELETE',
+                                  headers: { Authorization: `Bearer ${token}` }
+                                })
+                              }
+                            })
+                            .catch(() => {})
+                        }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2d3148', fontSize: 12, padding: '0 0 0 8px', transition: 'color .12s', flexShrink: 0 }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#ef4444'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#2d3148'}
+                      >✕</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
+
+            {/* Memórias manuais */}
+            {memorias.filter(m => !m.startsWith('[auto]')).length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, color: '#8892a4', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Adicionadas por você</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {memorias.filter(m => !m.startsWith('[auto]')).map((mem, idx) => (
+                    <span key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#4f8ef711', border: '0.5px solid #4f8ef733', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: '#4f8ef7' }}>
+                      {mem}
+                      <button onClick={() => removerMemoria(memorias.indexOf(mem))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f8ef755', fontSize: 11, lineHeight: 1, padding: 0, transition: 'color .12s' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#ef4444'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#4f8ef755'}
+                      >✕</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 value={novaMemoria}
@@ -1356,9 +1424,13 @@ conteúdo completo do documento em markdown
                 placeholder='Ex: "Meta de SLA: 95%"'
                 style={{ flex: 1, background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 6, color: '#e2e8f0', fontSize: 12, padding: '5px 8px', outline: 'none', fontFamily: 'inherit' }}
               />
-              <button onClick={adicionarMemoria} style={{ padding: '5px 10px', borderRadius: 6, background: '#4f8ef711', border: '0.5px solid #4f8ef733', color: '#4f8ef7', fontSize: 11, cursor: 'pointer' }}>+ Adicionar</button>
+              <button onClick={adicionarMemoria}
+                style={{ padding: '5px 12px', borderRadius: 6, background: '#4f8ef711', border: '0.5px solid #4f8ef733', color: '#4f8ef7', fontSize: 12, cursor: 'pointer', fontWeight: 500, transition: 'all .12s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef722' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef711' }}
+              >+ Adicionar</button>
             </div>
-          </div>
+          </div>    
 
           {/* Contador de tokens */}
           <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
