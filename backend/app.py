@@ -1506,9 +1506,14 @@ def atlas_chat():
                         # Extrai anotações de citação do web search
                         citations = []
                         try:
-                            for item in (event.response.output or []):
-                                for part in getattr(item, 'content', []):
-                                    for ann in getattr(part, 'annotations', []):
+                            output = getattr(event.response, 'output', None) or []
+                            print(f"[CITATIONS DEBUG] output type={type(output)} len={len(output)}", flush=True)
+                            for item in output:
+                                print(f"[CITATIONS DEBUG] item type={getattr(item, 'type', '?')}", flush=True)
+                                content = getattr(item, 'content', None) or []
+                                for part in content:
+                                    annotations = getattr(part, 'annotations', None) or []
+                                    for ann in annotations:
                                         print(f"[ANNOTATION] type={getattr(ann, 'type', '?')} url={getattr(ann, 'url', '?')}", flush=True)
                                         if getattr(ann, 'type', '') == 'url_citation':
                                             url = getattr(ann, 'url', '')
