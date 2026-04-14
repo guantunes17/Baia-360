@@ -136,6 +136,7 @@ interface Msg {
   artifact?: Artifact
   reasoning?: string
   reasoningStreaming?: boolean
+  citations?: { url: string; title: string }[]
 }
 
 interface ArquivoPendente {
@@ -965,6 +966,7 @@ conteúdo completo do documento em markdown
           } else if (evt.type === 'done') {
             // Salva response_id para Conversation State (próxima mensagem não precisa mandar histórico)
             if (evt.response_id) setPreviousResponseId(evt.response_id)
+            const citations: { url: string; title: string }[] = evt.citations || []
             newHistory = [...currentHistory,
               { role: 'model', parts: fnCallsColetados.length > 0
                 ? fnCallsColetados.map(f => ({ functionCall: { call_id: f.call_id, name: f.name, args: f.args } }))
@@ -1069,7 +1071,8 @@ conteúdo completo do documento em markdown
                   role: 'assistant',
                   text: parsed.displayText || (parsed.artifact ? '' : '(sem resposta)'),
                   streaming: false,
-                  artifact: parsed.artifact || undefined
+                  artifact: parsed.artifact || undefined,
+                  citations: citations.length > 0 ? citations : undefined
                 }
                 return { ...c, msgs, history: newHistory }
               })
@@ -1710,6 +1713,25 @@ conteúdo completo do documento em markdown
                       )}
                     </div>
                   </div>
+
+                  {/* Rodapé de citações */}
+                  {!m.streaming && m.citations && m.citations.length > 0 && (
+                    <div style={{ marginTop: 8, marginLeft: 40, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ fontSize: 10, color: '#2d3148', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Fontes</div>
+                      {m.citations.map((cit, idx) => (
+                        <a key={idx} href={cit.url} target="_blank" rel="noreferrer"
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#8892a4', textDecoration: 'none', transition: 'color .12s' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#4f8ef7' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+                        >
+                          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M7 3H3a1 1 0 00-1 1v9a1 1 0 001 1h9a1 1 0 001-1V9"/><path d="M13 1h2v2m0-2L8 8"/>
+                          </svg>
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 400 }}>{cit.title || cit.url}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Action bar — sempre visível, abaixo da resposta */}
                   {!m.streaming && (

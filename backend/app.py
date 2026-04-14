@@ -1503,7 +1503,20 @@ def atlas_chat():
                     # Resposta completa — retorna response_id para conversation state
                     elif etype == 'response.completed':
                         resp_id = getattr(event.response, 'id', None)
-                        yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id})}\n\n"
+                        # Extrai anotações de citação do web search
+                        citations = []
+                        try:
+                            for item in (event.response.output or []):
+                                for part in getattr(item, 'content', []):
+                                    for ann in getattr(part, 'annotations', []):
+                                        if getattr(ann, 'type', '') == 'url_citation':
+                                            url = getattr(ann, 'url', '')
+                                            title = getattr(ann, 'title', url)
+                                            if url and not any(c['url'] == url for c in citations):
+                                                citations.append({'url': url, 'title': title})
+                        except Exception:
+                            pass
+                        yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations})}\n\n"
 
                     elif etype == 'error':
                         yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
