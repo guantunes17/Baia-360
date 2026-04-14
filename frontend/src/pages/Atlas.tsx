@@ -513,7 +513,8 @@ Sobre geração de documentos formais (artefatos):
 <artifact type="document" title="Título do documento">
 conteúdo completo do documento em markdown
 </artifact>
-- No chat (fora da tag artifact) escreva APENAS uma frase curta introdutória, como "Aqui está o POP gerado:" — NUNCA repita ou resuma o conteúdo do documento no chat
+- No chat, escreva apenas uma mensagem curta e natural — pode ser uma frase introdutória, um comentário sobre o documento, uma oferta para ajustar algo, ou qualquer combinação dessas. Seja humano e fluido, não robótico
+- PROIBIDO escrever o conteúdo do documento fora da tag artifact — títulos, seções, listas, procedimentos: tudo vai dentro da tag
 - Para respostas normais, análises curtas, tabelas de dados e widgets, responda normalmente sem usar artifact
 - A decisão de usar artifact deve ser baseada em: o usuário vai querer baixar ou imprimir isso? Se sim, use artifact`
 
