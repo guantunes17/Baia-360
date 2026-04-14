@@ -2111,18 +2111,17 @@ function PainelArtifact({
   </script>
 </body>
 </html>`
-    : ''
+: ''
 
-  // Atualiza o iframe quando o conteúdo muda
-  useEffect(() => {
-    if (!isCode || !iframeRef.current) return
-    const doc = iframeRef.current.contentDocument
+  const iframeCallback = useCallback((node: HTMLIFrameElement | null) => {
+    if (!node || !iframeContent) return
+    const doc = node.contentDocument
     if (doc) {
       doc.open()
       doc.write(iframeContent)
       doc.close()
     }
-  }, [iframeContent, isCode])
+  }, [iframeContent])
 
   return (
     <div style={{
@@ -2191,7 +2190,7 @@ function PainelArtifact({
           </div>
         ) : aba === 'preview' ? (
           <iframe
-            ref={iframeRef}
+            ref={iframeCallback}
             sandbox="allow-scripts"
             style={{ width: '100%', height: '100%', border: 'none', background: '#0f1117' }}
             title={artifact.title}
@@ -2248,6 +2247,7 @@ function PainelArtifact({
     </div>
   )
 }
+
 // ── Componente ReasoningBlock ──────────────────────────────────────────────
 function ReasoningBlock({ reasoning, streaming }: { reasoning: string; streaming?: boolean }) {
   const [aberto, setAberto] = useState(true)
