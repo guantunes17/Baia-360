@@ -532,14 +532,22 @@ Sobre busca na internet:
 Sobre geração de documentos formais (artefatos):
 - Quando o usuário pedir para gerar um documento formal como ITO, POP, e-mail corporativo, contrato, procedimento, relatório narrativo ou qualquer documento extenso que será baixado ou impresso, SEMPRE use o formato de artefato abaixo
 - O artefato será renderizado em um painel lateral com preview e botões de download
-- Formato obrigatório para documentos formais:
-<artifact type="document" title="Título do documento">
-conteúdo completo do documento em markdown
+- Formato obrigatório para artefatos:
+<artifact type="TIPO" title="Título">
+conteúdo
 </artifact>
-- No chat, escreva apenas uma mensagem curta e natural — pode ser uma frase introdutória, um comentário sobre o documento, uma oferta para ajustar algo, ou qualquer combinação dessas. Seja humano e fluido, não robótico
-- PROIBIDO escrever o conteúdo do documento fora da tag artifact — títulos, seções, listas, procedimentos: tudo vai dentro da tag
-- Para respostas normais, análises curtas, tabelas de dados e widgets, responda normalmente sem usar artifact
-- A decisão de usar artifact deve ser baseada em: o usuário vai querer baixar ou imprimir isso? Se sim, use artifact`
+
+Tipos disponíveis:
+- type="document" → documentos formais em markdown (ITOs, POPs, contratos, relatórios narrativos)
+- type="html" → páginas HTML completas, dashboards, layouts, visualizações (use quando o usuário pedir algo visual ou interativo)
+- type="react" → componentes React com hooks e lógica interativa (use para calculadoras, formulários, jogos, widgets complexos)
+
+- No chat, escreva apenas uma mensagem curta e natural — pode ser uma frase introdutória, um comentário, uma oferta para ajustar. Seja humano e fluido
+- PROIBIDO escrever o conteúdo do artefato fora da tag
+- Para type="html": gere HTML completo e válido com CSS inline ou tag <style>. Use cores escuras (#0f1117 fundo, #e2e8f0 texto) para combinar com o tema do Atlas
+- Para type="react": gere apenas o corpo do componente (function App() { ... }), sem imports — React e useState já estão disponíveis
+- Para respostas normais, análises curtas e tabelas simples, responda normalmente sem artifact
+- Use artifact quando: o usuário pedir algo visual, interativo, um documento formal, ou qualquer conteúdo que se beneficie de uma área dedicada`
 
   const conversa = conversas.find(c => c.id === ativaId)!
 
@@ -2067,132 +2075,175 @@ function PainelArtifact({
   onBaixar: () => void
   onFechar: () => void
 }) {
+  const [aba, setAba] = useState<'preview' | 'codigo'>('preview')
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  const isDoc = artifact.type === 'document'
+  const isHtml = artifact.type === 'html'
+  const isReact = artifact.type === 'react'
+  const isCode = isHtml || isReact
+
+  const typeLabel = isDoc ? 'Documento' : isHtml ? 'HTML' : isReact ? 'React' : artifact.type
+  const typeColor = isDoc ? '#4f8ef7' : isHtml ? '#f97316' : isReact ? '#61dafb' : '#8892a4'
+
+  // Monta o HTML que vai pro iframe
+  const iframeContent = isHtml
+    ? artifact.content
+    : isReact
+    ? `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f1117; color: #e2e8f0; font-family: system-ui, sans-serif; padding: 16px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    ${artifact.content}
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>`
+    : ''
+
+  // Atualiza o iframe quando o conteúdo muda
+  useEffect(() => {
+    if (!isCode || !iframeRef.current) return
+    const doc = iframeRef.current.contentDocument
+    if (doc) {
+      doc.open()
+      doc.write(iframeContent)
+      doc.close()
+    }
+  }, [iframeContent, isCode])
+
   return (
     <div style={{
-      width: 420, minWidth: 340, maxWidth: 480,
+      width: 480, minWidth: 380, maxWidth: 560,
       borderLeft: '1px solid #2d3148',
       background: '#13161f',
       display: 'flex', flexDirection: 'column',
       animation: 'slideInRight .2s ease-out'
     }}>
-      <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(24px); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
-        }
-      `}</style>
 
       {/* Header */}
-      <div style={{
-        padding: '12px 16px',
-        borderBottom: '1px solid #2d3148',
-        display: 'flex', alignItems: 'center', gap: 10,
-        flexShrink: 0
-      }}>
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4f8ef7" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="1" width="10" height="14" rx="1.5"/>
-          <path d="M6 5h4M6 8h4M6 11h2"/>
-        </svg>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #2d3148', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        {isDoc
+          ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={typeColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="1" width="10" height="14" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg>
+          : isHtml
+          ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={typeColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4l2 8 4-2 4 2 2-8"/></svg>
+          : <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={typeColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 2C4.5 2 2 5 2 8s2.5 6 6 6 6-3 6-6-2.5-6-6-6z"/></svg>
+        }
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {artifact.title}
-          </div>
-          <div style={{ fontSize: 10, color: '#8892a4', marginTop: 1 }}>Documento</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{artifact.title}</div>
+          <div style={{ fontSize: 10, color: typeColor, marginTop: 1 }}>{typeLabel}</div>
         </div>
-        <button
-          onClick={onFechar}
-          title="Fechar painel"
-          style={{
-            width: 26, height: 26, borderRadius: 6,
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 14, transition: 'color .12s, background .12s', flexShrink: 0
-          }}
+        <button onClick={onFechar} style={{ width: 26, height: 26, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, transition: 'color .12s, background .12s', flexShrink: 0 }}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
         >✕</button>
       </div>
 
-      {/* Preview */}
-      <div style={{
-        flex: 1, overflowY: 'auto',
-        padding: '20px 24px',
-        color: '#e2e8f0', fontSize: 13.5, lineHeight: 1.8
-      }}>
-        <ReactMarkdown
-          components={{
-            h1: ({ children }) => <h1 style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0', margin: '0 0 12px 0', paddingBottom: 8, borderBottom: '1px solid #2d3148' }}>{children}</h1>,
-            h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', margin: '20px 0 8px 0' }}>{children}</h2>,
-            h3: ({ children }) => <h3 style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa', margin: '16px 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{children}</h3>,
-            p: ({ children }) => <p style={{ margin: '0 0 10px 0', color: '#c8d0de' }}>{children}</p>,
-            strong: ({ children }) => <strong style={{ color: '#e2e8f0', fontWeight: 600 }}>{children}</strong>,
-            ul: ({ children }) => <ul style={{ margin: '4px 0 10px 0', paddingLeft: 18 }}>{children}</ul>,
-            ol: ({ children }) => <ol style={{ margin: '4px 0 10px 0', paddingLeft: 18 }}>{children}</ol>,
-            li: ({ children }) => <li style={{ marginBottom: 5, color: '#c8d0de' }}>{children}</li>,
-            hr: () => <hr style={{ border: 'none', borderTop: '1px solid #2d3148', margin: '16px 0' }} />,
-            table: ({ children }) => (
-              <div style={{ overflowX: 'auto', margin: '10px 0' }}>
-                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>{children}</table>
-              </div>
-            ),
-            thead: ({ children }) => <thead style={{ background: '#1a1d27' }}>{children}</thead>,
-            th: ({ children }) => <th style={{ padding: '6px 12px', textAlign: 'left', color: '#8892a4', fontWeight: 500, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #2d3148' }}>{children}</th>,
-            td: ({ children }) => <td style={{ padding: '6px 12px', color: '#c8d0de', borderBottom: '0.5px solid #2d3148' }}>{children}</td>,
-            code: ({ children }: any) => <code style={{ fontFamily: 'monospace', background: '#0f1117', padding: '1px 5px', borderRadius: 3, fontSize: 12, color: '#a78bfa' }}>{children}</code>,
-            blockquote: ({ children }) => (
-              <blockquote style={{ borderLeft: '3px solid #4f8ef7', margin: '10px 0', padding: '4px 14px', color: '#8892a4', fontStyle: 'italic' }}>{children}</blockquote>
-            )
-          }}
-        >
-          {artifact.content}
-        </ReactMarkdown>
+      {/* Abas Preview / Código — só para html e react */}
+      {isCode && (
+        <div style={{ display: 'flex', borderBottom: '1px solid #2d3148', flexShrink: 0 }}>
+          {(['preview', 'codigo'] as const).map(a => (
+            <button key={a} onClick={() => setAba(a)} style={{
+              flex: 1, padding: '8px 0', fontSize: 11, fontWeight: 500, cursor: 'pointer',
+              background: aba === a ? '#1a1d27' : 'none', border: 'none',
+              borderBottom: aba === a ? `2px solid ${typeColor}` : '2px solid transparent',
+              color: aba === a ? '#e2e8f0' : '#8892a4', transition: 'all .15s'
+            }}>
+              {a === 'preview' ? '▶ Preview' : '{ } Código'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Conteúdo */}
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        {isDoc ? (
+          <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px', color: '#e2e8f0', fontSize: 13.5, lineHeight: 1.8 }}>
+            <ReactMarkdown components={{
+              h1: ({ children }) => <h1 style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0', margin: '0 0 12px 0', paddingBottom: 8, borderBottom: '1px solid #2d3148' }}>{children}</h1>,
+              h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', margin: '20px 0 8px 0' }}>{children}</h2>,
+              h3: ({ children }) => <h3 style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa', margin: '16px 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{children}</h3>,
+              p: ({ children }) => <p style={{ margin: '0 0 10px 0', color: '#c8d0de' }}>{children}</p>,
+              strong: ({ children }) => <strong style={{ color: '#e2e8f0', fontWeight: 600 }}>{children}</strong>,
+              ul: ({ children }) => <ul style={{ margin: '4px 0 10px 0', paddingLeft: 18 }}>{children}</ul>,
+              ol: ({ children }) => <ol style={{ margin: '4px 0 10px 0', paddingLeft: 18 }}>{children}</ol>,
+              li: ({ children }) => <li style={{ marginBottom: 5, color: '#c8d0de' }}>{children}</li>,
+              hr: () => <hr style={{ border: 'none', borderTop: '1px solid #2d3148', margin: '16px 0' }} />,
+              table: ({ children }) => <div style={{ overflowX: 'auto', margin: '10px 0' }}><table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>{children}</table></div>,
+              thead: ({ children }) => <thead style={{ background: '#1a1d27' }}>{children}</thead>,
+              th: ({ children }) => <th style={{ padding: '6px 12px', textAlign: 'left', color: '#8892a4', fontWeight: 500, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #2d3148' }}>{children}</th>,
+              td: ({ children }) => <td style={{ padding: '6px 12px', color: '#c8d0de', borderBottom: '0.5px solid #2d3148' }}>{children}</td>,
+              code: ({ children }: any) => <code style={{ fontFamily: 'monospace', background: '#0f1117', padding: '1px 5px', borderRadius: 3, fontSize: 12, color: '#a78bfa' }}>{children}</code>,
+              blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid #4f8ef7', margin: '10px 0', padding: '4px 14px', color: '#8892a4', fontStyle: 'italic' }}>{children}</blockquote>
+            }}>{artifact.content}</ReactMarkdown>
+          </div>
+        ) : aba === 'preview' ? (
+          <iframe
+            ref={iframeRef}
+            sandbox="allow-scripts"
+            style={{ width: '100%', height: '100%', border: 'none', background: '#0f1117' }}
+            title={artifact.title}
+          />
+        ) : (
+          <div style={{ height: '100%', overflowY: 'auto' }}>
+            <SyntaxHighlighter
+              style={vscDarkPlus}
+              language={isHtml ? 'html' : 'jsx'}
+              PreTag="div"
+              customStyle={{ margin: 0, background: '#0a0c14', padding: '16px', fontSize: 12, height: '100%' }}
+            >
+              {artifact.content}
+            </SyntaxHighlighter>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
-      <div style={{
-        padding: '12px 16px',
-        borderTop: '1px solid #2d3148',
-        display: 'flex', gap: 8, flexShrink: 0
-      }}>
-        <button
-          onClick={onCopiar}
-          style={{
-            flex: 1, padding: '8px 0', borderRadius: 8,
-            background: copiado ? '#10b98122' : '#1a1d27',
-            border: '1px solid',
-            borderColor: copiado ? '#10b981' : '#2d3148',
-            color: copiado ? '#10b981' : '#8892a4',
-            fontSize: 12, fontWeight: 500, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            transition: 'all .15s'
-          }}
+      <div style={{ padding: '12px 16px', borderTop: '1px solid #2d3148', display: 'flex', gap: 8, flexShrink: 0 }}>
+        <button onClick={onCopiar} style={{
+          flex: 1, padding: '8px 0', borderRadius: 8,
+          background: copiado ? '#10b98122' : '#1a1d27',
+          border: `1px solid ${copiado ? '#10b981' : '#2d3148'}`,
+          color: copiado ? '#10b981' : '#8892a4',
+          fontSize: 12, fontWeight: 500, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s'
+        }}
           onMouseEnter={e => { if (!copiado) { (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' } }}
           onMouseLeave={e => { if (!copiado) { (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
         >
           {copiado
             ? <><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3 3 7-7"/></svg> Copiado</>
-            : <><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="8" height="10" rx="1.5"/><path d="M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1"/></svg> Copiar markdown</>
+            : <><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="8" height="10" rx="1.5"/><path d="M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1"/></svg> Copiar código</>
           }
         </button>
-        <button
-          onClick={onBaixar}
-          style={{
+        {isDoc && (
+          <button onClick={onBaixar} style={{
             flex: 1, padding: '8px 0', borderRadius: 8,
-            background: '#4f8ef722',
-            border: '1px solid #4f8ef755',
-            color: '#4f8ef7',
+            background: '#4f8ef722', border: '1px solid #4f8ef755', color: '#4f8ef7',
             fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            transition: 'all .15s'
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s'
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef733'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef7' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef722'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755' }}
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/>
-          </svg>
-          Baixar .docx
-        </button>
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef733'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef7' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef722'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/>
+            </svg>
+            Baixar .docx
+          </button>
+        )}
       </div>
     </div>
   )
