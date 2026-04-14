@@ -1640,15 +1640,8 @@ conteúdo completo do documento em markdown
                         />
                       )}
                       {m.streaming && !m.text ? (
-                        <div style={{ paddingTop: 2 }}>
-                          {[85, 65, 75].map((w, j) => (
-                            <div key={j} style={{
-                              height: 10, borderRadius: 5, background: '#2d3148', marginBottom: 8,
-                              width: `${w}%`,
-                              animation: `shimmerAtlas 1.4s ease-in-out infinite ${j * 0.2}s`
-                            }} />
-                          ))}
-                          <div style={{ fontSize: 11, fontStyle: 'italic', color: '#8892a4', display: 'flex', alignItems: 'center', gap: 2, marginTop: 2 }}>
+                        <div style={{ paddingTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 12, color: '#8892a4', fontStyle: 'italic' }}>
                             {m.tools?.includes('__artifact__') ? 'Gerando documento'
                               : m.tools?.includes('get_dashboard') ? 'Buscando KPIs do dashboard'
                               : m.tools?.includes('gerar_relatorio') ? 'Gerando relatório'
@@ -1657,12 +1650,14 @@ conteúdo completo do documento em markdown
                               : m.tools?.includes('buscar_emails') ? 'Buscando e-mails'
                               : m.tools?.includes('enviar_email') ? 'Enviando e-mail'
                               : m.tools?.includes('criar_evento') ? 'Criando evento na agenda'
-                              : m.tools?.includes('google_search') ? 'Realizando busca na internet'
-                              : 'Consultando'}
+                              : m.tools?.includes('google_search') ? 'Pesquisando na web'
+                              : 'Pensando'}
+                          </span>
+                          <span style={{ display: 'flex', gap: 2 }}>
                             {[0, 1, 2].map(k => (
-                              <span key={k} style={{ animation: `fadedot 1.2s ease-in-out infinite ${k * 0.2}s` }}>.</span>
+                              <span key={k} style={{ width: 3, height: 3, borderRadius: '50%', background: '#8892a4', display: 'inline-block', animation: `fadedot 1.2s ease-in-out infinite ${k * 0.2}s` }} />
                             ))}
-                          </div>
+                          </span>
                         </div>
                       ) : (
                         <div>
