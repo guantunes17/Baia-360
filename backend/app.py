@@ -1518,8 +1518,11 @@ def atlas_chat():
                                         if getattr(ann, 'type', '') == 'url_citation':
                                             url = getattr(ann, 'url', '')
                                             title = getattr(ann, 'title', url)
+                                            start = getattr(ann, 'start_index', None)
+                                            end = getattr(ann, 'end_index', None)
+                                            print(f"[CITATION DETAIL] url={url} start={start} end={end}", flush=True)
                                             if url and not any(c['url'] == url for c in citations):
-                                                citations.append({'url': url, 'title': title})
+                                                citations.append({'url': url, 'title': title, 'start': start, 'end': end})
                             print(f"[CITATIONS] total={len(citations)}", flush=True)
                         except Exception as e:
                             print(f"[CITATIONS ERROR] {e}", flush=True)
