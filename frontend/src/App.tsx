@@ -403,6 +403,46 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
   )
 }
 
+function PaginaSimples({ titulo, icone, usuario, onVoltar, onPerfil, children }: {
+  titulo: string
+  icone: string
+  usuario: Usuario
+  onVoltar: () => void
+  onPerfil: () => void
+  children: React.ReactNode
+}) {
+  const iniciais = (usuario.nome.trim().split(' ').length === 1
+    ? usuario.nome.slice(0, 2)
+    : usuario.nome.trim().split(' ')[0][0] + usuario.nome.trim().split(' ').slice(-1)[0][0]
+  ).toUpperCase()
+
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', height: 48, borderBottom: '1px solid #2d3148', background: '#13161f', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={onVoltar} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, color: '#4f8ef7', background: '#4f8ef711', border: '1px solid #4f8ef733', cursor: 'pointer' }}>
+            ← Baia 360
+          </button>
+          <span style={{ color: '#2d3148' }}>|</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{icone} {titulo}</span>
+        </div>
+        <button
+          onClick={onPerfil}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8 }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a1d27'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+        >
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f8ef722', border: '1px solid #4f8ef744', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#4f8ef7' }}>
+            {iniciais}
+          </div>
+          <span style={{ fontSize: 13, color: '#8892a4' }}>{usuario.nome.split(' ')[0]}</span>
+        </button>
+      </header>
+      <main style={{ flex: 1, overflowY: 'auto' }}>{children}</main>
+    </div>
+  )
+}
+
 export default function App() {
   const [usuario, setUsuario] = useState<Usuario | null>(() => {
     const u = localStorage.getItem('usuario')
@@ -472,43 +512,39 @@ const handleLogout = () => {
     </>
   )
 if (tela === 'dashboard') return (
-    <Dashboard
-      usuario={usuario}
-      onLogout={handleLogout}
-      onVoltarHub={() => setTela('hub')}
-      onAtualizarUsuario={u => setUsuario(u)}
-      paginaInicial="dashboard"
-    />
+    <>
+      <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
+      <PaginaSimples titulo="Dashboard" icone="📈" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => setTela('relatorios')}>
+        <DashboardPage />
+      </PaginaSimples>
+    </>
   )
 
   if (tela === 'agenda') return (
-    <Dashboard
-      usuario={usuario}
-      onLogout={handleLogout}
-      onVoltarHub={() => setTela('hub')}
-      onAtualizarUsuario={u => setUsuario(u)}
-      paginaInicial="agenda"
-    />
+    <>
+      <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
+      <PaginaSimples titulo="Agenda" icone="📅" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => setTela('relatorios')}>
+        <Agenda />
+      </PaginaSimples>
+    </>
   )
 
   if (tela === 'usuarios') return (
-    <Dashboard
-      usuario={usuario}
-      onLogout={handleLogout}
-      onVoltarHub={() => setTela('hub')}
-      onAtualizarUsuario={u => setUsuario(u)}
-      paginaInicial="usuarios"
-    />
+    <>
+      <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
+      <PaginaSimples titulo="Usuários" icone="👥" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => setTela('relatorios')}>
+        <Usuarios />
+      </PaginaSimples>
+    </>
   )
 
   if (tela === 'base_conhecimento') return (
-    <Dashboard
-      usuario={usuario}
-      onLogout={handleLogout}
-      onVoltarHub={() => setTela('hub')}
-      onAtualizarUsuario={u => setUsuario(u)}
-      paginaInicial="base_conhecimento"
-    />
+    <>
+      <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
+      <PaginaSimples titulo="Base de Conhecimento" icone="🧠" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => setTela('relatorios')}>
+        <BaseConhecimento />
+      </PaginaSimples>
+    </>
   )
 
   if (tela === 'atlas') return (
