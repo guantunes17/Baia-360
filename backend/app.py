@@ -1509,13 +1509,15 @@ def atlas_chat():
                             for item in (event.response.output or []):
                                 for part in getattr(item, 'content', []):
                                     for ann in getattr(part, 'annotations', []):
+                                        print(f"[ANNOTATION] type={getattr(ann, 'type', '?')} url={getattr(ann, 'url', '?')}", flush=True)
                                         if getattr(ann, 'type', '') == 'url_citation':
                                             url = getattr(ann, 'url', '')
                                             title = getattr(ann, 'title', url)
                                             if url and not any(c['url'] == url for c in citations):
                                                 citations.append({'url': url, 'title': title})
-                        except Exception:
-                            pass
+                            print(f"[CITATIONS] total={len(citations)}", flush=True)
+                        except Exception as e:
+                            print(f"[CITATIONS ERROR] {e}", flush=True)
                         yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations})}\n\n"
 
                     elif etype == 'error':
