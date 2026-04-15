@@ -116,16 +116,30 @@ function Cadastro({ onVoltar, onCadastro }: { onVoltar: () => void; onCadastro: 
                 required
                 style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
               />
-              {senha.length > 0 && (
-                <div>
-                  <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                    {[1,2,3,4].map(i => (
-                      <div key={i} style={{ flex: 1, height: 3, borderRadius: 99, background: i <= forcaSenha ? coresForca[forcaSenha] : '#2d3148', transition: 'background .2s' }} />
-                    ))}
+              {/* Card fixo de requisitos */}
+              <div style={{ background: '#0f1117', border: '1px solid #2d3148', borderRadius: 8, padding: '10px 12px', marginTop: 6 }}>
+                <p style={{ fontSize: 11, color: '#8892a4', marginBottom: 6, fontWeight: 600 }}>A senha deve conter:</p>
+                {[
+                  { ok: senha.length >= 8,           label: 'Mínimo 8 caracteres' },
+                  { ok: /[A-Z]/.test(senha),          label: '1 letra maiúscula (A-Z)' },
+                  { ok: /[^a-zA-Z0-9]/.test(senha),  label: '1 caractere especial (!@#$%...)' },
+                ].map((r, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontSize: 12, color: r.ok ? '#1D9E75' : '#8892a4' }}>{r.ok ? '✓' : '○'}</span>
+                    <span style={{ fontSize: 11, color: r.ok ? '#1D9E75' : '#8892a4' }}>{r.label}</span>
                   </div>
-                  <p style={{ fontSize: 11, color: coresForca[forcaSenha], marginTop: 4 }}>{labelsForca[forcaSenha]}</p>
-                </div>
-              )}
+                ))}
+                {senha.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+                      {[1,2,3,4].map(i => (
+                        <div key={i} style={{ flex: 1, height: 3, borderRadius: 99, background: i <= forcaSenha ? coresForca[forcaSenha] : '#2d3148', transition: 'background .2s' }} />
+                      ))}
+                    </div>
+                    <p style={{ fontSize: 11, color: coresForca[forcaSenha], marginTop: 4 }}>{labelsForca[forcaSenha]}</p>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="senha-conf" style={{ color: '#8892a4' }}>Confirmar senha</Label>
@@ -451,6 +465,7 @@ export default function App() {
   const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas' | 'dashboard' | 'agenda' | 'usuarios' | 'base_conhecimento'>('hub')
   const [telaNaoLogado, setTelaNaoLogado] = useState<'login' | 'cadastro'>('login')
   const [pendentes, setPendentes] = useState(0)
+  const [paginaInicialRelatorios, setPaginaInicialRelatorios] = useState('home')
 
   // ── Toasts globais (visíveis em qualquer tela) ──────────────────────────────
   const [toastsGlobais, setToastsGlobais] = useState<ToastData[]>([])
@@ -529,7 +544,7 @@ const handleLogout = () => {
       onEntrarAgenda={() => setTela('agenda')}
       onEntrarUsuarios={() => { setTela('usuarios'); setPendentes(0) }}
       onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
-      onEntrarPerfil={() => setTela('relatorios')}
+      onEntrarPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}
       pendentes={pendentes}
       onLogout={handleLogout}
     />
@@ -610,8 +625,9 @@ return (
   <Dashboard
     usuario={usuario}
     onLogout={handleLogout}
-    onVoltarHub={() => setTela('hub')}
+    onVoltarHub={() => { setPaginaInicialRelatorios('home'); setTela('hub') }}
     onAtualizarUsuario={u => setUsuario(u)}
+    paginaInicial={paginaInicialRelatorios}
   />
 )
 }
