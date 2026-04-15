@@ -70,13 +70,15 @@ class AtlasConversa(db.Model):
     msgs_json   = db.Column(db.Text, nullable=False, default='[]')
     history_json = db.Column(db.Text, nullable=False, default='[]')
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    criada_em   = db.Column(db.DateTime, default=datetime.utcnow)
+    pinada        = db.Column(db.Boolean, default=False)
+    criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
         return {
             'id':           self.id,
             'conv_id':      self.conv_id,
             'titulo':       self.titulo,
+            'pinada':       self.pinada,
             'msgs':         json.loads(self.msgs_json),
             'history':      json.loads(self.history_json),
             'criadaEm':     self.criada_em.isoformat(),
@@ -191,12 +193,17 @@ def cadastro():
     senha_confirmacao = data.get('senha_confirmacao', '')
 
     # Validações
+    import re as _re
     if not all([nome, email, senha, senha_confirmacao]):
         return jsonify({'erro': 'Todos os campos são obrigatórios'}), 400
     if len(nome) < 2:
         return jsonify({'erro': 'Nome deve ter pelo menos 2 caracteres'}), 400
     if len(senha) < 8:
         return jsonify({'erro': 'A senha deve ter pelo menos 8 caracteres'}), 400
+    if not _re.search(r'[A-Z]', senha):
+        return jsonify({'erro': 'A senha deve conter pelo menos 1 letra maiúscula'}), 400
+    if not _re.search(r'[^a-zA-Z0-9]', senha):
+        return jsonify({'erro': 'A senha deve conter pelo menos 1 caractere especial (!@#$%...)'}), 400
     if senha != senha_confirmacao:
         return jsonify({'erro': 'As senhas não coincidem'}), 400
     if User.query.filter_by(email=email).first():
@@ -242,8 +249,17 @@ def criar_usuario():
     if User.query.filter_by(email=email).first():
         return jsonify({'erro': 'Email já cadastrado'}), 409
 
+    senha_nova = data.get('senha', '')
+    import re as _re2
+    if len(senha_nova) < 8:
+        return jsonify({'erro': 'A senha deve ter pelo menos 8 caracteres'}), 400
+    if not _re2.search(r'[A-Z]', senha_nova):
+        return jsonify({'erro': 'A senha deve conter pelo menos 1 letra maiúscula'}), 400
+    if not _re2.search(r'[^a-zA-Z0-9]', senha_nova):
+        return jsonify({'erro': 'A senha deve conter pelo menos 1 caractere especial (!@#$%...)'}), 400
+
     novo = User(nome=data.get('nome',''), email=email, perfil=data.get('perfil','usuario'))
-    novo.set_senha(data.get('senha',''))
+    novo.set_senha(senha_nova)
     db.session.add(novo)
     db.session.commit()
     return jsonify(novo.to_dict()), 201
@@ -1539,7 +1555,7 @@ def atlas_chat():
                 else:
                     yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
 
-        # Dispara análise de memórias em background
+# Dispara análise de memórias em background
         usuario_id = int(get_jwt_identity())
         msgs = data.get('msgs', [])
         threading.Thread(
@@ -1547,6 +1563,22 @@ def atlas_chat():
             args=(app.app_context(), usuario_id, msgs),
             daemon=True
         ).start()
+
+        # Popula AtlasLog na primeira mensagem da conversa
+        conv_id  = data.get('conv_id', '')
+        primeira = next((m.get('text', '') for m in msgs if m.get('role') == 'user'), '')
+        if conv_id and primeira:
+            existe = AtlasLog.query.filter_by(usuario_id=usuario_id, primeira_msg=primeira[:200]).first()
+            if not existe:
+                db.session.add(AtlasLog(
+                    usuario_id   = usuario_id,
+                    primeira_msg = primeira[:200],
+                    total_msgs   = len(msgs)
+                ))
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
 
         return app.response_class(generate(), mimetype='text/event-stream',
                                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
@@ -1736,9 +1768,10 @@ def atlas_salvar_conversa():
 
     conversa = AtlasConversa.query.filter_by(usuario_id=usuario_id, conv_id=conv_id).first()
     if conversa:
-        conversa.titulo       = data.get('titulo', conversa.titulo)
-        conversa.msgs_json    = json.dumps(data.get('msgs', []), ensure_ascii=False)
-        conversa.history_json = json.dumps(data.get('history', []), ensure_ascii=False)
+        conversa.titulo        = data.get('titulo', conversa.titulo)
+        conversa.msgs_json     = json.dumps(data.get('msgs', []), ensure_ascii=False)
+        conversa.history_json  = json.dumps(data.get('history', []), ensure_ascii=False)
+        conversa.pinada        = data.get('pinada', conversa.pinada)
         conversa.atualizada_em = datetime.utcnow()
     else:
         conversa = AtlasConversa(
@@ -1747,6 +1780,7 @@ def atlas_salvar_conversa():
             titulo       = data.get('titulo', 'Nova conversa'),
             msgs_json    = json.dumps(data.get('msgs', []), ensure_ascii=False),
             history_json = json.dumps(data.get('history', []), ensure_ascii=False),
+            pinada       = data.get('pinada', False),
         )
         db.session.add(conversa)
 

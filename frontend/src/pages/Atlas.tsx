@@ -494,7 +494,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
           conv_id: conv.id,
           titulo:  conv.titulo,
           msgs:    conv.msgs,
-          history: conv.history
+          history: conv.history,
+          pinada:  conv.pinned ?? false
         })
       })
     } catch {}
@@ -545,7 +546,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             msgs:     c.msgs,
             history:  c.history,
             criadaEm: new Date(c.criadaEm),
-            pinned:   false
+            pinned:   c.pinada ?? false
           }))
           setConversas(convertidas)
           // Não define ativa — começa na tela home
@@ -880,7 +881,8 @@ Tipos disponíveis:
       tools: activeTools,
       reasoning_effort: reasoningEffort,
       code_interpreter: codeInterpreter,
-      previous_response_id: previousResponseId
+      previous_response_id: previousResponseId,
+      conv_id: convId
     }
 
     // ── Fluxo com arquivo pendente para geração de relatório ──

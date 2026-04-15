@@ -450,6 +450,7 @@ export default function App() {
   })
   const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas' | 'dashboard' | 'agenda' | 'usuarios' | 'base_conhecimento'>('hub')
   const [telaNaoLogado, setTelaNaoLogado] = useState<'login' | 'cadastro'>('login')
+  const [pendentes, setPendentes] = useState(0)
 
   // ── Toasts globais (visíveis em qualquer tela) ──────────────────────────────
   const [toastsGlobais, setToastsGlobais] = useState<ToastData[]>([])
@@ -478,6 +479,28 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handleClose)
   }, [])
 
+  // Polling de usuários pendentes — apenas admin, apenas na tela hub
+  useEffect(() => {
+    if (usuario?.perfil !== 'admin') return
+    const buscar = () => {
+      const token = localStorage.getItem('token')
+      if (!token) return
+      fetch(`${API}/api/auth/usuarios`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setPendentes(data.filter((u: any) => u.status === 'pendente').length)
+          }
+        })
+        .catch(() => {})
+    }
+    buscar()
+    const intervalo = setInterval(buscar, 60000) // a cada 60 segundos
+    return () => clearInterval(intervalo)
+  }, [usuario])
+
   const handleLogin  = (u: Usuario) => { setUsuario(u); setTela('hub'); setTelaNaoLogado('login') }
 const handleLogout = () => {
   localStorage.removeItem('token')
@@ -504,9 +527,10 @@ const handleLogout = () => {
       onEntrarAtlas={() => setTela('atlas')}
       onEntrarDashboard={() => setTela('dashboard')}
       onEntrarAgenda={() => setTela('agenda')}
-      onEntrarUsuarios={() => setTela('usuarios')}
+      onEntrarUsuarios={() => { setTela('usuarios'); setPendentes(0) }}
       onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
       onEntrarPerfil={() => setTela('relatorios')}
+      pendentes={pendentes}
       onLogout={handleLogout}
     />
     </>

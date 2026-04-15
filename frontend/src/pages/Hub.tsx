@@ -17,6 +17,7 @@ interface Props {
   onEntrarUsuarios: () => void
   onEntrarBaseConhecimento: () => void
   onEntrarPerfil: () => void
+  pendentes?: number
   onLogout: () => void
 }
 
@@ -29,6 +30,7 @@ export function Hub({
   onEntrarUsuarios,
   onEntrarBaseConhecimento,
   onEntrarPerfil,
+  pendentes = 0,
   onLogout
 }: Props) {
   const hoje = new Date()
@@ -178,7 +180,21 @@ export function Hub({
               <div style={{ flex: 1, height: '0.5px', background: '#2d3148' }} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 14 }}>
-              {cardSecundario('👥', 'Usuários', 'Gerenciar acessos e perfis', '#4f8ef7', onEntrarUsuarios)}
+              <div style={{ position: 'relative' }}>
+                {cardSecundario('👥', 'Usuários', 'Gerenciar acessos e perfis', '#4f8ef7', onEntrarUsuarios)}
+                {pendentes > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -6, right: -6,
+                    background: '#e05252', color: '#fff',
+                    fontSize: 10, fontWeight: 700,
+                    borderRadius: '50%', minWidth: 18, height: 18,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '0 4px', border: '2px solid #0f1117'
+                  }}>
+                    {pendentes}
+                  </span>
+                )}
+              </div>
               {cardSecundario('🧠', 'Base de Conhecimento', 'Documentos indexados do Atlas', '#7c3aed', onEntrarBaseConhecimento)}
             </div>
           </div>
