@@ -44,6 +44,8 @@ function Cadastro({ onVoltar, onCadastro }: { onVoltar: () => void; onCadastro: 
   const [senhaConf, setSenhaConf]         = useState('')
   const [erro, setErro]                   = useState('')
   const [loading, setLoading]             = useState(false)
+  const [cadastrado, setCadastrado]       = useState(false)
+  const [nomeRegistrado, setNomeRegistrado] = useState('')
 
   const forcaSenha = senha.length === 0 ? 0 : senha.length < 6 ? 1 : senha.length < 8 ? 2 : senha.length < 12 ? 3 : 4
   const coresForca = ['#2d3148', '#ef4444', '#f59e0b', '#4f8ef7', '#1D9E75']
@@ -60,14 +62,47 @@ function Cadastro({ onVoltar, onCadastro }: { onVoltar: () => void; onCadastro: 
         nome, email, senha, senha_confirmacao: senhaConf
       })
       setErro('')
-      alert('Cadastro realizado! Aguarde a aprovação do administrador.')
-      onVoltar()
+      setNomeRegistrado(nome.split(' ')[0])
+      setCadastrado(true)
     } catch (err: any) {
       setErro(err.response?.data?.erro || 'Erro ao criar conta')
     } finally {
       setLoading(false)
     }
   }
+
+if (cadastrado) return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#0f1117' }}>
+      <Card className="w-full max-w-md border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
+        <CardContent className="pt-8 pb-8">
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#f59e0b22', border: '2px solid #f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 28 }}>
+              ⏳
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>
+              Quase lá, {nomeRegistrado}!
+            </h2>
+            <p style={{ fontSize: 13, color: '#8892a4', marginBottom: 20, lineHeight: 1.6 }}>
+              Seu cadastro foi realizado com sucesso.<br />
+              Um administrador precisa aprovar seu acesso antes que você possa entrar.
+            </p>
+            <div style={{ background: '#f59e0b11', border: '1px solid #f59e0b33', borderRadius: 8, padding: '12px 16px', marginBottom: 24, textAlign: 'left' }}>
+              <p style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600, marginBottom: 4 }}>O que acontece agora?</p>
+              <p style={{ fontSize: 12, color: '#8892a4', lineHeight: 1.6 }}>
+                O time de administração será notificado e aprovará seu acesso em breve. Você receberá acesso completo assim que for aprovado.
+              </p>
+            </div>
+            <button
+              onClick={onVoltar}
+              style={{ background: '#4f8ef7', color: 'white', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: 'pointer', width: '100%' }}
+            >
+              Voltar para o login
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#0f1117' }}>
@@ -256,7 +291,14 @@ function Login({ onLogin, onCadastro }: { onLogin: (u: Usuario) => void; onCadas
               />
             </div>
             {erro && (
-              <p className="text-sm text-center" style={{ color: '#ef4444' }}>{erro}</p>
+              erro.toLowerCase().includes('aprovação') || erro.toLowerCase().includes('pendente') ? (
+                <div style={{ background: '#f59e0b11', border: '1px solid #f59e0b44', borderRadius: 8, padding: '10px 14px', textAlign: 'center' }}>
+                  <p style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600, marginBottom: 2 }}>⏳ Cadastro em análise</p>
+                  <p style={{ fontSize: 12, color: '#8892a4' }}>Seu acesso ainda não foi aprovado pelo administrador.</p>
+                </div>
+              ) : (
+                <p className="text-sm text-center" style={{ color: '#ef4444' }}>{erro}</p>
+              )
             )}
             <Button
               type="submit"
