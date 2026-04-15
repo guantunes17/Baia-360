@@ -2333,6 +2333,100 @@ def outlook_enviar_email():
     except Exception as e:
         return jsonify({'erro': str(e)}), 500
 
+# ── Rotas Teams ───────────────────────────────────────────────────────────────
+
+@app.route('/api/teams/times', methods=['GET'])
+@jwt_required()
+def teams_listar_times():
+    usuario_id = int(get_jwt_identity())
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+    try:
+        resultado = _chamar_mcp('teams_listar_times', {'access_token': access_token})
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/teams/canais', methods=['GET'])
+@jwt_required()
+def teams_listar_canais():
+    usuario_id = int(get_jwt_identity())
+    team_id    = request.args.get('team_id', '')
+    if not team_id:
+        return jsonify({'erro': 'team_id obrigatório'}), 400
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+    try:
+        resultado = _chamar_mcp('teams_listar_canais', {
+            'access_token': access_token,
+            'team_id':      team_id
+        })
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/teams/mensagem', methods=['POST'])
+@jwt_required()
+def teams_enviar_mensagem():
+    usuario_id = int(get_jwt_identity())
+    data       = request.get_json()
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+    try:
+        resultado = _chamar_mcp('teams_enviar_mensagem', {
+            'access_token': access_token,
+            'team_id':      data.get('team_id', ''),
+            'channel_id':   data.get('channel_id', ''),
+            'mensagem':     data.get('mensagem', '')
+        })
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/teams/reuniao', methods=['POST'])
+@jwt_required()
+def teams_criar_reuniao():
+    usuario_id = int(get_jwt_identity())
+    data       = request.get_json()
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+    try:
+        resultado = _chamar_mcp('teams_criar_reuniao', {
+            'access_token':   access_token,
+            'titulo':         data.get('titulo', 'Reunião'),
+            'inicio':         data.get('inicio', ''),
+            'fim':            data.get('fim', ''),
+            'participantes':  data.get('participantes', [])
+        })
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/teams/chat', methods=['POST'])
+@jwt_required()
+def teams_chat_enviar():
+    usuario_id = int(get_jwt_identity())
+    data       = request.get_json()
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+    try:
+        resultado = _chamar_mcp('teams_chat_enviar', {
+            'access_token':  access_token,
+            'email_destino': data.get('email_destino', ''),
+            'mensagem':      data.get('mensagem', '')
+        })
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)

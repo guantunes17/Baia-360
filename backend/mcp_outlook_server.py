@@ -343,6 +343,145 @@ def enviar_email():
 def health():
     return jsonify({"status": "ok", "servico": "mcp_outlook_server", "porta": 5002})
 
+# ── Teams ─────────────────────────────────────────────────────────────────────
+
+@app.route("/tools/teams_listar_times", methods=["POST"])
+def teams_listar_times():
+    """Lista os times do Microsoft Teams do usuário."""
+    data  = request.get_json(force=True)
+    token = data.get("access_token", "")
+    if not token:
+        return erro("access_token obrigatório")
+    try:
+        resultado = graph_get(token, "/me/joinedTeams")
+        times = []
+        for t in resultado.get("value", []):
+            times.append({
+                "id":          t.get("id"),
+                "nome":        t.get("displayName"),
+                "descricao":   t.get("description", ""),
+            })
+        return jsonify({"times": times, "total": len(times)})
+    except Exception as e:
+        return erro(str(e), 500)
+
+
+@app.route("/tools/teams_listar_canais", methods=["POST"])
+def teams_listar_canais():
+    """Lista os canais de um time específico."""
+    data    = request.get_json(force=True)
+    token   = data.get("access_token", "")
+    team_id = data.get("team_id", "")
+    if not token or not team_id:
+        return erro("access_token e team_id obrigatórios")
+    try:
+        resultado = graph_get(token, f"/teams/{team_id}/channels")
+        canais = []
+        for c in resultado.get("value", []):
+            canais.append({
+                "id":    c.get("id"),
+                "nome":  c.get("displayName"),
+                "tipo":  c.get("membershipType", "standard"),
+            })
+        return jsonify({"canais": canais, "total": len(canais)})
+    except Exception as e:
+        return erro(str(e), 500)
+
+
+@app.route("/tools/teams_enviar_mensagem", methods=["POST"])
+def teams_enviar_mensagem():
+    """Envia uma mensagem em um canal do Teams."""
+    data       = request.get_json(force=True)
+    token      = data.get("access_token", "")
+    team_id    = data.get("team_id", "")
+    channel_id = data.get("channel_id", "")
+    mensagem   = data.get("mensagem", "")
+    if not token or not team_id or not channel_id or not mensagem:
+        return erro("access_token, team_id, channel_id e mensagem obrigatórios")
+    try:
+        body = {"body": {"content": mensagem, "contentType": "text"}}
+        resultado = graph_post(token, f"/teams/{team_id}/channels/{channel_id}/messages", body)
+        return jsonify({
+            "ok":         True,
+            "mensagem_id": resultado.get("id"),
+            "enviada_em":  resultado.get("createdDateTime"),
+        })
+    except Exception as e:
+        return erro(str(e), 500)
+
+
+@app.route("/tools/teams_criar_reuniao", methods=["POST"])
+def teams_criar_reuniao():
+    """Cria uma reunião online no Microsoft Teams."""
+    data        = request.get_json(force=True)
+    token       = data.get("access_token", "")
+    titulo      = data.get("titulo", "Reunião")
+    inicio      = data.get("inicio", "")   # ISO 8601 ex: 2026-04-15T14:00:00
+    fim         = data.get("fim", "")      # ISO 8601 ex: 2026-04-15T15:00:00
+    participantes = data.get("participantes", [])  # lista de e-mails
+    if not token or not inicio or not fim:
+        return erro("access_token, inicio e fim obrigatórios")
+    try:
+        body = {
+            "subject": titulo,
+            "startDateTime": inicio,
+            "endDateTime":   fim,
+            "isOnlineMeeting": True,
+            "onlineMeetingProvider": "teamsForBusiness",
+        }
+        if participantes:
+            body["attendees"] = [
+                {"emailAddress": {"address": email}, "type": "required"}
+                for email in participantes
+            ]
+        resultado = graph_post(token, "/me/events", body)
+        link = resultado.get("onlineMeeting", {}).get("joinUrl", "")
+        return jsonify({
+            "ok":            True,
+            "evento_id":     resultado.get("id"),
+            "titulo":        resultado.get("subject"),
+            "inicio":        resultado.get("start", {}).get("dateTime"),
+            "fim":           resultado.get("end", {}).get("dateTime"),
+            "link_reuniao":  link,
+            "link_evento":   resultado.get("webLink"),
+        })
+    except Exception as e:
+        return erro(str(e), 500)
+
+
+@app.route("/tools/teams_chat_enviar", methods=["POST"])
+def teams_chat_enviar():
+    """Envia uma mensagem direta (chat) para um usuário no Teams."""
+    data         = request.get_json(force=True)
+    token        = data.get("access_token", "")
+    email_destino = data.get("email_destino", "")
+    mensagem     = data.get("mensagem", "")
+    if not token or not email_destino or not mensagem:
+        return erro("access_token, email_destino e mensagem obrigatórios")
+    try:
+        # Cria ou recupera o chat direto
+        chat_body = {
+            "chatType": "oneOnOne",
+            "members": [
+                {"@odata.type": "#microsoft.graph.aadUserConversationMember", "roles": ["owner"],
+                 "user@odata.bind": "https://graph.microsoft.com/v1.0/users('me')"},
+                {"@odata.type": "#microsoft.graph.aadUserConversationMember", "roles": ["owner"],
+                 "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{email_destino}')"},
+            ]
+        }
+        chat = graph_post(token, "/chats", chat_body)
+        chat_id = chat.get("id")
+        if not chat_id:
+            return erro("Não foi possível criar o chat")
+        msg_body = {"body": {"content": mensagem, "contentType": "text"}}
+        resultado = graph_post(token, f"/chats/{chat_id}/messages", msg_body)
+        return jsonify({
+            "ok":         True,
+            "chat_id":    chat_id,
+            "mensagem_id": resultado.get("id"),
+        })
+    except Exception as e:
+        return erro(str(e), 500)
 
 if __name__ == "__main__":
     print("🔌 MCP Outlook Server rodando na porta 5002")

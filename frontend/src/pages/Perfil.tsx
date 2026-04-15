@@ -220,7 +220,7 @@ export function Perfil({ usuario, onAtualizar }: Props) {
                 </svg>
               </div>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0' }}>Microsoft Outlook</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0' }}>Microsoft 365</div>
                 {outlookStatus === null && (
                   <div style={{ fontSize: 11, color: '#8892a4' }}>Verificando...</div>
                 )}
@@ -258,7 +258,7 @@ export function Perfil({ usuario, onAtualizar }: Props) {
             </div>
           </div>
           <p style={{ fontSize: 11, color: '#8892a455', marginTop: 4 }}>
-            Necessário para o Atlas acessar sua agenda e e-mails do Outlook.
+            Necessário para o Atlas acessar sua agenda, e-mails e o Microsoft Teams.
           </p>
         </CardContent>
       </Card>

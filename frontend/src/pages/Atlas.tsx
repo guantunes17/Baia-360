@@ -29,7 +29,22 @@ const TOOLS_DEF = [
   },
   { id: 'enviar_email', name: 'enviar_email', on: true,
     declaration: { name: 'enviar_email', description: 'Envia um e-mail pelo Outlook do usuário. Use quando o usuário pedir para enviar, encaminhar ou redigir um e-mail para alguém.', parameters: { type: 'object', properties: { destinatario: { type: 'string', description: 'Endereço de e-mail do destinatário.' }, nome_destinatario: { type: ['string', 'null'], description: 'Nome de exibição do destinatário. Pode ser null.' }, assunto: { type: 'string', description: 'Assunto do e-mail.' }, corpo: { type: 'string', description: 'Corpo do e-mail em texto simples.' } }, required: ['destinatario', 'nome_destinatario', 'assunto', 'corpo'] } }
-  }
+  },
+  { id: 'teams_listar_times', name: 'teams_listar_times', on: true,
+    declaration: { name: 'teams_listar_times', description: 'Lista os times do Microsoft Teams do usuário.', parameters: { type: 'object', properties: {}, required: [] } }
+  },
+  { id: 'teams_listar_canais', name: 'teams_listar_canais', on: true,
+    declaration: { name: 'teams_listar_canais', description: 'Lista os canais de um time específico do Teams.', parameters: { type: 'object', properties: { team_id: { type: 'string', description: 'ID do time.' } }, required: ['team_id'] } }
+  },
+  { id: 'teams_enviar_mensagem', name: 'teams_enviar_mensagem', on: true,
+    declaration: { name: 'teams_enviar_mensagem', description: 'Envia uma mensagem em um canal do Teams.', parameters: { type: 'object', properties: { team_id: { type: 'string' }, channel_id: { type: 'string' }, mensagem: { type: 'string' } }, required: ['team_id', 'channel_id', 'mensagem'] } }
+  },
+  { id: 'teams_criar_reuniao', name: 'teams_criar_reuniao', on: true,
+    declaration: { name: 'teams_criar_reuniao', description: 'Cria uma reunião online no Microsoft Teams com link de videoconferência.', parameters: { type: 'object', properties: { titulo: { type: 'string' }, inicio: { type: 'string', description: 'Data e hora de início no formato ISO 8601. Ex: 2026-04-15T14:00:00' }, fim: { type: 'string', description: 'Data e hora de fim no formato ISO 8601. Ex: 2026-04-15T15:00:00' }, participantes: { type: 'array', items: { type: 'string' }, description: 'Lista de e-mails dos participantes.' } }, required: ['titulo', 'inicio', 'fim'] } }
+  },
+  { id: 'teams_chat_enviar', name: 'teams_chat_enviar', on: true,
+    declaration: { name: 'teams_chat_enviar', description: 'Envia uma mensagem direta para um usuário no Teams.', parameters: { type: 'object', properties: { email_destino: { type: 'string', description: 'E-mail do destinatário.' }, mensagem: { type: 'string' } }, required: ['email_destino', 'mensagem'] } }
+  },
 ]
 
 const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>) | ((args: any) => any)> = {
@@ -101,7 +116,68 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
       return { erro: data.erro || 'Erro ao enviar e-mail.' }
     }
     return data
-  }
+  },
+  teams_listar_times: async (_args: any, token: string) => {
+    const res = await fetch(`${API}/api/teams/times`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao listar times.' }
+    }
+    return data
+  },
+  teams_listar_canais: async ({ team_id }: any, token: string) => {
+    const res = await fetch(`${API}/api/teams/canais?team_id=${team_id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao listar canais.' }
+    }
+    return data
+  },
+  teams_enviar_mensagem: async (args: any, token: string) => {
+    const res = await fetch(`${API}/api/teams/mensagem`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao enviar mensagem.' }
+    }
+    return data
+  },
+  teams_criar_reuniao: async (args: any, token: string) => {
+    const res = await fetch(`${API}/api/teams/reuniao`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao criar reunião.' }
+    }
+    return data
+  },
+  teams_chat_enviar: async (args: any, token: string) => {
+    const res = await fetch(`${API}/api/teams/chat`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
+      return { erro: data.erro || 'Erro ao enviar mensagem direta.' }
+    }
+    return data
+  },
 }
 
 const ENDPOINT_MAP: Record<string, string> = {
@@ -1661,6 +1737,11 @@ Tipos disponíveis:
                               : m.tools?.includes('buscar_emails') ? 'Buscando e-mails'
                               : m.tools?.includes('enviar_email') ? 'Enviando e-mail'
                               : m.tools?.includes('criar_evento') ? 'Criando evento na agenda'
+                              : m.tools?.includes('teams_listar_times') ? 'Buscando times do Teams'
+                              : m.tools?.includes('teams_listar_canais') ? 'Buscando canais do Teams'
+                              : m.tools?.includes('teams_enviar_mensagem') ? 'Enviando mensagem no Teams'
+                              : m.tools?.includes('teams_criar_reuniao') ? 'Criando reunião no Teams'
+                              : m.tools?.includes('teams_chat_enviar') ? 'Enviando mensagem direta no Teams'
                               : m.tools?.includes('google_search') ? 'Pesquisando na web'
                               : 'Pensando'}
                           </span>
