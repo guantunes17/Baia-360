@@ -553,7 +553,7 @@ const handleLogout = () => {
 if (tela === 'dashboard') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Dashboard" icone="📈" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => setTela('relatorios')}>
+      <PaginaSimples titulo="Dashboard" icone="📈" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
         <DashboardPage />
       </PaginaSimples>
     </>
@@ -562,7 +562,7 @@ if (tela === 'dashboard') return (
   if (tela === 'agenda') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Agenda" icone="📅" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => setTela('relatorios')}>
+      <PaginaSimples titulo="Agenda" icone="📅" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
         <Agenda />
       </PaginaSimples>
     </>
@@ -571,7 +571,7 @@ if (tela === 'dashboard') return (
   if (tela === 'usuarios') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Usuários" icone="👥" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => setTela('relatorios')}>
+      <PaginaSimples titulo="Usuários" icone="👥" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
         <Usuarios />
       </PaginaSimples>
     </>
@@ -580,7 +580,7 @@ if (tela === 'dashboard') return (
   if (tela === 'base_conhecimento') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Base de Conhecimento" icone="🧠" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => setTela('relatorios')}>
+      <PaginaSimples titulo="Base de Conhecimento" icone="🧠" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
         <BaseConhecimento />
       </PaginaSimples>
     </>
@@ -601,7 +601,7 @@ if (tela === 'dashboard') return (
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button
-          onClick={() => setTela('relatorios')}
+          onClick={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}
           title="Meu perfil"
           style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8, transition: 'background .12s' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a1d27'}
