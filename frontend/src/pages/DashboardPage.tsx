@@ -52,42 +52,87 @@ function formatarValor(chave: string, valor: any): string {
 }
 
 function AtlasLogCard() {
-  const [logs, setLogs] = useState<any[]>([])
+  const [logs,     setLogs]     = useState<any[]>([])
+  const [metricas, setMetricas] = useState<any>(null)
 
   useEffect(() => {
-    axios.get(`${API}/api/atlas/log_conversas`, { headers: headers() })
-      .then(r => setLogs(r.data))
-      .catch(() => {})
+    axios.get(`${API}/api/atlas/log_conversas`, { headers: headers() }).then(r => setLogs(r.data)).catch(() => {})
+    axios.get(`${API}/api/atlas/metricas`,      { headers: headers() }).then(r => setMetricas(r.data)).catch(() => {})
   }, [])
 
-  if (logs.length === 0) return null
+  if (!metricas && logs.length === 0) return null
+
+  const maxConversas = Math.max(...(metricas?.por_usuario || []).map((u: any) => u.conversas), 1)
 
   return (
-    <Card className="mt-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-      <CardHeader>
-        <CardTitle className="text-base font-semibold" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #7c3aed' }}>
-          Log de conversas — Atlas
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          {logs.map((l: any) => (
-            <div key={l.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: '#0f1117' }}>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-medium" style={{ color: '#e2e8f0', minWidth: 70 }}>{l.usuario}</span>
-                <span className="text-xs" style={{ color: '#8892a4' }}>{l.primeira_msg}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#2d3148', color: '#8892a4' }}>{l.total_msgs} msgs</span>
-                <span className="text-xs" style={{ color: '#8892a455' }}>
-                  {new Date(l.criado_em.endsWith('Z') ? l.criado_em : l.criado_em + 'Z').toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
+    <div style={{ marginTop: 24 }}>
+
+      {/* Título da seção */}
+      <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', paddingLeft: 10, borderLeft: '2px solid #7c3aed', marginBottom: 16 }}>
+        Uso do Atlas
+      </h2>
+
+      {/* Cards de métricas */}
+      {metricas && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+          {[
+            { label: 'Conversas',       valor: metricas.total_conversas, cor: '#7c3aed' },
+            { label: 'Mensagens trocadas', valor: metricas.total_msgs,   cor: '#4f8ef7' },
+            { label: 'Usuários ativos', valor: metricas.por_usuario?.length || 0, cor: '#10b981' },
+            { label: 'Msgs na mais longa', valor: metricas.mais_longa?.total_msgs || 0, cor: '#f59e0b' },
+          ].map(card => (
+            <div key={card.label} style={{ background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+              <p style={{ fontSize: 10, color: '#8892a4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{card.label}</p>
+              <p style={{ fontSize: 28, fontWeight: 700, color: card.cor, lineHeight: 1 }}>{card.valor}</p>
             </div>
           ))}
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      {/* Barras por usuário */}
+      {metricas?.por_usuario?.length > 0 && (
+        <div style={{ background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 10, padding: '16px', marginBottom: 16 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#8892a4', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conversas por usuário</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {metricas.por_usuario.map((u: any) => (
+              <div key={u.nome}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ color: '#e2e8f0' }}>{u.nome}</span>
+                  <span style={{ color: '#8892a4' }}>{u.conversas} conv · {u.msgs} msgs</span>
+                </div>
+                <div style={{ background: '#2d3148', borderRadius: 99, height: 6 }}>
+                  <div style={{ width: `${(u.conversas / maxConversas) * 100}%`, height: 6, borderRadius: 99, background: '#7c3aed', transition: 'width 0.4s ease' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Log de conversas recentes */}
+      {logs.length > 0 && (
+        <div style={{ background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 10, padding: '16px' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#8892a4', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conversas recentes</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {logs.map((l: any) => (
+              <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0f1117', borderRadius: 8, padding: '8px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', flexShrink: 0, background: '#7c3aed22', padding: '2px 8px', borderRadius: 99 }}>{l.usuario}</span>
+                  <span style={{ fontSize: 12, color: '#8892a4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.primeira_msg || '—'}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: '#8892a4', background: '#2d3148', padding: '2px 8px', borderRadius: 99 }}>{l.total_msgs} msgs</span>
+                  <span style={{ fontSize: 11, color: '#8892a455' }}>
+                    {new Date(l.criado_em.endsWith('Z') ? l.criado_em : l.criado_em + 'Z').toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+    </div>
   )
 }
 

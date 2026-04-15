@@ -1709,6 +1709,52 @@ def atlas_dashboard_data():
         import traceback; traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
+@app.route('/api/atlas/metricas', methods=['GET'])
+@jwt_required()
+def atlas_metricas():
+    """Métricas de uso do Atlas — apenas admins."""
+    usuario = User.query.get(int(get_jwt_identity()))
+    if not usuario or usuario.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    try:
+        from sqlalchemy import func
+
+        # Total de conversas e mensagens
+        total_conversas = AtlasLog.query.count()
+        total_msgs = db.session.query(func.sum(AtlasLog.total_msgs)).scalar() or 0
+
+        # Conversas por usuário
+        por_usuario = (
+            db.session.query(User.nome, func.count(AtlasLog.id).label('conversas'), func.sum(AtlasLog.total_msgs).label('msgs'))
+            .join(AtlasLog, AtlasLog.usuario_id == User.id)
+            .group_by(User.id, User.nome)
+            .order_by(func.count(AtlasLog.id).desc())
+            .all()
+        )
+
+        # Conversa mais longa
+        mais_longa = AtlasLog.query.order_by(AtlasLog.total_msgs.desc()).first()
+        mais_longa_dict = None
+        if mais_longa:
+            u = User.query.get(mais_longa.usuario_id)
+            mais_longa_dict = {
+                'usuario': u.nome if u else 'Desconhecido',
+                'primeira_msg': mais_longa.primeira_msg,
+                'total_msgs': mais_longa.total_msgs
+            }
+
+        return jsonify({
+            'total_conversas': total_conversas,
+            'total_msgs': int(total_msgs),
+            'por_usuario': [{'nome': p.nome, 'conversas': p.conversas, 'msgs': int(p.msgs or 0)} for p in por_usuario],
+            'mais_longa': mais_longa_dict
+        }), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
 @app.route('/api/atlas/log_conversas', methods=['GET'])
 @jwt_required()
 def atlas_log_conversas():
