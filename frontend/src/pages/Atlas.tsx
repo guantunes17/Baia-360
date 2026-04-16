@@ -889,14 +889,17 @@ Tipos disponíveis:
       linhas.push('')
 
       // E-mails
-      if (data.outlook_conectado && data.emails?.emails?.length > 0) {
-        linhas.push(`## 📧 E-mails não lidos (${data.emails.emails.length})`)
-        data.emails.emails.slice(0, 5).forEach((em: any) => {
-          const remetente = em.remetente || em.from?.emailAddress?.name || 'Desconhecido'
-          const assunto   = em.assunto   || em.subject || 'Sem assunto'
-          linhas.push(`- **${remetente}** — ${assunto}`)
-        })
-        if (data.emails.emails.length > 5) linhas.push(`- _...e mais ${data.emails.emails.length - 5} e-mails_`)
+      if (data.outlook_conectado && data.emails?.total > 0) {
+        linhas.push(`## 📧 E-mails não lidos (${data.emails.total})`)
+        if (data.emails.resumo) {
+          linhas.push(data.emails.resumo)
+        } else if (data.emails.emails) {
+          data.emails.emails.forEach((em: any) => {
+            const remetente = em.remetente || em.from?.emailAddress?.name || 'Desconhecido'
+            const assunto   = em.assunto   || em.subject || 'Sem assunto'
+            linhas.push(`- **${remetente}** — ${assunto}`)
+          })
+        }
       } else if (data.outlook_conectado) {
         linhas.push('## 📧 E-mails não lidos')
         linhas.push('- Nenhum e-mail não lido. Caixa de entrada limpa! ✅')

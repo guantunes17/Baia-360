@@ -2014,7 +2014,7 @@ def atlas_briefing():
                     'access_token':     access_token,
                     'query':            '',
                     'apenas_nao_lidos': True,
-                    'limite':           10
+                    'limite':           20
                 })
             except Exception as e:
                 erros.append(f'emails: {e}')
@@ -2025,7 +2025,48 @@ def atlas_briefing():
         t1.join(); t2.join()
 
         resultado['agenda'] = agenda_data or {'eventos': []}
-        resultado['emails'] = emails_data or {'emails': []}
+
+        # Classifica e-mails por prioridade via GPT
+        emails_brutos = (emails_data or {}).get('emails', [])
+        if emails_brutos:
+            try:
+                api_key = os.environ.get('OPENAI_API_KEY', '')
+                from openai import OpenAI as _OpenAI
+                _client_email = _OpenAI(api_key=api_key)
+
+                lista_emails = '\n'.join([
+                    f"{i+1}. De: {e.get('remetente') or e.get('from', {}).get('emailAddress', {}).get('name', 'Desconhecido')} | Assunto: {e.get('assunto') or e.get('subject', 'Sem assunto')}"
+                    for i, e in enumerate(emails_brutos)
+                ])
+
+                classificacao = _client_email.responses.create(
+                    model='gpt-4o-mini',
+                    input=f"""Você é um assistente de um gestor logístico da Baia 4 Logística e Transportes.
+Abaixo estão {len(emails_brutos)} e-mails não lidos recebidos recentemente.
+Selecione os 5 mais importantes e urgentes para um gestor operacional.
+Ignore e-mails de marketing, newsletters, notificações automáticas de sistemas e spam.
+Priorize: solicitações de clientes, alertas operacionais, aprovações pendentes, comunicados internos relevantes.
+
+E-mails:
+{lista_emails}
+
+Retorne APENAS uma lista com os e-mails selecionados no formato:
+- [Remetente] — [Assunto] — [Resumo em 1 frase do motivo ser importante]
+
+Sem introdução, sem explicação, apenas a lista."""
+                )
+                emails_resumo = ''
+                for bloco in classificacao.output:
+                    if hasattr(bloco, 'content'):
+                        for c in bloco.content:
+                            if hasattr(c, 'text'):
+                                emails_resumo += c.text
+                resultado['emails'] = {'resumo': emails_resumo.strip(), 'total': len(emails_brutos)}
+            except Exception as e:
+                # Fallback: lista simples sem classificação
+                resultado['emails'] = {'emails': emails_brutos[:5], 'total': len(emails_brutos)}
+        else:
+            resultado['emails'] = {'emails': [], 'total': 0}
 
     # ── 2. Pendências (admin) ─────────────────────────────────────────────────
     if usuario and usuario.perfil == 'admin':
