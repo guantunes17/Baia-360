@@ -460,10 +460,13 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [painelArtifact, setPainelArtifact] = useState<Artifact | null>(null)
   const [copiadoArtifact, setCopiadoArtifact] = useState(false)
+  const [gerandoBriefing, setGerandoBriefing] = useState(false)
+
   // Grupo 2
   const [busca, setBusca] = useState('')
   const [renomeandoId, setRenomeandoId] = useState<string | null>(null)
   const [renomeTitulo, setRenomeTitulo] = useState('')
+
   // Grupo 3
   const [painelConfig, setPainelConfig] = useState(false)
   const [modo, setModo] = useState<string>(() => localStorage.getItem('atlas_modo') || 'Padrão')
@@ -848,10 +851,85 @@ Tipos disponíveis:
   }
 
   // ── Enviar mensagem ───────────────────────────────────────────────────────
+  const gerarBriefing = async () => {
+    if (gerandoBriefing) return
+    setGerandoBriefing(true)
+    try {
+      const res = await fetch(`${API}/api/atlas/briefing`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const data = await res.json()
+
+      const hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+      const linhas: string[] = [`# ☀️ Briefing — ${hoje}`, '']
+
+      // Agenda
+      if (data.outlook_conectado && data.agenda?.eventos?.length > 0) {
+        linhas.push('## 📅 Agenda de hoje')
+        data.agenda.eventos.forEach((ev: any) => {
+          const hora = ev.inicio ? new Date(ev.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
+          linhas.push(`- **${hora}** — ${ev.assunto || ev.subject || 'Sem título'}`)
+        })
+      } else if (data.outlook_conectado) {
+        linhas.push('## 📅 Agenda de hoje')
+        linhas.push('- Nenhum evento agendado para hoje.')
+      } else {
+        linhas.push('## 📅 Agenda de hoje')
+        linhas.push('- Outlook não conectado. Conecte na página de Perfil para ver sua agenda.')
+      }
+      linhas.push('')
+
+      // E-mails
+      if (data.outlook_conectado && data.emails?.emails?.length > 0) {
+        linhas.push(`## 📧 E-mails não lidos (${data.emails.emails.length})`)
+        data.emails.emails.slice(0, 5).forEach((em: any) => {
+          const remetente = em.remetente || em.from?.emailAddress?.name || 'Desconhecido'
+          const assunto   = em.assunto   || em.subject || 'Sem assunto'
+          linhas.push(`- **${remetente}** — ${assunto}`)
+        })
+        if (data.emails.emails.length > 5) linhas.push(`- _...e mais ${data.emails.emails.length - 5} e-mails_`)
+      } else if (data.outlook_conectado) {
+        linhas.push('## 📧 E-mails não lidos')
+        linhas.push('- Nenhum e-mail não lido. Caixa de entrada limpa! ✅')
+      }
+      linhas.push('')
+
+      // Pendências (admin)
+      if (data.pendentes !== undefined) {
+        linhas.push('## 🔔 Pendências')
+        linhas.push(data.pendentes > 0
+          ? `- **${data.pendentes} usuário(s)** aguardando aprovação de cadastro.`
+          : '- Nenhum cadastro pendente de aprovação.')
+        linhas.push('')
+      }
+
+      // Notícias
+      linhas.push('## 📰 Notícias do setor')
+      linhas.push(data.noticias)
+
+      setPainelArtifact({
+        type: 'briefing',
+        title: `Briefing ${new Date().toLocaleDateString('pt-BR')}`,
+        content: linhas.join('\n')
+      })
+    } catch (e) {
+      console.error('Erro ao gerar briefing:', e)
+    } finally {
+      setGerandoBriefing(false)
+    }
+  }
+
   const send = async () => {
     const text = input.trim()
     if (loading) return
     if (!text && !arquivoPendente && !arquivoContexto) return
+
+    // Detecta pedido de briefing
+    if (/briefing.*(hoje|dia)/i.test(text) || /hoje.*briefing/i.test(text)) {
+      setInput('')
+      gerarBriefing()
+      return
+    }
 
     setInput('')
     setLoading(true)
@@ -1323,6 +1401,13 @@ Tipos disponíveis:
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
               ><IconTokens /></button>
               <button
+                onClick={gerarBriefing}
+                title="Briefing do dia"
+                style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: gerandoBriefing ? 'not-allowed' : 'pointer', color: gerandoBriefing ? '#4f8ef7' : '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, transition: 'background .12s, color .12s' }}
+                onMouseEnter={e => { if (!gerandoBriefing) { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' } }}
+                onMouseLeave={e => { if (!gerandoBriefing) { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
+              >{gerandoBriefing ? '⏳' : '☀️'}</button>
+              <button
                 onClick={() => setPainelConfig(v => !v)}
                 title="Configurações"
                 style={{ width: 28, height: 28, borderRadius: 6, background: painelConfig ? '#4f8ef711' : 'none', border: 'none', cursor: 'pointer', color: painelConfig ? '#4f8ef7' : '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
@@ -1364,6 +1449,7 @@ Tipos disponíveis:
           {/* Sugestões rápidas */}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as any, justifyContent: 'center', maxWidth: 640 }}>
             {[
+              { icon: '☀️', texto: 'Atlas, me passa o briefing de hoje' },
               { icon: '📊', texto: 'Como está o desempenho operacional este mês?' },
               { icon: '🌐', texto: 'Qual a cotação do dólar hoje?' },
               { icon: '📋', texto: 'Gerar relatório de Fretes' },
@@ -2272,13 +2358,13 @@ function PainelArtifact({
   const [aba, setAba] = useState<'preview' | 'codigo'>('preview')
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  const isDoc = artifact.type === 'document'
+  const isDoc = artifact.type === 'document' || artifact.type === 'briefing'
   const isHtml = artifact.type === 'html'
   const isReact = artifact.type === 'react'
   const isCode = isHtml || isReact
 
-  const typeLabel = isDoc ? 'Documento' : isHtml ? 'HTML' : isReact ? 'React' : artifact.type
-  const typeColor = isDoc ? '#4f8ef7' : isHtml ? '#f97316' : isReact ? '#61dafb' : '#8892a4'
+  const typeLabel = artifact.type === 'briefing' ? 'Briefing' : isDoc ? 'Documento' : isHtml ? 'HTML' : isReact ? 'React' : artifact.type
+  const typeColor = artifact.type === 'briefing' ? '#f0b429' : isDoc ? '#4f8ef7' : isHtml ? '#f97316' : isReact ? '#61dafb' : '#8892a4'
 
   // Monta o HTML que vai pro iframe
   const iframeContent = isHtml

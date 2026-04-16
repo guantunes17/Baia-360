@@ -1966,6 +1966,94 @@ def atlas_metricas():
         import traceback; traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
+@app.route('/api/atlas/briefing', methods=['GET'])
+@jwt_required()
+def atlas_briefing():
+    """
+    Monta o briefing diário do usuário:
+    - Agenda do dia (Outlook, se conectado)
+    - E-mails não lidos (Outlook, se conectado)
+    - Notícias do setor logístico (web search via OpenAI)
+    - Pendências de aprovação (apenas admin)
+    """
+    import threading
+    from datetime import datetime, timezone
+
+    usuario_id = get_jwt_identity()
+    usuario    = User.query.get(usuario_id)
+    resultado  = {}
+
+    # ── 1. Outlook (agenda + e-mails) ─────────────────────────────────────────
+    access_token, _ = _get_access_token(usuario_id)
+    outlook_conectado = access_token is not None
+    resultado['outlook_conectado'] = outlook_conectado
+
+    if outlook_conectado:
+        hoje     = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        amanha   = (datetime.now(timezone.utc).replace(hour=23, minute=59)).strftime('%Y-%m-%dT%H:%M:%S')
+        inicio   = f'{hoje}T00:00:00'
+
+        agenda_data, emails_data = None, None
+        erros = []
+
+        def buscar_agenda():
+            nonlocal agenda_data
+            try:
+                agenda_data = _chamar_mcp('get_agenda', {
+                    'access_token': access_token,
+                    'data_inicio':  inicio,
+                    'data_fim':     amanha
+                })
+            except Exception as e:
+                erros.append(f'agenda: {e}')
+
+        def buscar_emails():
+            nonlocal emails_data
+            try:
+                emails_data = _chamar_mcp('buscar_emails', {
+                    'access_token':     access_token,
+                    'query':            '',
+                    'apenas_nao_lidos': True,
+                    'limite':           10
+                })
+            except Exception as e:
+                erros.append(f'emails: {e}')
+
+        t1 = threading.Thread(target=buscar_agenda)
+        t2 = threading.Thread(target=buscar_emails)
+        t1.start(); t2.start()
+        t1.join(); t2.join()
+
+        resultado['agenda'] = agenda_data or {'eventos': []}
+        resultado['emails'] = emails_data or {'emails': []}
+
+    # ── 2. Pendências (admin) ─────────────────────────────────────────────────
+    if usuario and usuario.perfil == 'admin':
+        pendentes = User.query.filter_by(status='pendente').count()
+        resultado['pendentes'] = pendentes
+
+    # ── 3. Notícias logísticas via OpenAI web search ──────────────────────────
+        try:
+            api_key = os.environ.get('OPENAI_API_KEY', '')
+            from openai import OpenAI as _OpenAI
+            _client = _OpenAI(api_key=api_key)
+            resp = _client.responses.create(
+                model='gpt-4o-mini',
+                tools=[{'type': 'web_search_preview'}],
+                input='Busque as 3 principais notícias do setor logístico e de transportes no Brasil hoje. Retorne apenas os títulos, fontes e um resumo de 1 frase cada.',
+            )
+            noticias_texto = ''
+            for bloco in resp.output:
+                if hasattr(bloco, 'content'):
+                    for c in bloco.content:
+                        if hasattr(c, 'text'):
+                            noticias_texto += c.text
+            resultado['noticias'] = noticias_texto.strip() or 'Nenhuma notícia encontrada.'
+        except Exception as e:
+            resultado['noticias'] = f'Erro ao buscar notícias: {e}'
+
+        return jsonify(resultado)
+
 @app.route('/api/atlas/log_conversas', methods=['GET'])
 @jwt_required()
 def atlas_log_conversas():
