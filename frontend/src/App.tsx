@@ -17,7 +17,8 @@ import { CapOperacional } from '@/pages/CapOperacional'
 import { Estoque } from '@/pages/Estoque'
 import { FatDistribuicao } from '@/pages/FatDistribuicao'
 import { FatArmazenagem } from '@/pages/FatArmazenagem'
-import { DashboardPage } from '@/pages/DashboardPage'
+import { PainelControle } from '@/pages/PainelControle'
+import { PainelResultados } from '@/pages/PainelResultados'
 import { Hub } from '@/pages/Hub'
 import { Perfil } from '@/pages/Perfil'
 import { ToastContainer, ToastData } from '@/components/Toast'
@@ -363,7 +364,7 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
       case 'fat_arm':
         return (isAdmin || isFinanceiro) ? <FatArmazenagem /> : null
       case 'dashboard':
-        return isAdmin ? <DashboardPage /> : null
+        return isAdmin ? <PainelControle /> : null
       case 'perfil':
         return <Perfil usuario={usuario} onAtualizar={onAtualizarUsuario} />
       case 'agenda':
@@ -504,7 +505,7 @@ export default function App() {
     const u = localStorage.getItem('usuario')
     return u ? JSON.parse(u) : null
   })
-  const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas' | 'dashboard' | 'agenda' | 'usuarios' | 'base_conhecimento'>('hub')
+  const [tela, setTela] = useState<'hub' | 'relatorios' | 'atlas' | 'painel_controle' | 'painel_resultados' | 'agenda' | 'usuarios' | 'base_conhecimento'>('hub')
   const [telaNaoLogado, setTelaNaoLogado] = useState<'login' | 'cadastro'>('login')
   const [pendentes, setPendentes] = useState(0)
   const [paginaInicialRelatorios, setPaginaInicialRelatorios] = useState('home')
@@ -582,7 +583,8 @@ const handleLogout = () => {
       usuario={usuario}
       onEntrarRelatorios={() => setTela('relatorios')}
       onEntrarAtlas={() => setTela('atlas')}
-      onEntrarDashboard={() => setTela('dashboard')}
+      onEntrarPainelControle={() => setTela('painel_controle')}
+      onEntrarPainelResultados={() => setTela('painel_resultados')}
       onEntrarAgenda={() => setTela('agenda')}
       onEntrarUsuarios={() => { setTela('usuarios'); setPendentes(0) }}
       onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
@@ -592,11 +594,20 @@ const handleLogout = () => {
     />
     </>
   )
-if (tela === 'dashboard') return (
+if (tela === 'painel_controle') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Dashboard" icone="📈" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
-        <DashboardPage />
+      <PaginaSimples titulo="Painel de Controle" icone="📡" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
+        <PainelControle />
+      </PaginaSimples>
+    </>
+  )
+
+  if (tela === 'painel_resultados') return (
+    <>
+      <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
+      <PaginaSimples titulo="Painel de Resultados" icone="📈" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
+        <PainelResultados />
       </PaginaSimples>
     </>
   )

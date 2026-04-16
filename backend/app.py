@@ -519,6 +519,7 @@ def processar_fretes_route():
 
     arquivo  = request.files['arquivo']
     nome_aba = request.form.get('nome_aba', '').strip()
+    mes_ref  = request.form.get('mes_ref', '').strip() or None
 
     if not arquivo.filename.endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
@@ -561,7 +562,7 @@ def processar_fretes_route():
                 try:
                     with app.app_context():
                         kpis = _extrair_kpis_fretes(tmp_saida.name)
-                        reg  = RelatorioGerado(modulo='Fretes', mes_ref=None, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
+                        reg  = RelatorioGerado(modulo='Fretes', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
                 except Exception:
@@ -691,6 +692,7 @@ def processar_pedidos_route():
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
 
     arquivo = request.files['arquivo']
+    mes_ref = request.form.get('mes_ref', '').strip() or None
 
     if not arquivo.filename.endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
@@ -729,7 +731,7 @@ def processar_pedidos_route():
                 try:
                     with app.app_context():
                         kpis = _extrair_kpis_pedidos(tmp_saida.name)
-                        reg  = RelatorioGerado(modulo='Pedidos', mes_ref=None, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
+                        reg  = RelatorioGerado(modulo='Pedidos', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
                 except Exception as e:
@@ -796,7 +798,7 @@ def processar_recebimentos_route():
             try:
                     with app.app_context():
                         kpis = _extrair_kpis_recebimentos(tmp_saida.name)
-                        reg  = RelatorioGerado(modulo='Recebimento', mes_ref=None, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
+                        reg  = RelatorioGerado(modulo='Recebimentos', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
                         db.session.add(reg)
                         db.session.commit()
             except Exception as e:
@@ -1195,6 +1197,48 @@ def processar_fat_arm_route():
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
+
+@app.route('/api/dashboard/meses', methods=['GET'])
+@jwt_required()
+def dashboard_meses():
+    usuario = User.query.get(int(get_jwt_identity()))
+    if not usuario or usuario.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+    meses = db.session.query(RelatorioGerado.mes_ref)\
+        .filter(RelatorioGerado.mes_ref.isnot(None))\
+        .distinct()\
+        .order_by(RelatorioGerado.mes_ref.desc())\
+        .all()
+    return jsonify([m.mes_ref for m in meses]), 200
+
+
+@app.route('/api/dashboard/resultados', methods=['GET'])
+@jwt_required()
+def dashboard_resultados():
+    usuario = User.query.get(int(get_jwt_identity()))
+    if not usuario or usuario.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    mes = request.args.get('mes', '').strip()
+    if not mes:
+        return jsonify({'erro': 'Parâmetro mes obrigatório'}), 400
+
+    registros = RelatorioGerado.query\
+        .filter_by(mes_ref=mes)\
+        .order_by(RelatorioGerado.gerado_em.desc())\
+        .all()
+
+    por_modulo = {}
+    for r in registros:
+        if r.modulo not in por_modulo:
+            por_modulo[r.modulo] = {
+                'modulo':    r.modulo,
+                'mes_ref':   r.mes_ref,
+                'gerado_em': r.gerado_em.isoformat(),
+                'kpis':      r.kpis()
+            }
+
+    return jsonify(list(por_modulo.values())), 200
 
 @app.route('/api/dashboard', methods=['GET'])
 @jwt_required()

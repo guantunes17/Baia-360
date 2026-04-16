@@ -12,7 +12,8 @@ interface Props {
   usuario: Usuario
   onEntrarRelatorios: () => void
   onEntrarAtlas: () => void
-  onEntrarDashboard: () => void
+  onEntrarPainelControle: () => void
+  onEntrarPainelResultados: () => void
   onEntrarAgenda: () => void
   onEntrarUsuarios: () => void
   onEntrarBaseConhecimento: () => void
@@ -25,7 +26,8 @@ export function Hub({
   usuario,
   onEntrarRelatorios,
   onEntrarAtlas,
-  onEntrarDashboard,
+  onEntrarPainelControle,
+  onEntrarPainelResultados,
   onEntrarAgenda,
   onEntrarUsuarios,
   onEntrarBaseConhecimento,
@@ -43,7 +45,7 @@ export function Hub({
   const isAnalista   = perfil === 'analista'
   const isFinanceiro = perfil === 'financeiro'
   const temRelatorios = isAdmin || isAnalista || isFinanceiro
-  const temDashboard  = isAdmin
+  const temPaineis = isAdmin
   const primeiroNome = usuario.nome.split(' ')[0]
 
   const badgePerfil: Record<string, { label: string; color: string }> = {
@@ -113,7 +115,7 @@ export function Hub({
   )
 
   // Número de cards principais visíveis para calcular o grid
-  const nCardsPrincipais = [temRelatorios, true, temDashboard].filter(Boolean).length
+  const nCardsPrincipais = [temRelatorios, true, temPaineis].filter(Boolean).length
   const gridCols = nCardsPrincipais === 1 ? '1fr' : nCardsPrincipais === 2 ? 'repeat(2,1fr)' : 'repeat(3,1fr)'
 
   return (
@@ -163,7 +165,8 @@ export function Hub({
         <div style={{ width: '100%', maxWidth: 820, display: 'grid', gridTemplateColumns: gridCols, gap: 14 }}>
           {temRelatorios && cardPrincipal('📊', 'Central de Relatórios', 'Geração e análise de relatórios.', '#4f8ef7', onEntrarRelatorios)}
           {cardPrincipal('🤖', 'Atlas', 'Assistente IA — análises via linguagem natural.', '#7c3aed', onEntrarAtlas)}
-          {temDashboard && cardPrincipal('📈', 'Dashboard', 'KPIs consolidados e histórico de relatórios.', '#4f8ef7', onEntrarDashboard)}
+          {temPaineis && cardPrincipal('📡', 'Painel de Controle', 'Métricas gerenciais e uso do sistema.', '#4f8ef7', onEntrarPainelControle)}
+          {temPaineis && cardPrincipal('📈', 'Painel de Resultados', 'KPIs operacionais por módulo e mês.', '#10b981', onEntrarPainelResultados)}
         </div>
 
         {/* Agenda — todos os perfis */}

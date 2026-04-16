@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import axios from 'axios'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DicaExtracao } from '@/components/DicaExtracao'
@@ -12,6 +13,7 @@ type Status = 'idle' | 'processando' | 'concluido' | 'erro'
 
 export function Pedidos() {
   const [arquivo, setArquivo] = useState<File | null>(null)
+  const [mesRef, setMesRef]   = useState('')
   const [status, setStatus]   = useState<Status>('idle')
   const [logs, setLogs]       = useState<string[]>([])
   const [erro, setErro]       = useState('')
@@ -21,6 +23,7 @@ export function Pedidos() {
 
   const resetar = () => {
     setArquivo(null)
+    setMesRef('')
     setStatus('idle')
     setLogs([])
     setErro('')
@@ -60,6 +63,7 @@ export function Pedidos() {
 
     const formData = new FormData()
     formData.append('arquivo', arquivo)
+    formData.append('mes_ref', mesRef.trim())
 
     try {
       const res = await axios.post(`${API}/api/modulos/pedidos`, formData, {
@@ -113,13 +117,26 @@ export function Pedidos() {
     <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivo.name}</p>
   )}
 </div>
+
+<div className="space-y-2">
+  <Label style={{ color: '#8892a4' }}>Mês de Referência</Label>
+  <Input
+    value={mesRef}
+    onChange={e => setMesRef(e.target.value)}
+    placeholder="ex: 03-2026"
+    style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+  />
+  <p className="text-xs" style={{ color: '#8892a4' }}>
+    ℹ️ Formato: MM-AAAA (ex: 03-2026)
+  </p>
+</div>
         </CardContent>
       </Card>
 
       <div className="flex gap-3 mb-6">
         <Button
           onClick={processar}
-          disabled={!arquivo || status === 'processando'}
+          disabled={!arquivo || !mesRef.trim() || status === 'processando'}
           style={{ background: '#4f8ef7', color: 'white' }}
         >
           {status === 'processando' ? '⏳ Processando...' : '▶ Gerar Relatório'}

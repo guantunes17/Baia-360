@@ -9,7 +9,6 @@ const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}
 interface PorModulo { modulo: string; total: number }
 interface PorMes    { mes: string;    total: number }
 interface Recente   { id: number; modulo: string; mes_ref: string; usuario: string; gerado_em: string; kpis: Record<string, any> }
-interface KpiModulo { mes_ref: string | null; gerado_em: string; kpis: Record<string, any> }
 
 const CORES_MODULO: Record<string, string> = {
   'Fretes':           '#7c3aed',
@@ -22,33 +21,9 @@ const CORES_MODULO: Record<string, string> = {
   'Fat. Armazenagem': '#7c3aed',
 }
 
-const KPI_LABELS: Record<string, Record<string, string>> = {
-  'Pedidos':          { total_ordens: 'Total Ordens', sla_pct: 'SLA %', excedidas: 'Excedidas' },
-  'Fretes':           { total_frete: 'Custo Total (R$)', remetentes: 'Remetentes' },
-  'Armazenagem':      { total_armazenagem: 'Faturamento (R$)', clientes: 'Clientes' },
-  'Estoque':          { clientes: 'Clientes', maior_pico_m3: 'Maior Pico m³', maior_pico_cliente: 'Top Cliente' },
-  'Recebimentos':     { total_recebimentos: 'Total Recebimentos', valor_total: 'Valor Total (R$)', depositantes: 'Depositantes' },
-  'Fat. Distribuição':{ total_frete: 'Total Fretes (R$)', clientes: 'Clientes' },
-  'Fat. Armazenagem': { total_faturamento: 'Faturamento (R$)', clientes: 'Clientes' },
-  'Cap. Operacional': { total_os: 'Total OS', depositantes: 'Depositantes' },
-}
-
 function formatarData(iso: string) {
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
   return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-}
-
-function formatarValor(chave: string, valor: any): string {
-  if (valor === undefined || valor === null) return '—'
-  if (chave.includes('frete') || chave.includes('armazenagem') || chave.includes('faturamento') || chave.includes('valor'))
-    return `R$ ${Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-  if (chave === 'sla_pct')
-    return `${Number(valor).toFixed(1)}%`
-  if (chave.includes('m3'))
-    return `${Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m³`
-  if (chave === 'maior_pico_cliente')
-    return String(valor)
-  return String(valor)
 }
 
 function AtlasLogCard() {
@@ -136,11 +111,10 @@ function AtlasLogCard() {
   )
 }
 
-export function DashboardPage() {
+export function PainelControle() {
   const [porModulo,      setPorModulo]      = useState<PorModulo[]>([])
   const [porMes,         setPorMes]         = useState<PorMes[]>([])
   const [recentes,       setRecentes]       = useState<Recente[]>([])
-  const [kpisPorModulo,  setKpisPorModulo]  = useState<Record<string, KpiModulo>>({})
   const [loading,        setLoading]        = useState(true)
   const [erro,           setErro]           = useState('')
   const [isAdmin,        setIsAdmin]        = useState(false)
@@ -153,7 +127,6 @@ export function DashboardPage() {
         setPorModulo(res.data.por_modulo)
         setPorMes(res.data.por_mes)
         setRecentes(res.data.recentes)
-        setKpisPorModulo(res.data.kpis_por_modulo || {})
       } catch {
         setErro('Erro ao carregar dados do dashboard')
       } finally {
@@ -169,9 +142,9 @@ export function DashboardPage() {
   return (
     <div className="p-8 max-w-5xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>📈 Dashboard</h1>
+        <h1 className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>📡 Painel de Controle</h1>
         <p className="text-xs mt-2" style={{ color: '#8892a4', letterSpacing: '0.02em' }}>
-          KPIs operacionais · Histórico de relatórios gerados
+          Métricas gerenciais · Uso do sistema · Atlas
         </p>
       </div>
 
@@ -200,64 +173,6 @@ export function DashboardPage() {
                 </CardContent>
               </Card>
             ))}
-          </div>
-
-          {/* KPIs por módulo */}
-          <div className="mb-8">
-            <h2 className="text-base font-semibold mb-4" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #4f8ef7' }}>
-              KPIs do último relatório
-            </h2>
-            {Object.keys(kpisPorModulo).length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 16px', gap: '10px', textAlign: 'center', background: '#1a1d27', borderRadius: '12px', border: '0.5px solid #2d3148' }}>
-                <svg width="44" height="44" viewBox="0 0 44 44" fill="none" style={{ opacity: 0.25, marginBottom: '4px' }}>
-                  <circle cx="22" cy="22" r="14" stroke="#4f8ef7" strokeWidth="2" fill="none"/>
-                  <line x1="22" y1="15" x2="22" y2="23" stroke="#4f8ef7" strokeWidth="2.5" strokeLinecap="round"/>
-                  <circle cx="22" cy="28" r="1.5" fill="#4f8ef7"/>
-                </svg>
-                <p style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>Nenhum KPI disponível</p>
-                <p style={{ fontSize: '12px', color: '#8892a4', maxWidth: '260px', lineHeight: 1.5 }}>Gere relatórios nos módulos para visualizar os KPIs mais recentes aqui.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(kpisPorModulo).map(([modulo, dados]) => {
-                  const labels = KPI_LABELS[modulo] || {}
-                  const cor    = CORES_MODULO[modulo] || '#4f8ef7'
-                  return (
-                    <Card key={modulo} className="border" style={{ background: '#1a1d27', borderColor: '#2d3148', transition: 'transform 0.2s ease, border-color 0.2s ease' }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef744' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.borderColor = '#2d3148' }}>
-                      <CardHeader className="pb-2 pt-4 px-4">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-sm font-semibold" style={{ color: cor }}>
-                            {modulo}
-                          </CardTitle>
-                          {dados.mes_ref && (
-                            <Badge variant="outline" style={{ borderColor: '#2d3148', color: '#8892a4', fontSize: '10px' }}>
-                              {dados.mes_ref}
-                            </Badge>
-                          )}
-                        </div>
-                      </CardHeader>
-                      <CardContent className="px-4 pb-4 space-y-2">
-                        {Object.entries(dados.kpis).map(([chave, valor]) => (
-                          <div key={chave} className="flex justify-between items-center">
-                            <span className="text-xs" style={{ color: '#8892a4' }}>
-                              {labels[chave] || chave}
-                            </span>
-                            <span className="text-xs font-semibold" style={{ color: '#e2e8f0' }}>
-                              {formatarValor(chave, valor)}
-                            </span>
-                          </div>
-                        ))}
-                        <p className="text-xs pt-1" style={{ color: '#2d3148' }}>
-                          {formatarData(dados.gerado_em)}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-              </div>
-            )}
           </div>
 
           {/* Barras por módulo */}

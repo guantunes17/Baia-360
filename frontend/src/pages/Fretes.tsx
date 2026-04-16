@@ -14,6 +14,7 @@ type Status = 'idle' | 'processando' | 'concluido' | 'erro'
 export function Fretes() {
   const [arquivo, setArquivo]     = useState<File | null>(null)
   const [nomeAba, setNomeAba]     = useState('')
+  const [mesRef, setMesRef]       = useState('')
   const [status, setStatus]       = useState<Status>('idle')
   const [logs, setLogs]           = useState<string[]>([])
   const [erro, setErro]           = useState('')
@@ -24,6 +25,7 @@ export function Fretes() {
   const resetar = () => {
     setArquivo(null)
     setNomeAba('')
+    setMesRef('')
     setStatus('idle')
     setLogs([])
     setErro('')
@@ -69,6 +71,7 @@ export function Fretes() {
     const formData = new FormData()
     formData.append('arquivo', arquivo)
     formData.append('nome_aba', nomeAba.trim())
+    formData.append('mes_ref', mesRef.trim())
 
     try {
       const res = await axios.post(`${API}/api/modulos/fretes`, formData, {
@@ -137,6 +140,19 @@ export function Fretes() {
     'ℹ️ Exportar a planilha inteira filtrada pelo mês de referência.',
     '📋 Nome da aba: geralmente EMBARQUES MM.AA (ex: EMBARQUES 02.26)',
   ]} />
+  </div>
+
+  <div className="space-y-2">
+    <Label style={{ color: '#8892a4' }}>Mês de Referência</Label>
+    <Input
+      value={mesRef}
+      onChange={e => setMesRef(e.target.value)}
+      placeholder="ex: 03-2026"
+      style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+    />
+    <p className="text-xs" style={{ color: '#8892a4' }}>
+      ℹ️ Formato: MM-AAAA (ex: 03-2026)
+    </p>
   </div>
 
 </CardContent>
