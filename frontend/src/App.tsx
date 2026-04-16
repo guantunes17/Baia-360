@@ -344,7 +344,7 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
   const renderPagina = () => {
     switch (paginaAtiva) {
       case 'home':
-        return <Home onNavegar={setPaginaAtiva} />
+        return <Home onNavegar={setPaginaAtiva} modulosPermitidos={isAdmin ? undefined : permissoes?.modulos} />
       case 'usuarios':
         return isAdmin ? <Usuarios /> : null
       case 'fretes':

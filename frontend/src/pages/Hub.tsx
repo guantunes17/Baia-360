@@ -44,7 +44,7 @@ export function Hub({
 
   const perfil = usuario.perfil
   const isAdmin      = perfil === 'admin'
-  const temHub = (key: string) => isAdmin || (permissoes?.hub.includes(key) ?? false)
+  const temHub = (key: string) => isAdmin || (permissoes != null && permissoes.hub.includes(key))
   const temRelatorios = temHub('central')
   const primeiroNome = usuario.nome.split(' ')[0]
 

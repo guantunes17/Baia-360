@@ -3,6 +3,7 @@ import { HomeCard } from '@/components/HomeCard'
 
 interface Props {
   onNavegar: (key: string) => void
+  modulosPermitidos?: string[]
 }
 
 const hoje = new Date()
@@ -10,9 +11,13 @@ const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 
 const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 const dataFormatada = `${diasSemana[hoje.getDay()]}, ${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`
 
-export function Home({ onNavegar }: Props) {
-  const operacional = MODULOS.filter(m => m.grupo === 'operacional')
-  const financeiro  = MODULOS.filter(m => m.grupo === 'financeiro')
+export function Home({ onNavegar, modulosPermitidos }: Props) {
+  const operacional = MODULOS.filter(m =>
+    m.grupo === 'operacional' && (!modulosPermitidos || modulosPermitidos.includes(m.titulo))
+  )
+  const financeiro = MODULOS.filter(m =>
+    m.grupo === 'financeiro' && (!modulosPermitidos || modulosPermitidos.includes(m.titulo))
+  )
 
   return (
     <div className="p-8">

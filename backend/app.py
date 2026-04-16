@@ -404,6 +404,7 @@ def deletar_usuario(user_id):
     if user.id == admin.id:
         return jsonify({'erro': 'Não é possível deletar seu próprio usuário'}), 400
 
+    Permissao.query.filter_by(usuario_id=user.id).delete()
     AtlasConversa.query.filter_by(usuario_id=user.id).delete()
     AtlasLog.query.filter_by(usuario_id=user.id).delete()
     AtlasMemoria.query.filter_by(usuario_id=user.id).delete()

@@ -18,15 +18,15 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }
   const isAnalista   = perfil === 'analista'
   const isFinanceiro = perfil === 'financeiro'
 
-  const temOperacional = isAdmin || isAnalista
-  const temFinanceiro  = isAdmin || isFinanceiro
-
   const modulos_operacional = MODULOS.filter(m =>
     m.grupo === 'operacional' && (isAdmin || !modulosPermitidos || modulosPermitidos.includes(m.titulo))
   )
   const modulos_financeiro = MODULOS.filter(m =>
     m.grupo === 'financeiro' && (isAdmin || !modulosPermitidos || modulosPermitidos.includes(m.titulo))
   )
+
+  const temOperacional = modulos_operacional.length > 0
+  const temFinanceiro  = modulos_financeiro.length > 0
 
   const menuItem = (key: string, label: string) => (
     <SidebarMenuItem key={key}>
