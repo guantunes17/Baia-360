@@ -95,6 +95,51 @@ class AtlasMemoria(db.Model):
 
     usuario = db.relationship('User', backref='memorias_atlas')
 
+# Defaults de permissão por perfil
+PERMISSOES_PADRAO = {
+    'admin': {
+        'hub':     ['central', 'painel_controle', 'painel_resultados', 'atlas', 'agenda'],
+        'modulos': ['Pedidos', 'Fretes', 'Armazenagem', 'Estoque', 'Cap. Operacional',
+                    'Recebimentos', 'Fat. Distribuição', 'Fat. Armazenagem']
+    },
+    'analista': {
+        'hub':     ['central', 'atlas', 'agenda'],
+        'modulos': ['Pedidos', 'Fretes', 'Armazenagem', 'Estoque', 'Cap. Operacional', 'Recebimentos']
+    },
+    'financeiro': {
+        'hub':     ['central', 'atlas', 'agenda'],
+        'modulos': ['Fat. Distribuição', 'Fat. Armazenagem']
+    },
+    'operacional': {
+        'hub':     ['atlas', 'agenda'],
+        'modulos': []
+    },
+}
+
+class Permissao(db.Model):
+    __tablename__ = 'permissoes'
+    id           = db.Column(db.Integer, primary_key=True)
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), unique=True, nullable=False)
+    hub_json     = db.Column(db.Text, nullable=False, default='[]')
+    modulos_json = db.Column(db.Text, nullable=False, default='[]')
+
+    usuario = db.relationship('User', backref=db.backref('permissao', uselist=False))
+
+    def to_dict(self):
+        return {
+            'hub':     json.loads(self.hub_json),
+            'modulos': json.loads(self.modulos_json),
+        }
+
+    @staticmethod
+    def criar_para(usuario_id: int, perfil: str):
+        padrao = PERMISSOES_PADRAO.get(perfil, PERMISSOES_PADRAO['operacional'])
+        return Permissao(
+            usuario_id   = usuario_id,
+            hub_json     = json.dumps(padrao['hub']),
+            modulos_json = json.dumps(padrao['modulos']),
+        )
+
 class User(db.Model):
     __tablename__ = 'baia360_users'
     id         = db.Column(db.Integer, primary_key=True)
@@ -386,6 +431,16 @@ def aprovar_usuario(user_id):
     user.perfil = perfil
     user.ativo  = True
     user.status = 'ativo'
+
+    # Cria ou atualiza permissões com o padrão do perfil
+    perm = Permissao.query.filter_by(usuario_id=user.id).first()
+    if perm:
+        padrao = PERMISSOES_PADRAO.get(perfil, PERMISSOES_PADRAO['operacional'])
+        perm.hub_json     = json.dumps(padrao['hub'])
+        perm.modulos_json = json.dumps(padrao['modulos'])
+    else:
+        db.session.add(Permissao.criar_para(user.id, perfil))
+
     db.session.commit()
     return jsonify({'ok': True, 'usuario': user.to_dict()}), 200
 
@@ -405,6 +460,92 @@ def rejeitar_usuario(user_id):
     user.ativo  = False
     db.session.commit()
     return jsonify({'ok': True}), 200
+
+@app.route('/api/auth/me/permissoes', methods=['GET'])
+@jwt_required()
+def get_minhas_permissoes():
+    usuario_id = int(get_jwt_identity())
+    usuario = User.query.get(usuario_id)
+    if not usuario:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+
+    # Admin sempre tem tudo
+    if usuario.perfil == 'admin':
+        padrao = PERMISSOES_PADRAO['admin']
+        return jsonify(padrao), 200
+
+    perm = Permissao.query.filter_by(usuario_id=usuario_id).first()
+    if not perm:
+        # Fallback: cria com padrão do perfil
+        perm = Permissao.criar_para(usuario_id, usuario.perfil)
+        db.session.add(perm)
+        db.session.commit()
+
+    return jsonify(perm.to_dict()), 200
+
+
+@app.route('/api/auth/usuarios/<int:user_id>/permissoes', methods=['GET'])
+@jwt_required()
+def get_permissoes_usuario(user_id):
+    admin = User.query.get(int(get_jwt_identity()))
+    if not admin or admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+
+    perm = Permissao.query.filter_by(usuario_id=user_id).first()
+    if not perm:
+        perm = Permissao.criar_para(user_id, user.perfil)
+        db.session.add(perm)
+        db.session.commit()
+
+    return jsonify(perm.to_dict()), 200
+
+
+@app.route('/api/auth/usuarios/<int:user_id>/permissoes', methods=['PUT'])
+@jwt_required()
+def atualizar_permissoes_usuario(user_id):
+    admin = User.query.get(int(get_jwt_identity()))
+    if not admin or admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+
+    data = request.get_json()
+    hub     = data.get('hub', [])
+    modulos = data.get('modulos', [])
+
+    perm = Permissao.query.filter_by(usuario_id=user_id).first()
+    if perm:
+        perm.hub_json     = json.dumps(hub)
+        perm.modulos_json = json.dumps(modulos)
+    else:
+        perm = Permissao(
+            usuario_id   = user_id,
+            hub_json     = json.dumps(hub),
+            modulos_json = json.dumps(modulos),
+        )
+        db.session.add(perm)
+
+    db.session.commit()
+    return jsonify({'ok': True}), 200
+
+def _verificar_permissao_modulo(usuario_id: int, modulo: str) -> bool:
+    """Retorna True se o usuário tem permissão para acessar o módulo."""
+    usuario = User.query.get(usuario_id)
+    if not usuario:
+        return False
+    if usuario.perfil == 'admin':
+        return True
+    perm = Permissao.query.filter_by(usuario_id=usuario_id).first()
+    if not perm:
+        return False
+    modulos = json.loads(perm.modulos_json)
+    return modulo in modulos
 
 import tempfile, threading, uuid
 from flask import send_file
@@ -576,6 +717,10 @@ def processar_fretes_route():
         finally:
             _deletar_temp(tmp_entrada.name)
 
+        if not _verificar_permissao_modulo(usuario_id, 'Fretes'):
+            return jsonify({'erro': 'Acesso negado'}), 403
+
+
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
@@ -682,6 +827,9 @@ def processar_armazenagem_route():
         finally:
             _deletar_temp(tmp_entrada.name)
 
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Armazenagem'):
+            return jsonify({'erro': 'Acesso negado'}), 403
+
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
@@ -745,6 +893,9 @@ def processar_pedidos_route():
             jobs[job_id]['erro']   = str(e)
         finally:
             _deletar_temp(tmp_entrada.name)
+
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Pedidos'):
+            return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -812,6 +963,9 @@ def processar_recebimentos_route():
                 _deletar_temp(tmp_entrada.name)
             except Exception:
                 pass
+
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Recebimentos'):
+            return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -883,6 +1037,9 @@ def processar_cap_operacional_route():
                 _deletar_temp(tmp_entrada.name)
             except Exception:
                 pass
+
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Cap. Operacional'):
+            return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -1052,6 +1209,9 @@ def processar_estoque_route():
             except Exception:
                 pass
 
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Estoque'):
+            return jsonify({'erro': 'Acesso negado'}), 403
+
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
@@ -1120,6 +1280,9 @@ def processar_fat_dist_route():
                 _deletar_temp(tmp_entrada.name)
             except Exception:
                 pass
+
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Fat. Distribuição'):
+            return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -1194,6 +1357,9 @@ def processar_fat_arm_route():
                     os.unlink(f)
                 except Exception:
                     pass
+
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Fat. Armazenagem'):
+            return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
