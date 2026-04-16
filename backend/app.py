@@ -99,16 +99,16 @@ class AtlasMemoria(db.Model):
 PERMISSOES_PADRAO = {
     'admin': {
         'hub':     ['central', 'painel_controle', 'painel_resultados', 'atlas', 'agenda'],
-        'modulos': ['Pedidos', 'Fretes', 'Armazenagem', 'Estoque', 'Cap. Operacional',
-                    'Recebimentos', 'Fat. Distribuição', 'Fat. Armazenagem']
+        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'cap_operacional',
+                    'recebimentos', 'fat_dist', 'fat_arm']
     },
     'analista': {
         'hub':     ['central', 'atlas', 'agenda'],
-        'modulos': ['Pedidos', 'Fretes', 'Armazenagem', 'Estoque', 'Cap. Operacional', 'Recebimentos']
+        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'cap_operacional', 'recebimentos']
     },
     'financeiro': {
         'hub':     ['central', 'atlas', 'agenda'],
-        'modulos': ['Fat. Distribuição', 'Fat. Armazenagem']
+        'modulos': ['fat_dist', 'fat_arm']
     },
     'operacional': {
         'hub':     ['atlas', 'agenda'],
@@ -718,7 +718,7 @@ def processar_fretes_route():
         finally:
             _deletar_temp(tmp_entrada.name)
 
-        if not _verificar_permissao_modulo(usuario_id, 'Fretes'):
+        if not _verificar_permissao_modulo(usuario_id, 'fretes'):
             return jsonify({'erro': 'Acesso negado'}), 403
 
 
@@ -828,7 +828,7 @@ def processar_armazenagem_route():
         finally:
             _deletar_temp(tmp_entrada.name)
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Armazenagem'):
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'armazenagem'):
             return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
@@ -895,7 +895,7 @@ def processar_pedidos_route():
         finally:
             _deletar_temp(tmp_entrada.name)
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Pedidos'):
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'pedidos'):
             return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
@@ -965,7 +965,7 @@ def processar_recebimentos_route():
             except Exception:
                 pass
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Recebimentos'):
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'recebimentos'):
             return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
@@ -1039,7 +1039,7 @@ def processar_cap_operacional_route():
             except Exception:
                 pass
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Cap. Operacional'):
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'cap_operacional'):
             return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
@@ -1210,7 +1210,7 @@ def processar_estoque_route():
             except Exception:
                 pass
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Estoque'):
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'estoque'):
             return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
@@ -1282,7 +1282,7 @@ def processar_fat_dist_route():
             except Exception:
                 pass
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Fat. Distribuição'):
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'fat_dist'):
             return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
@@ -1359,7 +1359,7 @@ def processar_fat_arm_route():
                 except Exception:
                     pass
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'Fat. Armazenagem'):
+        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'fat_arm'):
             return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()

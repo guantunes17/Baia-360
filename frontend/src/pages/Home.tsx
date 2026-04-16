@@ -13,10 +13,10 @@ const dataFormatada = `${diasSemana[hoje.getDay()]}, ${hoje.getDate()} de ${mese
 
 export function Home({ onNavegar, modulosPermitidos }: Props) {
   const operacional = MODULOS.filter(m =>
-    m.grupo === 'operacional' && (!modulosPermitidos || modulosPermitidos.includes(m.titulo))
+    m.grupo === 'operacional' && (!modulosPermitidos || modulosPermitidos.includes(m.key))
   )
   const financeiro = MODULOS.filter(m =>
-    m.grupo === 'financeiro' && (!modulosPermitidos || modulosPermitidos.includes(m.titulo))
+    m.grupo === 'financeiro' && (!modulosPermitidos || modulosPermitidos.includes(m.key))
   )
 
   return (

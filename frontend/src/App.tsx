@@ -348,21 +348,21 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
       case 'usuarios':
         return isAdmin ? <Usuarios /> : null
       case 'fretes':
-        return temModulo('Fretes') ? <Fretes /> : null
+        return temModulo('fretes') ? <Fretes /> : null
       case 'armazenagem':
-        return temModulo('Armazenagem') ? <Armazenagem /> : null
+        return temModulo('armazenagem') ? <Armazenagem /> : null
       case 'pedidos':
-        return temModulo('Pedidos') ? <Pedidos /> : null
+        return temModulo('pedidos') ? <Pedidos /> : null
       case 'recebimentos':
-        return temModulo('Recebimentos') ? <Recebimentos /> : null
+        return temModulo('recebimentos') ? <Recebimentos /> : null
       case 'cap_operacional':
-        return temModulo('Cap. Operacional') ? <CapOperacional /> : null
+        return temModulo('cap_operacional') ? <CapOperacional /> : null
       case 'estoque':
-        return temModulo('Estoque') ? <Estoque /> : null
+        return temModulo('estoque') ? <Estoque /> : null
       case 'fat_dist':
-        return temModulo('Fat. Distribuição') ? <FatDistribuicao /> : null
+        return temModulo('fat_dist') ? <FatDistribuicao /> : null
       case 'fat_arm':
-        return temModulo('Fat. Armazenagem') ? <FatArmazenagem /> : null
+        return temModulo('fat_arm') ? <FatArmazenagem /> : null
       case 'painel_controle':
         return isAdmin ? <PainelControle /> : null
       case 'perfil':

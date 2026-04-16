@@ -36,8 +36,14 @@ const PERFIS = [
 ]
 
 const MODULOS_DISPONIVEIS = [
-  'Pedidos', 'Fretes', 'Armazenagem', 'Estoque',
-  'Cap. Operacional', 'Recebimentos', 'Fat. Distribuição', 'Fat. Armazenagem'
+  { key: 'pedidos',        label: 'Pedidos e Recebimentos' },
+  { key: 'fretes',         label: 'Fretes' },
+  { key: 'armazenagem',    label: 'Armazenagem' },
+  { key: 'estoque',        label: 'Estoque' },
+  { key: 'cap_operacional',label: 'Capacidade Operacional' },
+  { key: 'recebimentos',   label: 'Recebimentos e Devoluções' },
+  { key: 'fat_dist',       label: 'Faturamento Distribuição' },
+  { key: 'fat_arm',        label: 'Faturamento Armazenagem' },
 ]
 
 const HUB_ITEMS = [
@@ -496,15 +502,15 @@ export function Usuarios() {
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {MODULOS_DISPONIVEIS.map(modulo => (
-                  <label key={modulo} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: '#0f1117', border: `1px solid ${permissoes.modulos.includes(modulo) ? '#10b98144' : '#2d3148'}` }}>
+                  <label key={modulo.key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: '#0f1117', border: `1px solid ${permissoes.modulos.includes(modulo.key) ? '#10b98144' : '#2d3148'}` }}>
                     <input
                       type="checkbox"
-                      checked={permissoes.modulos.includes(modulo)}
-                      onChange={() => toggleModulo(modulo)}
+                      checked={permissoes.modulos.includes(modulo.key)}
+                      onChange={() => toggleModulo(modulo.key)}
                       style={{ accentColor: '#10b981', width: 15, height: 15 }}
                     />
-                    <span style={{ fontSize: 12, color: permissoes.modulos.includes(modulo) ? '#e2e8f0' : '#8892a4' }}>
-                      {modulo}
+                    <span style={{ fontSize: 12, color: permissoes.modulos.includes(modulo.key) ? '#e2e8f0' : '#8892a4' }}>
+                      {modulo.label}
                     </span>
                   </label>
                 ))}
