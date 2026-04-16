@@ -854,6 +854,15 @@ Tipos disponíveis:
   const gerarBriefing = async () => {
     if (gerandoBriefing) return
     setGerandoBriefing(true)
+
+    // Cria conversa se não houver uma ativa (para sair da tela home)
+    if (!ativaId) {
+      const nova = { ...novaConversa(), titulo: '☀️ Briefing' }
+      setConversas(prev => [nova, ...prev])
+      setAtivaId(nova.id)
+      setPreviousResponseId(null)
+    }
+
     try {
       const res = await fetch(`${API}/api/atlas/briefing`, {
         headers: { Authorization: `Bearer ${token}` }
