@@ -5,6 +5,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Document, Paragraph, TextRun, HeadingLevel, Packer } from 'docx'
 import { saveAs } from 'file-saver'
+import jsPDF from 'jspdf'
 
 import { API } from '@/config'
 
@@ -2148,6 +2149,116 @@ async function baixarDocx(artifact: Artifact) {
   saveAs(blob, nomeArquivo)
 }
 
+// ── Gerador de .pdf ────────────────────────────────────────────────────────
+async function baixarPdf(artifact: Artifact) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const marginX   = 50
+  const largura   = doc.internal.pageSize.getWidth() - marginX * 2
+  let y = 60
+
+  const saltarLinha = (extra = 0) => {
+    y += extra
+    if (y > doc.internal.pageSize.getHeight() - 60) {
+      doc.addPage()
+      y = 60
+    }
+  }
+
+  const linhas = artifact.content.split('\n')
+
+  for (const linha of linhas) {
+    const trimmed = linha.trimEnd()
+
+    if (trimmed.startsWith('# ')) {
+      saltarLinha(10)
+      doc.setFontSize(18).setFont('helvetica', 'bold')
+      const wrapped = doc.splitTextToSize(trimmed.slice(2), largura)
+      doc.text(wrapped, marginX, y)
+      y += wrapped.length * 22 + 8
+      // linha separadora
+      doc.setDrawColor(79, 142, 247).setLineWidth(0.8)
+      doc.line(marginX, y, marginX + largura, y)
+      y += 12
+      doc.setDrawColor(0)
+
+    } else if (trimmed.startsWith('## ')) {
+      saltarLinha(8)
+      doc.setFontSize(14).setFont('helvetica', 'bold')
+      const wrapped = doc.splitTextToSize(trimmed.slice(3), largura)
+      doc.text(wrapped, marginX, y)
+      y += wrapped.length * 18 + 6
+
+    } else if (trimmed.startsWith('### ')) {
+      saltarLinha(6)
+      doc.setFontSize(12).setFont('helvetica', 'bold')
+      const wrapped = doc.splitTextToSize(trimmed.slice(4), largura)
+      doc.text(wrapped, marginX, y)
+      y += wrapped.length * 16 + 4
+
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      doc.setFontSize(11).setFont('helvetica', 'normal')
+      const texto = '•  ' + trimmed.slice(2)
+      const wrapped = doc.splitTextToSize(texto, largura - 10)
+      saltarLinha(0)
+      doc.text(wrapped, marginX + 8, y)
+      y += wrapped.length * 15 + 3
+
+    } else if (/^\d+\.\s/.test(trimmed)) {
+      doc.setFontSize(11).setFont('helvetica', 'normal')
+      const wrapped = doc.splitTextToSize(trimmed, largura - 10)
+      saltarLinha(0)
+      doc.text(wrapped, marginX + 8, y)
+      y += wrapped.length * 15 + 3
+
+    } else if (trimmed === '' || trimmed === '---') {
+      y += 10
+
+    } else {
+      // Parágrafo normal — processa **bold** inline
+      doc.setFontSize(11)
+      const partes = trimmed.split(/(\*\*[^*]+\*\*)/)
+      let x = marginX
+      const alturaLinha = 15
+
+      // Pré-calcula o texto completo para wrap
+      const textoPlano = trimmed.replace(/\*\*([^*]+)\*\*/g, '$1')
+      const wrapped = doc.splitTextToSize(textoPlano, largura)
+      saltarLinha(0)
+
+      if (partes.length === 1) {
+        // Sem bold — simples
+        doc.setFont('helvetica', 'normal')
+        doc.text(wrapped, marginX, y)
+      } else {
+        // Com bold — renderiza palavra por palavra na primeira linha
+        // (bold inline em jsPDF exige controle manual de x)
+        for (const parte of partes) {
+          if (parte.startsWith('**') && parte.endsWith('**')) {
+            doc.setFont('helvetica', 'bold')
+            const t = parte.slice(2, -2)
+            doc.text(t, x, y)
+            x += doc.getTextWidth(t)
+          } else {
+            doc.setFont('helvetica', 'normal')
+            doc.text(parte, x, y)
+            x += doc.getTextWidth(parte)
+          }
+        }
+      }
+      y += wrapped.length * alturaLinha + 3
+    }
+  }
+
+  const nomeArquivo = artifact.title
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '_')
+    + '.pdf'
+
+  doc.save(nomeArquivo)
+}
+
 // ── Componente PainelArtifact ──────────────────────────────────────────────
 function PainelArtifact({
   artifact, copiado, onCopiar, onBaixar, onFechar
@@ -2306,20 +2417,36 @@ function PainelArtifact({
           }
         </button>
         {isDoc && (
-          <button onClick={onBaixar} style={{
-            flex: 1, padding: '8px 0', borderRadius: 8,
-            background: '#4f8ef722', border: '1px solid #4f8ef755', color: '#4f8ef7',
-            fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s'
-          }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef733'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef7' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef722'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755' }}
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/>
-            </svg>
-            Baixar .docx
-          </button>
+          <div style={{ flex: 1, display: 'flex', gap: 6 }}>
+            <button onClick={onBaixar} style={{
+              flex: 1, padding: '8px 0', borderRadius: 8,
+              background: '#4f8ef722', border: '1px solid #4f8ef755', color: '#4f8ef7',
+              fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s'
+            }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef733'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef7' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef722'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/>
+              </svg>
+              .docx
+            </button>
+            <button onClick={() => baixarPdf(artifact)} style={{
+              flex: 1, padding: '8px 0', borderRadius: 8,
+              background: '#ef444422', border: '1px solid #ef444455', color: '#ef4444',
+              fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s'
+            }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#ef444433'; (e.currentTarget as HTMLElement).style.borderColor = '#ef4444' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#ef444422'; (e.currentTarget as HTMLElement).style.borderColor = '#ef444455' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/>
+              </svg>
+              .pdf
+            </button>
+          </div>
         )}
       </div>
     </div>
