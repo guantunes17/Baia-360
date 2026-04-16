@@ -10,19 +10,23 @@ interface Props {
   paginaAtiva: string
   onNavegar: (key: string) => void
   perfil: string
+  modulosPermitidos?: string[]
 }
 
-export function AppSidebar({ paginaAtiva, onNavegar, perfil }: Props) {
+export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }: Props) {
   const isAdmin      = perfil === 'admin'
   const isAnalista   = perfil === 'analista'
   const isFinanceiro = perfil === 'financeiro'
 
   const temOperacional = isAdmin || isAnalista
   const temFinanceiro  = isAdmin || isFinanceiro
-  const temAdmin       = isAdmin
 
-  const modulos_operacional = MODULOS.filter(m => m.grupo === 'operacional')
-  const modulos_financeiro  = MODULOS.filter(m => m.grupo === 'financeiro')
+  const modulos_operacional = MODULOS.filter(m =>
+    m.grupo === 'operacional' && (isAdmin || !modulosPermitidos || modulosPermitidos.includes(m.titulo))
+  )
+  const modulos_financeiro = MODULOS.filter(m =>
+    m.grupo === 'financeiro' && (isAdmin || !modulosPermitidos || modulosPermitidos.includes(m.titulo))
+  )
 
   const menuItem = (key: string, label: string) => (
     <SidebarMenuItem key={key}>

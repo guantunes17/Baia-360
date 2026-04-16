@@ -322,7 +322,7 @@ function Login({ onLogin, onCadastro }: { onLogin: (u: Usuario) => void; onCadas
   )
 }
 
-function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaInicial = 'home' }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void, onAtualizarUsuario: (u: Usuario) => void, paginaInicial?: string }) {
+function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaInicial = 'home', permissoes }: { usuario: Usuario, onLogout: () => void, onVoltarHub: () => void, onAtualizarUsuario: (u: Usuario) => void, paginaInicial?: string, permissoes: { hub: string[]; modulos: string[] } | null }) {
   const [paginaAtiva, setPaginaAtiva] = useState(paginaInicial)
   const [toasts, setToasts] = useState<ToastData[]>([])
   const adicionarToast = (tipo: 'sucesso' | 'erro' | 'aviso', mensagem: string) => {
@@ -337,9 +337,9 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
   }, [])
 
   const perfil = usuario.perfil
-  const isAdmin      = perfil === 'admin'
-  const isAnalista   = perfil === 'analista'
-  const isFinanceiro = perfil === 'financeiro'
+
+  const isAdmin   = perfil === 'admin'
+  const temModulo = (mod: string) => isAdmin || (permissoes?.modulos.includes(mod) ?? false)
 
   const renderPagina = () => {
     switch (paginaAtiva) {
@@ -348,22 +348,22 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
       case 'usuarios':
         return isAdmin ? <Usuarios /> : null
       case 'fretes':
-        return (isAdmin || isAnalista) ? <Fretes /> : null
+        return temModulo('Fretes') ? <Fretes /> : null
       case 'armazenagem':
-        return (isAdmin || isAnalista) ? <Armazenagem /> : null
+        return temModulo('Armazenagem') ? <Armazenagem /> : null
       case 'pedidos':
-        return (isAdmin || isAnalista) ? <Pedidos /> : null
+        return temModulo('Pedidos') ? <Pedidos /> : null
       case 'recebimentos':
-        return (isAdmin || isAnalista) ? <Recebimentos /> : null
+        return temModulo('Recebimentos') ? <Recebimentos /> : null
       case 'cap_operacional':
-        return (isAdmin || isAnalista) ? <CapOperacional /> : null
+        return temModulo('Cap. Operacional') ? <CapOperacional /> : null
       case 'estoque':
-        return (isAdmin || isAnalista) ? <Estoque /> : null
+        return temModulo('Estoque') ? <Estoque /> : null
       case 'fat_dist':
-        return (isAdmin || isFinanceiro) ? <FatDistribuicao /> : null
+        return temModulo('Fat. Distribuição') ? <FatDistribuicao /> : null
       case 'fat_arm':
-        return (isAdmin || isFinanceiro) ? <FatArmazenagem /> : null
-      case 'dashboard':
+        return temModulo('Fat. Armazenagem') ? <FatArmazenagem /> : null
+      case 'painel_controle':
         return isAdmin ? <PainelControle /> : null
       case 'perfil':
         return <Perfil usuario={usuario} onAtualizar={onAtualizarUsuario} />
@@ -389,7 +389,7 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
         <div className="flex min-h-screen w-full" style={{ background: '#0f1117' }}>
           <ToastContainer toasts={toasts} onRemover={removerToast} />
 
-          <AppSidebar paginaAtiva={paginaAtiva} onNavegar={setPaginaAtiva} perfil={usuario.perfil} />
+          <AppSidebar paginaAtiva={paginaAtiva} onNavegar={setPaginaAtiva} perfil={usuario.perfil} modulosPermitidos={permissoes?.modulos} />
 
           <div className="flex flex-col flex-1 min-w-0">
             {/* Topbar */}
@@ -510,6 +510,21 @@ export default function App() {
   const [pendentes, setPendentes] = useState(0)
   const [paginaInicialRelatorios, setPaginaInicialRelatorios] = useState('home')
 
+  const [permissoes, setPermissoes] = useState<{ hub: string[]; modulos: string[] } | null>(null)
+
+  // Carrega permissões ao logar
+  useEffect(() => {
+    if (!usuario) { setPermissoes(null); return }
+    const token = localStorage.getItem('token')
+    if (!token) return
+    fetch(`${API}/api/auth/me/permissoes`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => setPermissoes(data))
+      .catch(() => {})
+  }, [usuario])
+
   // ── Toasts globais (visíveis em qualquer tela) ──────────────────────────────
   const [toastsGlobais, setToastsGlobais] = useState<ToastData[]>([])
   const adicionarToastGlobal = (tipo: ToastData['tipo'], mensagem: string) => {
@@ -590,6 +605,7 @@ const handleLogout = () => {
       onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
       onEntrarPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}
       pendentes={pendentes}
+      permissoes={permissoes}
       onLogout={handleLogout}
     />
     </>
@@ -681,6 +697,7 @@ return (
     onVoltarHub={() => { setPaginaInicialRelatorios('home'); setTela('hub') }}
     onAtualizarUsuario={u => setUsuario(u)}
     paginaInicial={paginaInicialRelatorios}
+    permissoes={permissoes}
   />
 )
 }

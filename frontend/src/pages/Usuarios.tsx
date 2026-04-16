@@ -35,6 +35,19 @@ const PERFIS = [
   { value: 'admin',       label: 'Administrador' },
 ]
 
+const MODULOS_DISPONIVEIS = [
+  'Pedidos', 'Fretes', 'Armazenagem', 'Estoque',
+  'Cap. Operacional', 'Recebimentos', 'Fat. Distribuição', 'Fat. Armazenagem'
+]
+
+const HUB_ITEMS = [
+  { key: 'central',           label: 'Central de Relatórios' },
+  { key: 'painel_controle',   label: 'Painel de Controle' },
+  { key: 'painel_resultados', label: 'Painel de Resultados' },
+  { key: 'agenda',            label: 'Agenda' },
+]
+
+
 function badgePerfil(perfil: string) {
   const map: Record<string, { bg: string; color: string; label: string }> = {
     admin:       { bg: '#E6F1FB', color: '#0C447C', label: 'Admin' },
@@ -86,6 +99,48 @@ export function Usuarios() {
 
   const [aprovandoId, setAprovandoId]       = useState<number | null>(null)
   const [perfilAprovacao, setPerfilAprovacao] = useState<Record<number, string>>({})
+
+  const [painelPermissoes, setPainelPermissoes] = useState<Usuario | null>(null)
+  const [permissoes, setPermissoes]             = useState<{ hub: string[]; modulos: string[] }>({ hub: [], modulos: [] })
+  const [salvandoPerm, setSalvandoPerm]         = useState(false)
+
+  const abrirPermissoes = async (u: Usuario) => {
+    try {
+      const res = await axios.get(`${API}/api/auth/usuarios/${u.id}/permissoes`, { headers: headers() })
+      setPermissoes(res.data)
+      setPainelPermissoes(u)
+    } catch {
+      alert('Erro ao carregar permissões')
+    }
+  }
+
+  const salvarPermissoes = async () => {
+    if (!painelPermissoes) return
+    setSalvandoPerm(true)
+    try {
+      await axios.put(`${API}/api/auth/usuarios/${painelPermissoes.id}/permissoes`,
+        permissoes, { headers: headers() })
+      setPainelPermissoes(null)
+    } catch {
+      alert('Erro ao salvar permissões')
+    } finally {
+      setSalvandoPerm(false)
+    }
+  }
+
+  const toggleHub = (key: string) => {
+    setPermissoes(p => ({
+      ...p,
+      hub: p.hub.includes(key) ? p.hub.filter(k => k !== key) : [...p.hub, key]
+    }))
+  }
+
+  const toggleModulo = (modulo: string) => {
+    setPermissoes(p => ({
+      ...p,
+      modulos: p.modulos.includes(modulo) ? p.modulos.filter(m => m !== modulo) : [...p.modulos, modulo]
+    }))
+  }
 
   const carregar = async () => {
     try {
@@ -269,6 +324,7 @@ export function Usuarios() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
                 <DropdownMenuItem onClick={() => abrirEditar(u)} style={{ color: '#e2e8f0', cursor: 'pointer' }}>✏️ Editar</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => abrirPermissoes(u)} style={{ color: '#e2e8f0', cursor: 'pointer' }}>🔐 Permissões</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { setUsuarioSenha(u); setModalSenha(true) }} style={{ color: '#e2e8f0', cursor: 'pointer' }}>🔑 Redefinir Senha</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => toggleAtivo(u)} style={{ color: u.ativo ? '#ef4444' : '#10b981', cursor: 'pointer' }}>{u.ativo ? '🚫 Desativar' : '✅ Ativar'}</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { setUsuarioDeletar(u); setModalDeletar(true) }} style={{ color: '#ef4444', cursor: 'pointer' }}>🗑️ Deletar</DropdownMenuItem>
@@ -388,6 +444,98 @@ export function Usuarios() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Painel de Permissões */}
+      {painelPermissoes && (
+        <div style={{
+          position: 'fixed', inset: 0, background: '#00000088',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50
+        }}>
+          <div style={{
+            background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 12,
+            padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+              <div>
+                <p style={{ fontSize: 16, fontWeight: 600, color: '#e2e8f0', margin: 0 }}>
+                  🔐 Permissões — {painelPermissoes.nome}
+                </p>
+                <p style={{ fontSize: 12, color: '#8892a4', marginTop: 4 }}>
+                  {badgePerfil(painelPermissoes.perfil)}
+                </p>
+              </div>
+              <button onClick={() => setPainelPermissoes(null)} style={{ background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            </div>
+
+            {/* Hub */}
+            <div style={{ marginBottom: 24 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: '#4f8ef7', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, paddingLeft: 8, borderLeft: '2px solid #4f8ef7' }}>
+                Cards do Hub
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {HUB_ITEMS.map(item => (
+                  <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: '#0f1117', border: `1px solid ${permissoes.hub.includes(item.key) ? '#4f8ef744' : '#2d3148'}` }}>
+                    <input
+                      type="checkbox"
+                      checked={permissoes.hub.includes(item.key)}
+                      onChange={() => toggleHub(item.key)}
+                      style={{ accentColor: '#4f8ef7', width: 15, height: 15 }}
+                    />
+                    <span style={{ fontSize: 13, color: permissoes.hub.includes(item.key) ? '#e2e8f0' : '#8892a4' }}>
+                      {item.label}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Módulos */}
+            <div style={{ marginBottom: 28 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, paddingLeft: 8, borderLeft: '2px solid #10b981' }}>
+                Módulos da Central de Relatórios
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {MODULOS_DISPONIVEIS.map(modulo => (
+                  <label key={modulo} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: '#0f1117', border: `1px solid ${permissoes.modulos.includes(modulo) ? '#10b98144' : '#2d3148'}` }}>
+                    <input
+                      type="checkbox"
+                      checked={permissoes.modulos.includes(modulo)}
+                      onChange={() => toggleModulo(modulo)}
+                      style={{ accentColor: '#10b981', width: 15, height: 15 }}
+                    />
+                    <span style={{ fontSize: 12, color: permissoes.modulos.includes(modulo) ? '#e2e8f0' : '#8892a4' }}>
+                      {modulo}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Atlas — informativo */}
+            <div style={{ marginBottom: 28, padding: '12px 14px', background: '#7c3aed11', border: '1px solid #7c3aed33', borderRadius: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', marginBottom: 4 }}>🤖 Atlas</p>
+              <p style={{ fontSize: 12, color: '#8892a4' }}>Disponível para todos os usuários com acesso total.</p>
+            </div>
+
+            {/* Botões */}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setPainelPermissoes(null)}
+                style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid #4a5568', background: 'transparent', color: '#e2e8f0', cursor: 'pointer', fontSize: 13 }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarPermissoes}
+                disabled={salvandoPerm}
+                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#4f8ef7', color: 'white', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+              >
+                {salvandoPerm ? 'Salvando...' : 'Salvar Permissões'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

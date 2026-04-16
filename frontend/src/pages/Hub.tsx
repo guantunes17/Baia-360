@@ -19,6 +19,7 @@ interface Props {
   onEntrarBaseConhecimento: () => void
   onEntrarPerfil: () => void
   pendentes?: number
+  permissoes?: { hub: string[]; modulos: string[] } | null
   onLogout: () => void
 }
 
@@ -33,6 +34,7 @@ export function Hub({
   onEntrarBaseConhecimento,
   onEntrarPerfil,
   pendentes = 0,
+  permissoes,
   onLogout
 }: Props) {
   const hoje = new Date()
@@ -42,10 +44,8 @@ export function Hub({
 
   const perfil = usuario.perfil
   const isAdmin      = perfil === 'admin'
-  const isAnalista   = perfil === 'analista'
-  const isFinanceiro = perfil === 'financeiro'
-  const temRelatorios = isAdmin || isAnalista || isFinanceiro
-  const temPaineis = isAdmin
+  const temHub = (key: string) => isAdmin || (permissoes?.hub.includes(key) ?? false)
+  const temRelatorios = temHub('central')
   const primeiroNome = usuario.nome.split(' ')[0]
 
   const badgePerfil: Record<string, { label: string; color: string }> = {
@@ -115,7 +115,7 @@ export function Hub({
   )
 
   // Número de cards principais visíveis para calcular o grid
-  const nCardsPrincipais = [temRelatorios, true, temPaineis].filter(Boolean).length
+  const nCardsPrincipais = [temRelatorios, true, temHub('painel_controle'), temHub('painel_resultados')].filter(Boolean).length
   const gridCols = nCardsPrincipais === 1 ? '1fr' : nCardsPrincipais === 2 ? 'repeat(2,1fr)' : 'repeat(3,1fr)'
 
   return (
@@ -165,13 +165,13 @@ export function Hub({
         <div style={{ width: '100%', maxWidth: 820, display: 'grid', gridTemplateColumns: gridCols, gap: 14 }}>
           {temRelatorios && cardPrincipal('📊', 'Central de Relatórios', 'Geração e análise de relatórios.', '#4f8ef7', onEntrarRelatorios)}
           {cardPrincipal('🤖', 'Atlas', 'Assistente IA — análises via linguagem natural.', '#7c3aed', onEntrarAtlas)}
-          {temPaineis && cardPrincipal('📡', 'Painel de Controle', 'Métricas gerenciais e uso do sistema.', '#4f8ef7', onEntrarPainelControle)}
-          {temPaineis && cardPrincipal('📈', 'Painel de Resultados', 'KPIs operacionais por módulo e mês.', '#10b981', onEntrarPainelResultados)}
+          {temHub('painel_controle') && cardPrincipal('📡', 'Painel de Controle', 'Métricas gerenciais e uso do sistema.', '#4f8ef7', onEntrarPainelControle)}
+          {temHub('painel_resultados') && cardPrincipal('📈', 'Painel de Resultados', 'KPIs operacionais por módulo e mês.', '#10b981', onEntrarPainelResultados)}
         </div>
 
         {/* Agenda — todos os perfis */}
         <div style={{ width: '100%', maxWidth: 820, display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 14 }}>
-          {cardSecundario('📅', 'Agenda', 'Minha agenda pessoal', '#10b981', onEntrarAgenda)}
+          {temHub('agenda') && cardSecundario('📅', 'Agenda', 'Minha agenda pessoal', '#10b981', onEntrarAgenda)}
         </div>
 
         {/* Seção admin */}
