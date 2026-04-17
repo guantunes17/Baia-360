@@ -174,7 +174,25 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
     const data = await res.json()
     if (!res.ok) {
       if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
-      return { erro: data.erro || 'Erro ao criar reunião.' }
+      return { erro: data.erro || 'Erro ao criar reunião no Teams.' }
+    }
+    // Registra automaticamente na agenda com o link da reunião
+    if (data.ok && data.link_reuniao) {
+      try {
+        await fetch(`${API}/api/outlook/evento`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            titulo:      args.titulo,
+            data:        args.inicio.split('T')[0],
+            hora_inicio: args.inicio.split('T')[1]?.slice(0, 5) || '00:00',
+            hora_fim:    args.fim.split('T')[1]?.slice(0, 5) || '01:00',
+            descricao:   `🔗 Link da reunião Teams: ${data.link_reuniao}`
+          })
+        })
+      } catch {
+        // Agenda falhou mas reunião foi criada — não bloqueia o retorno
+      }
     }
     return data
   },
