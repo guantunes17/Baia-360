@@ -1226,7 +1226,7 @@ Tipos disponíveis:
                 const res2 = await fetch(`${API}/api/atlas/chat`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ ...base, history: h3, previous_response_id: null })
+                  body: JSON.stringify({ ...base, history: h3, previous_response_id: null, store: false })
                 })
                 const reader2 = res2.body!.getReader()
                 let buf2 = '', text2 = ''
@@ -1267,7 +1267,7 @@ Tipos disponíveis:
                 const res2 = await fetch(`${API}/api/atlas/chat`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ ...base, history: h3, previous_response_id: null })
+                  body: JSON.stringify({ ...base, history: h3, previous_response_id: null, store: false })
                 })
                 const reader2 = res2.body!.getReader()
                 let buf2 = '', text2 = ''
