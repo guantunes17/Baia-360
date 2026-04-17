@@ -1270,7 +1270,6 @@ Tipos disponíveis:
                   } catch (handlerErr: any) {
                     result = { erro: `Handler error: ${handlerErr.message}` }
                   }
-                  console.log(`[TOOL] ${f.name}`, { args: f.args, result })
                   return { functionResponse: { call_id: f.call_id, name: f.name, response: { result } } }
                 }))
                 const h3 = [...newHistory, { role: 'user', parts: fnResponses }]
