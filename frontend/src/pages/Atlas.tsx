@@ -177,6 +177,7 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
       return { erro: data.erro || 'Erro ao criar reunião no Teams.' }
     }
     // Registra automaticamente na agenda com o link da reunião
+    let agenda_registrada = false
     if (data.ok && data.link_reuniao) {
       try {
         await fetch(`${API}/api/outlook/evento`, {
@@ -190,11 +191,21 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
             descricao:   `🔗 Link da reunião Teams: ${data.link_reuniao}`
           })
         })
+        agenda_registrada = true
       } catch {
         // Agenda falhou mas reunião foi criada — não bloqueia o retorno
       }
     }
-    return data
+    return {
+      ok:                data.ok,
+      meeting_id:        data.meeting_id,
+      titulo:            data.titulo,
+      inicio:            data.inicio,
+      fim:               data.fim,
+      link_reuniao:      data.link_reuniao,
+      agenda_registrada,
+      instrucao:         'Evento já registrado na agenda do Outlook automaticamente. NÃO chame criar_evento.'
+    }
   },
   teams_chat_enviar: async (args: any, token: string) => {
     const res = await fetch(`${API}/api/teams/chat`, {
