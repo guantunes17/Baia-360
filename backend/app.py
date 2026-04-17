@@ -2425,6 +2425,7 @@ OUTLOOK_SCOPES = [
     "Mail.Read",
     "Mail.Send",
     "User.Read",
+    "User.ReadBasic.All",
     "Chat.ReadWrite",
     "ChannelMessage.Send",
     "OnlineMeetings.ReadWrite",
@@ -2473,7 +2474,12 @@ def _chamar_mcp(tool: str, body: dict):
     """Chama uma tool do MCP Outlook Server (porta 5002)."""
     mcp_url = os.getenv('MCP_OUTLOOK_URL', 'http://localhost:5002')
     resp = http_requests.post(f"{mcp_url}/tools/{tool}", json=body, timeout=15)
-    resp.raise_for_status()
+    if not resp.ok:
+        try:
+            detalhe = resp.json()
+        except Exception:
+            detalhe = resp.text
+        raise Exception(f"MCP erro {resp.status_code} em '{tool}': {detalhe}")
     return resp.json()
 
 

@@ -35,7 +35,12 @@ def graph_get(access_token: str, endpoint: str, params: dict = None):
         "Content-Type": "application/json"
     }
     resp = requests.get(f"{GRAPH_BASE}{endpoint}", headers=headers, params=params)
-    resp.raise_for_status()
+    if not resp.ok:
+        try:
+            detalhe = resp.json()
+        except Exception:
+            detalhe = resp.text
+        raise Exception(f"Graph API erro {resp.status_code}: {detalhe}")
     return resp.json()
 
 
@@ -46,7 +51,12 @@ def graph_post(access_token: str, endpoint: str, body: dict):
         "Content-Type": "application/json"
     }
     resp = requests.post(f"{GRAPH_BASE}{endpoint}", headers=headers, json=body)
-    resp.raise_for_status()
+    if not resp.ok:
+        try:
+            detalhe = resp.json()
+        except Exception:
+            detalhe = resp.text
+        raise Exception(f"Graph API erro {resp.status_code}: {detalhe}")
     return resp.json()
 
 
