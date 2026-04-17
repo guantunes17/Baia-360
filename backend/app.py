@@ -2425,7 +2425,6 @@ OUTLOOK_SCOPES = [
     "Mail.Read",
     "Mail.Send",
     "User.Read",
-    "User.ReadBasic.All",
     "Chat.ReadWrite",
     "ChannelMessage.Send",
     "OnlineMeetings.ReadWrite",

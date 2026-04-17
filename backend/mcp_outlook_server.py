@@ -468,19 +468,14 @@ def teams_chat_enviar():
     if not token or not email_destino or not mensagem:
         return erro("access_token, email_destino e mensagem obrigatórios")
     try:
-        # Busca o ID real do usuário autenticado
-        me = graph_get(token, "/me")
+        # Busca o ID do usuário autenticado via /me (não requer User.ReadBasic.All)
+        me     = graph_get(token, "/me")
         meu_id = me.get("id")
         if not meu_id:
             return erro("Não foi possível obter o ID do usuário autenticado")
 
-        # Busca o ID do destinatário pelo e-mail
-        destino = graph_get(token, f"/users/{email_destino}")
-        destino_id = destino.get("id")
-        if not destino_id:
-            return erro(f"Usuário {email_destino} não encontrado no Azure AD")
-
-        # Cria ou recupera o chat direto usando IDs reais
+        # Cria ou recupera o chat direto — usa email diretamente no binding
+        # O Graph aceita UPN (email) no lugar do ID para membros do mesmo tenant
         chat_body = {
             "chatType": "oneOnOne",
             "members": [
@@ -492,7 +487,7 @@ def teams_chat_enviar():
                 {
                     "@odata.type": "#microsoft.graph.aadUserConversationMember",
                     "roles": ["owner"],
-                    "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{destino_id}')"
+                    "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{email_destino}')"
                 },
             ]
         }
