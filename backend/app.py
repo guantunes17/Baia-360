@@ -2420,7 +2420,17 @@ def _msal_app():
         authority=f"https://login.microsoftonline.com/{os.getenv('AZURE_TENANT_ID')}"
     )
 
-OUTLOOK_SCOPES = ["Calendars.ReadWrite", "Mail.Read", "Mail.Send", "User.Read"]
+OUTLOOK_SCOPES = [
+    "Calendars.ReadWrite",
+    "Mail.Read",
+    "Mail.Send",
+    "User.Read",
+    "Chat.ReadWrite",
+    "ChannelMessage.Send",
+    "OnlineMeetings.ReadWrite",
+    "Team.ReadBasic.All",
+    "Channel.ReadBasic.All",
+]
 
 def _renovar_token_se_necessario(token_obj: OutlookToken) -> bool:
     """
