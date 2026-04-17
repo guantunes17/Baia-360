@@ -413,71 +413,89 @@ def teams_enviar_mensagem():
 @app.route("/tools/teams_criar_reuniao", methods=["POST"])
 def teams_criar_reuniao():
     """Cria uma reunião online no Microsoft Teams."""
-    data        = request.get_json(force=True)
-    token       = data.get("access_token", "")
-    titulo      = data.get("titulo", "Reunião")
-    inicio      = data.get("inicio", "")   # ISO 8601 ex: 2026-04-15T14:00:00
-    fim         = data.get("fim", "")      # ISO 8601 ex: 2026-04-15T15:00:00
-    participantes = data.get("participantes", [])  # lista de e-mails
+    data          = request.get_json(force=True)
+    token         = data.get("access_token", "")
+    titulo        = data.get("titulo", "Reunião")
+    inicio        = data.get("inicio", "")   # ISO 8601 ex: 2026-04-18T10:00:00
+    fim           = data.get("fim", "")      # ISO 8601 ex: 2026-04-18T11:00:00
+    participantes = data.get("participantes", [])
     if not token or not inicio or not fim:
         return erro("access_token, inicio e fim obrigatórios")
     try:
+        # Usa endpoint dedicado de onlineMeetings em vez de /me/events
         body = {
-            "subject": titulo,
-            "startDateTime": inicio,
-            "endDateTime":   fim,
-            "isOnlineMeeting": True,
-            "onlineMeetingProvider": "teamsForBusiness",
+            "subject":       titulo,
+            "startDateTime": inicio if inicio.endswith("Z") else inicio + "Z",
+            "endDateTime":   fim    if fim.endswith("Z")    else fim    + "Z",
         }
         if participantes:
-            body["attendees"] = [
-                {"emailAddress": {"address": email}, "type": "required"}
-                for email in participantes
-            ]
-        resultado = graph_post(token, "/me/events", body)
-        link = resultado.get("onlineMeeting", {}).get("joinUrl", "")
+            body["participants"] = {
+                "attendees": [
+                    {"upn": email, "role": "attendee"}
+                    for email in participantes
+                ]
+            }
+        resultado = graph_post(token, "/me/onlineMeetings", body)
         return jsonify({
-            "ok":            True,
-            "evento_id":     resultado.get("id"),
-            "titulo":        resultado.get("subject"),
-            "inicio":        resultado.get("start", {}).get("dateTime"),
-            "fim":           resultado.get("end", {}).get("dateTime"),
-            "link_reuniao":  link,
-            "link_evento":   resultado.get("webLink"),
+            "ok":           True,
+            "meeting_id":   resultado.get("id"),
+            "titulo":       resultado.get("subject"),
+            "inicio":       resultado.get("startDateTime"),
+            "fim":          resultado.get("endDateTime"),
+            "link_reuniao": resultado.get("joinUrl", ""),
+            "link_web":     resultado.get("joinWebUrl", ""),
         })
     except Exception as e:
         return erro(str(e), 500)
 
-
 @app.route("/tools/teams_chat_enviar", methods=["POST"])
 def teams_chat_enviar():
     """Envia uma mensagem direta (chat) para um usuário no Teams."""
-    data         = request.get_json(force=True)
-    token        = data.get("access_token", "")
+    data          = request.get_json(force=True)
+    token         = data.get("access_token", "")
     email_destino = data.get("email_destino", "")
-    mensagem     = data.get("mensagem", "")
+    mensagem      = data.get("mensagem", "")
     if not token or not email_destino or not mensagem:
         return erro("access_token, email_destino e mensagem obrigatórios")
     try:
-        # Cria ou recupera o chat direto
+        # Busca o ID real do usuário autenticado
+        me = graph_get(token, "/me")
+        meu_id = me.get("id")
+        if not meu_id:
+            return erro("Não foi possível obter o ID do usuário autenticado")
+
+        # Busca o ID do destinatário pelo e-mail
+        destino = graph_get(token, f"/users/{email_destino}")
+        destino_id = destino.get("id")
+        if not destino_id:
+            return erro(f"Usuário {email_destino} não encontrado no Azure AD")
+
+        # Cria ou recupera o chat direto usando IDs reais
         chat_body = {
             "chatType": "oneOnOne",
             "members": [
-                {"@odata.type": "#microsoft.graph.aadUserConversationMember", "roles": ["owner"],
-                 "user@odata.bind": "https://graph.microsoft.com/v1.0/users('me')"},
-                {"@odata.type": "#microsoft.graph.aadUserConversationMember", "roles": ["owner"],
-                 "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{email_destino}')"},
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "roles": ["owner"],
+                    "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{meu_id}')"
+                },
+                {
+                    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                    "roles": ["owner"],
+                    "user@odata.bind": f"https://graph.microsoft.com/v1.0/users('{destino_id}')"
+                },
             ]
         }
         chat = graph_post(token, "/chats", chat_body)
         chat_id = chat.get("id")
         if not chat_id:
-            return erro("Não foi possível criar o chat")
+            return erro(f"Não foi possível criar o chat. Resposta: {chat}")
+
         msg_body = {"body": {"content": mensagem, "contentType": "text"}}
         resultado = graph_post(token, f"/chats/{chat_id}/messages", msg_body)
         return jsonify({
-            "ok":         True,
-            "chat_id":    chat_id,
+            "ok":          True,
+            "chat_id":     chat_id,
             "mensagem_id": resultado.get("id"),
         })
     except Exception as e:
