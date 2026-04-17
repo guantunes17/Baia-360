@@ -22,6 +22,9 @@ const TOOLS_DEF = [
   { id: 'criar_evento', name: 'criar_evento', on: true,
     declaration: { name: 'criar_evento', description: 'Cria um novo evento na agenda do Outlook.', parameters: { type: 'object', properties: { titulo: { type: 'string' }, data: { type: 'string', description: 'YYYY-MM-DD' }, hora_inicio: { type: 'string', description: 'HH:MM' }, hora_fim: { type: 'string', description: 'HH:MM' }, descricao: { type: 'string' } }, required: ['titulo', 'data', 'hora_inicio', 'hora_fim', 'descricao'] } }
   },
+  { id: 'deletar_evento', name: 'deletar_evento', on: true,
+    declaration: { name: 'deletar_evento', description: 'Deleta um evento do calendário do Outlook do usuário. Use quando o usuário pedir para cancelar, remover ou deletar um evento da agenda.', parameters: { type: 'object', properties: { evento_id: { type: 'string', description: 'ID do evento a ser deletado. Obtido via get_agenda.' } }, required: ['evento_id'] } }
+  },
   { id: 'buscar_conversas', name: 'buscar_conversas', on: true,
     declaration: { name: 'buscar_conversas', description: 'Busca conversas anteriores do usuário com o Atlas. Use quando o usuário pedir para se atualizar, revisar o que foi discutido, ou referenciar algo de conversas passadas.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Palavras-chave para buscar nas conversas. Pode ser vazio para trazer as mais recentes.' } }, required: ['query'] } }
   },
@@ -79,6 +82,15 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
       if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
       return { erro: data.erro || 'Erro ao criar evento.' }
     }
+    return data
+  },
+  deletar_evento: async ({ evento_id }: any, token: string) => {
+    const res = await fetch(`${API}/api/outlook/evento/${evento_id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) return { erro: data.erro || 'Erro ao deletar evento.' }
     return data
   },
   buscar_emails: async ({ query, apenas_nao_lidos, limite }: any, token: string) => {
@@ -577,15 +589,23 @@ Personalidade e estilo de resposta:
 Capacidades:
 - Consulta e análise de KPIs e relatórios operacionais via ferramentas
 - Geração de relatórios (requer upload do arquivo Excel correspondente)
-- Consulta e criação de eventos na agenda (Outlook)
+- Consulta, criação e exclusão de eventos na agenda do Outlook
+- Leitura e envio de e-mails via Outlook
+- Integração com Microsoft Teams: listar times e canais, enviar mensagens em canais, criar reuniões online e enviar mensagens diretas entre usuários
 - Interpretação de arquivos enviados pelo usuário (Excel, PDF, Word, imagens)
+- Geração de documentos formais para download em .docx ou .pdf
 - Responder perguntas gerais sobre logística, operações ou qualquer outro assunto
 - Buscar informações atuais na internet quando necessário (cotações, notícias, dados externos)
+- Briefing diário com agenda, e-mails prioritários e notícias do setor
 
 Contexto da empresa:
 - Baia 4 é um operador logístico focado em distribuição farmacêutica
 - Clientes: ADITUS, BIOGEN, EPHARMA, BHC-Xofigo, CSL BEHRING, IPSEN, CELLTRION, YELUM, CM HOSPITALAR, GSK, PINT PHARMA, FUNCIONAL
 - Módulos: Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem
+
+Sobre consulta de dados operacionais:
+- Use get_dashboard quando o usuário perguntar sobre KPIs, desempenho, faturamento, SLA, estoque, picos ou qualquer dado operacional histórico — essa ferramenta retorna os dados do último relatório gerado por módulo
+- Prefira get_dashboard para consultas sobre dados já processados. Use gerar_relatorio apenas quando o usuário explicitamente pedir para GERAR um novo relatório com upload de arquivo
 
 Sobre arquivos enviados pelo usuário:
 - Quando o usuário enviar qualquer arquivo (Excel, PDF, Word, imagem), analise o conteúdo e responda o que foi pedido
@@ -598,6 +618,23 @@ Sobre geração de relatórios operacionais:
 - Quando o usuário pedir para GERAR um relatório operacional (Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem), use IMEDIATAMENTE a ferramenta gerar_relatorio — nunca diga que não consegue gerar
 - Após usar a ferramenta, informe que um botão aparecerá na tela para o usuário enviar o arquivo Excel correspondente
 - Gerar relatório e analisar um arquivo são coisas distintas: gerar usa a ferramenta gerar_relatorio; analisar lê um arquivo enviado pelo usuário
+
+Sobre agenda e eventos:
+- Use get_agenda para consultar eventos do calendário Outlook do usuário
+- Use criar_evento para criar eventos no calendário Outlook
+- Use deletar_evento para cancelar ou remover eventos — sempre busque o ID do evento via get_agenda antes de deletar
+- Sempre que criar uma reunião no Teams (teams_criar_reuniao), obrigatoriamente também crie o evento na agenda (criar_evento) com o link da reunião na descrição no formato: "🔗 Link da reunião Teams: {link}". Nunca crie reunião Teams sem registrar na agenda
+
+Sobre Microsoft Teams:
+- Use teams_listar_times para listar os times do usuário no Teams
+- Use teams_listar_canais para listar os canais de um time específico (requer o ID do time obtido via teams_listar_times)
+- Use teams_enviar_mensagem para enviar mensagens em canais do Teams (requer team_id e channel_id)
+- Use teams_criar_reuniao para criar reuniões online com link do Teams — sempre registre também na agenda via criar_evento
+- Use teams_chat_enviar para enviar mensagens diretas a outros usuários pelo Teams
+
+Sobre e-mails:
+- Use buscar_emails para consultar e-mails do usuário no Outlook
+- Use enviar_email para enviar e-mails pelo Outlook do usuário
 
 Sobre conversas anteriores:
 - Você TEM acesso às conversas anteriores do usuário via ferramenta buscar_conversas
@@ -612,7 +649,7 @@ Sobre busca na internet:
 
 Sobre geração de documentos formais (artefatos):
 - Quando o usuário pedir para gerar um documento formal como ITO, POP, e-mail corporativo, contrato, procedimento, relatório narrativo ou qualquer documento extenso que será baixado ou impresso, SEMPRE use o formato de artefato abaixo
-- O artefato será renderizado em um painel lateral com preview e botões de download
+- O artefato será renderizado em um painel lateral com preview e botões de download em .docx e .pdf
 - Formato obrigatório para artefatos:
 <artifact type="TIPO" title="Título">
 conteúdo

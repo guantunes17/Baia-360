@@ -506,6 +506,32 @@ def teams_chat_enviar():
     except Exception as e:
         return erro(str(e), 500)
 
+@app.route("/tools/deletar_evento", methods=["POST"])
+def deletar_evento():
+    """Deleta um evento do calendário do usuário."""
+    data      = request.get_json(force=True)
+    token     = data.get("access_token", "")
+    evento_id = data.get("evento_id", "")
+    if not token or not evento_id:
+        return erro("access_token e evento_id obrigatórios")
+    try:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        resp = requests.delete(f"{GRAPH_BASE}/me/events/{evento_id}", headers=headers)
+        if resp.status_code == 204:
+            return jsonify({"ok": True, "mensagem": "Evento deletado com sucesso."})
+        if not resp.ok:
+            try:
+                detalhe = resp.json()
+            except Exception:
+                detalhe = resp.text
+            raise Exception(f"Graph API erro {resp.status_code}: {detalhe}")
+        return jsonify({"ok": True})
+    except Exception as e:
+        return erro(str(e), 500)
+
 if __name__ == "__main__":
     print("🔌 MCP Outlook Server rodando na porta 5002")
     app.run(host="0.0.0.0", port=5002, debug=False)

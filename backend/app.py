@@ -2685,6 +2685,26 @@ def outlook_criar_evento():
         return jsonify({'erro': str(e)}), 500
 
 
+@app.route('/api/outlook/evento/<evento_id>', methods=['DELETE'])
+@jwt_required()
+def outlook_deletar_evento(evento_id):
+    """Deleta um evento do calendário do usuário via MCP Server."""
+    usuario_id = get_jwt_identity()
+
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+
+    try:
+        resultado = _chamar_mcp('deletar_evento', {
+            'access_token': access_token,
+            'evento_id':    evento_id
+        })
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
 @app.route('/api/outlook/emails', methods=['GET'])
 @jwt_required()
 def outlook_buscar_emails():
