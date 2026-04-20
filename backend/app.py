@@ -61,6 +61,26 @@ class AtlasLog(db.Model):
     total_msgs  = db.Column(db.Integer, default=0)
     criado_em   = db.Column(db.DateTime, default=datetime.utcnow)
 
+class AtlasProjeto(db.Model):
+    __tablename__ = 'atlas_projetos'
+    id          = db.Column(db.Integer, primary_key=True)
+    usuario_id  = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    nome        = db.Column(db.String(200), nullable=False)
+    descricao   = db.Column(db.Text, default='')
+    criado_em   = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    conversas = db.relationship('AtlasConversa', backref='projeto', lazy=True)
+
+    def to_dict(self):
+        return {
+            'id':          self.id,
+            'nome':        self.nome,
+            'descricao':   self.descricao,
+            'criadoEm':    self.criado_em.isoformat(),
+            'atualizadoEm': self.atualizado_em.isoformat() if self.atualizado_em else self.criado_em.isoformat()
+        }
+
 class AtlasConversa(db.Model):
     __tablename__ = 'atlas_conversas'
     id          = db.Column(db.Integer, primary_key=True)
@@ -72,6 +92,7 @@ class AtlasConversa(db.Model):
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     pinada        = db.Column(db.Boolean, default=False)
     criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
+    projeto_id    = db.Column(db.Integer, db.ForeignKey('atlas_projetos.id'), nullable=True)
 
     def to_dict(self):
         return {
@@ -82,7 +103,9 @@ class AtlasConversa(db.Model):
             'msgs':         json.loads(self.msgs_json),
             'history':      json.loads(self.history_json),
             'criadaEm':     self.criada_em.isoformat(),
-            'atualizadaEm': self.atualizada_em.isoformat() if self.atualizada_em else self.criada_em.isoformat()
+            'atualizadaEm': self.atualizada_em.isoformat() if self.atualizada_em else self.criada_em.isoformat(),
+            'projetoId':    self.projeto_id,
+            'projetoNome':  self.projeto.nome if self.projeto else None
         }
 
 class AtlasMemoria(db.Model):
@@ -2210,6 +2233,89 @@ def delete_memoria(mem_id):
     db.session.delete(m)
     db.session.commit()
     return jsonify({'ok': True}), 200
+
+# ── PROJETOS ─────────────────────────────────────────────────────────────────
+
+@app.route('/api/atlas/projetos', methods=['GET'])
+@jwt_required()
+def listar_projetos():
+    usuario_id = int(get_jwt_identity())
+    projetos = AtlasProjeto.query.filter_by(usuario_id=usuario_id)\
+        .order_by(AtlasProjeto.atualizado_em.desc()).all()
+    resultado = []
+    for p in projetos:
+        d = p.to_dict()
+        d['total_conversas'] = AtlasConversa.query.filter_by(
+            usuario_id=usuario_id, projeto_id=p.id).count()
+        resultado.append(d)
+    return jsonify(resultado), 200
+
+@app.route('/api/atlas/projetos', methods=['POST'])
+@jwt_required()
+def criar_projeto():
+    usuario_id = int(get_jwt_identity())
+    data = request.get_json()
+    nome = (data.get('nome') or '').strip()
+    if not nome:
+        return jsonify({'erro': 'Nome do projeto é obrigatório'}), 400
+    projeto = AtlasProjeto(
+        usuario_id=usuario_id,
+        nome=nome,
+        descricao=(data.get('descricao') or '').strip()
+    )
+    db.session.add(projeto)
+    db.session.commit()
+    return jsonify(projeto.to_dict()), 201
+
+@app.route('/api/atlas/projetos/<int:projeto_id>', methods=['PUT'])
+@jwt_required()
+def editar_projeto(projeto_id):
+    usuario_id = int(get_jwt_identity())
+    projeto = AtlasProjeto.query.filter_by(id=projeto_id, usuario_id=usuario_id).first()
+    if not projeto:
+        return jsonify({'erro': 'Projeto não encontrado'}), 404
+    data = request.get_json()
+    if 'nome' in data and data['nome'].strip():
+        projeto.nome = data['nome'].strip()
+    if 'descricao' in data:
+        projeto.descricao = data['descricao'].strip()
+    db.session.commit()
+    return jsonify(projeto.to_dict()), 200
+
+@app.route('/api/atlas/projetos/<int:projeto_id>', methods=['DELETE'])
+@jwt_required()
+def deletar_projeto(projeto_id):
+    usuario_id = int(get_jwt_identity())
+    projeto = AtlasProjeto.query.filter_by(id=projeto_id, usuario_id=usuario_id).first()
+    if not projeto:
+        return jsonify({'erro': 'Projeto não encontrado'}), 404
+    # Desvincula conversas ao invés de deletar em cascata
+    AtlasConversa.query.filter_by(projeto_id=projeto_id, usuario_id=usuario_id)\
+        .update({'projeto_id': None})
+    db.session.delete(projeto)
+    db.session.commit()
+    return jsonify({'ok': True}), 200
+
+@app.route('/api/atlas/conversas/<conv_id>/projeto', methods=['PUT'])
+@jwt_required()
+def mover_conversa_projeto(conv_id):
+    usuario_id = int(get_jwt_identity())
+    conversa = AtlasConversa.query.filter_by(conv_id=conv_id, usuario_id=usuario_id).first()
+    if not conversa:
+        return jsonify({'erro': 'Conversa não encontrada'}), 404
+    data = request.get_json()
+    projeto_id = data.get('projeto_id')  # None = remover do projeto
+    if projeto_id is not None:
+        projeto = AtlasProjeto.query.filter_by(id=projeto_id, usuario_id=usuario_id).first()
+        if not projeto:
+            return jsonify({'erro': 'Projeto não encontrado'}), 404
+    conversa.projeto_id = projeto_id
+    db.session.commit()
+    return jsonify(conversa.to_dict()), 200
+
+# ── FIM PROJETOS ──────────────────────────────────────────────────────────────
+
+@app.route('/api/atlas/conversas/buscar', methods=['GET'])
 
 @app.route('/api/atlas/conversas/buscar', methods=['GET'])
 @jwt_required()
