@@ -608,12 +608,13 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
           const convertidas: Conversa[] = data.map((c: any) => ({
-            id:       c.conv_id,
-            titulo:   c.titulo,
-            msgs:     c.msgs,
-            history:  c.history,
-            criadaEm: new Date(c.criadaEm),
-            pinned:   c.pinada ?? false
+            id:        c.conv_id,
+            titulo:    c.titulo,
+            msgs:      c.msgs,
+            history:   c.history,
+            criadaEm:  new Date(c.criadaEm),
+            pinned:    c.pinada ?? false,
+            projetoId: c.projetoId ?? null
           }))
           setConversas(convertidas)
           // Não define ativa — começa na tela home
@@ -729,7 +730,7 @@ Tipos disponíveis:
 - Para respostas normais, análises curtas e tabelas simples, responda normalmente sem artifact
 - Use artifact quando: o usuário pedir algo visual, interativo, um documento formal, ou qualquer conteúdo que se beneficie de uma área dedicada`
 
-  const conversa = conversas.find(c => c.id === ativaId)!
+  const conversa = conversas.find(c => c.id === ativaId && (projetoAtivo ? c.projetoId === projetoAtivo.id : true)) ?? null
 
   // Estimar tokens da conversa ativa
   useEffect(() => {
@@ -821,6 +822,8 @@ Tipos disponíveis:
   const entrarNoProjeto = (projeto: Projeto) => {
     setProjetoAtivo(projeto)
     setTelaProjetos(false)
+    setAtivaId(null)
+    setPreviousResponseId(null)
   }
 
   const moverConversaParaProjeto = async (convId: string, projetoId: number | null) => {
@@ -895,7 +898,13 @@ Tipos disponíveis:
   }, [])
 
   const criarNovaConversa = () => {
-    setAtivaId(null)
+    if (projetoAtivo) {
+      const nova = { ...novaConversa(), projetoId: projetoAtivo.id }
+      setConversas(prev => [nova, ...prev])
+      setAtivaId(nova.id)
+    } else {
+      setAtivaId(null)
+    }
     setPreviousResponseId(null)
   }
 
@@ -986,7 +995,8 @@ Tipos disponíveis:
 
   // ── Regenerar última resposta ─────────────────────────────────────────────
   const regenerar = () => {
-    const msgs = conversa.msgs
+    const msgs = conversa?.msgs
+    if (!msgs) return
     // Encontra o último par user/assistant
     const lastAssistantIdx = [...msgs].reverse().findIndex(m => m.role === 'assistant')
     if (lastAssistantIdx === -1) return
@@ -1501,119 +1511,28 @@ Tipos disponíveis:
         } : {})
       }}>
 
-        {/* Header — muda conforme contexto */}
+        {/* Header */}
         <div style={{ padding: '12px 12px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          {projetoAtivo ? (
-            <>
-              <button onClick={() => { setProjetoAtivo(null); setTelaProjetos(true) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 12, padding: '2px 4px', borderRadius: 5, transition: 'color .12s' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e2e8f0'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 4l-6 4 6 4"/></svg>
-                Projetos
-              </button>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as any }}>{projetoAtivo.nome}</span>
-              <button onClick={criarNovaConversa} title="Nova conversa"
-                style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M12 2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l2 2 2-2h1a2 2 0 002-2V4a2 2 0 00-2-2z"/><path d="M8 6v4M6 8h4"/></svg>
-              </button>
-            </>
-          ) : telaProjetos ? (
-            <>
-              <button onClick={() => setTelaProjetos(false)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 12, padding: '2px 4px', borderRadius: 5, transition: 'color .12s' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e2e8f0'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 4l-6 4 6 4"/></svg>
-                Atlas
-              </button>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>Projetos</span>
-              <button onClick={() => setModalNovoProjeto(true)} title="Novo projeto"
-                style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>
-              </button>
-            </>
-          ) : (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <svg width="22" height="22" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ opacity: 0.85 }}>
-                  <circle cx="14" cy="14" r="11" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="1" fill="none"/>
-                  <g clipPath="url(#globoClipSidebar)">
-                    <ellipse cx="14" cy="14" rx="11" ry="4" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="0.8" fill="none"/>
-                    <ellipse cx="14" cy="14" rx="5" ry="11" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="0.8" fill="none"/>
-                    <ellipse cx="14" cy="14" rx="9" ry="11" stroke="#ffffff" strokeOpacity="0.4" strokeWidth="0.6" fill="none"/>
-                  </g>
-                  <defs><clipPath id="globoClipSidebar"><circle cx="14" cy="14" r="11"/></clipPath></defs>
-                </svg>
-                <span style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0' }}>Atlas</span>
-              </div>
-              <button onClick={criarNovaConversa} title="Nova conversa"
-                style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M12 2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l2 2 2-2h1a2 2 0 002-2V4a2 2 0 00-2-2z"/><path d="M8 6v4M6 8h4"/></svg>
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Tela de Projetos */}
-        {telaProjetos && (
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 10px', display: 'flex', flexDirection: 'column' as any, gap: 8 }}>
-            {carregandoProjetos ? (
-              <div style={{ color: '#8892a4', fontSize: 12, textAlign: 'center' as any, marginTop: 24 }}>Carregando...</div>
-            ) : projetos.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column' as any, alignItems: 'center', gap: 12, marginTop: 32, padding: '0 8px' }}>
-                <svg width="36" height="36" viewBox="0 0 16 16" fill="none" stroke="#2d3148" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
-                <span style={{ fontSize: 12, color: '#8892a4', textAlign: 'center' as any, lineHeight: 1.5 }}>Nenhum projeto ainda. Crie um para organizar suas conversas por contexto.</span>
-                <button onClick={() => setModalNovoProjeto(true)}
-                  style={{ padding: '7px 16px', borderRadius: 8, background: '#4f8ef711', border: '1px solid #4f8ef733', color: '#4f8ef7', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  + Novo projeto
-                </button>
-              </div>
-            ) : (
-              <>
-                {projetos.map(p => (
-                  <div key={p.id}
-                    onClick={() => entrarNoProjeto(p)}
-                    style={{ padding: '10px 12px', borderRadius: 9, background: '#1a1d27', border: '0.5px solid #2d3148', cursor: 'pointer', transition: 'border-color .12s' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as any, maxWidth: 140 }}>{p.nome}</span>
-                      <button onClick={e => { e.stopPropagation(); if (confirm(`Deletar projeto "${p.nome}"?`)) deletarProjeto(p.id) }}
-                        style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a455', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#ef4444'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a455'}
-                      >
-                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 5h10M8 5V3M6 5v7M10 5v7M4 5l.5 8h7l.5-8"/></svg>
-                      </button>
-                    </div>
-                    {p.descricao && <div style={{ fontSize: 11, color: '#8892a4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as any }}>{p.descricao}</div>}
-                    <div style={{ fontSize: 10, color: '#8892a455', marginTop: 4 }}>{p.total_conversas ?? 0} conversa{(p.total_conversas ?? 0) !== 1 ? 's' : ''}</div>
-                  </div>
-                ))}
-                <button onClick={() => setModalNovoProjeto(true)}
-                  style={{ padding: '7px 14px', borderRadius: 8, background: 'none', border: '0.5px dashed #2d3148', color: '#8892a4', fontSize: 12, cursor: 'pointer', transition: 'border-color .12s, color .12s' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'; (e.currentTarget as HTMLElement).style.color = '#4f8ef7' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
-                >
-                  + Novo projeto
-                </button>
-              </>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <svg width="22" height="22" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ opacity: 0.85 }}>
+              <circle cx="14" cy="14" r="11" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="1" fill="none"/>
+              <g clipPath="url(#globoClipSidebar)">
+                <ellipse cx="14" cy="14" rx="11" ry="4" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="0.8" fill="none"/>
+                <ellipse cx="14" cy="14" rx="5" ry="11" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="0.8" fill="none"/>
+                <ellipse cx="14" cy="14" rx="9" ry="11" stroke="#ffffff" strokeOpacity="0.4" strokeWidth="0.6" fill="none"/>
+              </g>
+              <defs><clipPath id="globoClipSidebar"><circle cx="14" cy="14" r="11"/></clipPath></defs>
+            </svg>
+            <span style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0' }}>Atlas</span>
           </div>
-        )}
+          <button onClick={criarNovaConversa} title="Nova conversa"
+            style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M12 2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l2 2 2-2h1a2 2 0 002-2V4a2 2 0 00-2-2z"/><path d="M8 6v4M6 8h4"/></svg>
+          </button>
+        </div>       
 
         {/* Busca + Nav + Lista (visíveis fora da tela de Projetos) */}
         {!telaProjetos && (
@@ -1638,7 +1557,7 @@ Tipos disponíveis:
                   <span style={{ fontSize: 15 }}>+</span> Nova conversa
                 </button>
                 <button
-                  onClick={() => { setTelaProjetos(true); carregarProjetos() }}
+                  onClick={() => { setProjetoAtivo(null); setAtivaId(null); setTelaProjetos(true); setPreviousResponseId(null); carregarProjetos() }}
                   style={{ width: '100%', padding: '7px 10px', borderRadius: 7, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, transition: 'background .12s, color .12s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
@@ -1824,8 +1743,133 @@ Tipos disponíveis:
         </div>
       </div>
 
+      {/* Página de Projetos */}
+      {telaProjetos && !projetoAtivo && (
+        <div style={{ flex: 1, background: '#0f1117', overflowY: 'auto', padding: '48px 10% 48px' }}>
+          <div style={{ maxWidth: 800, margin: '0 auto' }}>
+            {/* Botão voltar */}
+            <button onClick={() => { setTelaProjetos(false); setPreviousResponseId(null) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 13, marginBottom: 24, padding: 0, transition: 'color .12s' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e2e8f0'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 4l-6 4 6 4"/></svg>
+              Atlas
+            </button>
+            {/* Header da página */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
+              <div>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>Projetos</h1>
+                <p style={{ fontSize: 14, color: '#8892a4', margin: '6px 0 0' }}>Organize suas conversas por contexto e objetivo</p>
+              </div>
+              <button onClick={() => setModalNovoProjeto(true)}
+                style={{ padding: '9px 20px', borderRadius: 9, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>
+                Novo projeto
+              </button>
+            </div>
+
+            {carregandoProjetos ? (
+              <div style={{ textAlign: 'center' as any, color: '#8892a4', paddingTop: 48 }}>Carregando...</div>
+            ) : projetos.length === 0 ? (
+              <div style={{ textAlign: 'center' as any, paddingTop: 64, display: 'flex', flexDirection: 'column' as any, alignItems: 'center', gap: 16 }}>
+                <svg width="56" height="56" viewBox="0 0 16 16" fill="none" stroke="#2d3148" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
+                <p style={{ fontSize: 15, color: '#8892a4', margin: 0 }}>Nenhum projeto ainda</p>
+                <p style={{ fontSize: 13, color: '#8892a455', margin: 0, maxWidth: 320 }}>Crie um projeto para organizar conversas relacionadas e dar contexto automático ao Atlas.</p>
+                <button onClick={() => setModalNovoProjeto(true)}
+                  style={{ marginTop: 8, padding: '9px 24px', borderRadius: 9, background: '#4f8ef711', border: '1px solid #4f8ef733', color: '#4f8ef7', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  Criar primeiro projeto
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
+                {projetos.map(p => (
+                  <div key={p.id}
+                    onClick={() => entrarNoProjeto(p)}
+                    style={{ padding: '20px', borderRadius: 12, background: '#1a1d27', border: '0.5px solid #2d3148', cursor: 'pointer', transition: 'border-color .15s, transform .15s', position: 'relative' as any }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}
+                  >
+                    <div style={{ fontSize: 24, marginBottom: 10 }}>📁</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>{p.nome}</div>
+                    {p.descricao && <div style={{ fontSize: 12, color: '#8892a4', lineHeight: 1.5, marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>{p.descricao}</div>}
+                    <div style={{ fontSize: 11, color: '#8892a455' }}>{p.total_conversas ?? 0} conversa{(p.total_conversas ?? 0) !== 1 ? 's' : ''}</div>
+                    <button
+                      onClick={e => { e.stopPropagation(); if (confirm(`Deletar projeto "${p.nome}"?`)) deletarProjeto(p.id) }}
+                      style={{ position: 'absolute' as any, top: 12, right: 12, width: 24, height: 24, borderRadius: 6, background: 'none', border: 'none', color: '#8892a433', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color .12s, background .12s' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#ef444411' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#8892a433'; (e.currentTarget as HTMLElement).style.background = 'none' }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 5h10M8 5V3M6 5v7M10 5v7M4 5l.5 8h7l.5-8"/></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Página do Projeto selecionado (home do projeto) */}
+      {projetoAtivo && telaHome && !painelConfig && (
+        <div style={{ flex: 1, background: '#0f1117', overflowY: 'auto', padding: '48px 10% 48px' }}>
+          <div style={{ maxWidth: 800, margin: '0 auto' }}>
+            {/* Header */}
+            <div style={{ marginBottom: 32 }}>
+              <button onClick={() => { setProjetoAtivo(null); setTelaProjetos(true); setAtivaId(null) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 13, marginBottom: 16, padding: 0, transition: 'color .12s' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e2e8f0'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 4l-6 4 6 4"/></svg>
+                Projetos
+              </button>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 24 }}>📁</span>
+                    <h1 style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>{projetoAtivo.nome}</h1>
+                  </div>
+                  {projetoAtivo.descricao && <p style={{ fontSize: 13, color: '#8892a4', margin: 0, lineHeight: 1.6, maxWidth: 520 }}>{projetoAtivo.descricao}</p>}
+                </div>
+                <button onClick={criarNovaConversa}
+                  style={{ padding: '9px 20px', borderRadius: 9, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>
+                  Nova conversa
+                </button>
+              </div>
+            </div>
+
+            {/* Lista de conversas do projeto */}
+            <div>
+              <h2 style={{ fontSize: 13, fontWeight: 500, color: '#8892a4', textTransform: 'uppercase' as any, letterSpacing: '0.08em', marginBottom: 12 }}>Conversas</h2>
+              {conversasFiltradas.length === 0 ? (
+                <div style={{ textAlign: 'center' as any, padding: '48px 0', display: 'flex', flexDirection: 'column' as any, alignItems: 'center', gap: 12 }}>
+                  <p style={{ fontSize: 14, color: '#8892a4', margin: 0 }}>Nenhuma conversa neste projeto ainda</p>
+                  <p style={{ fontSize: 12, color: '#8892a455', margin: 0 }}>Clique em "Nova conversa" para começar</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column' as any, gap: 8 }}>
+                  {conversasFiltradas.map(c => (
+                    <div key={c.id}
+                      onClick={() => setAtivaId(c.id)}
+                      style={{ padding: '14px 18px', borderRadius: 10, background: '#1a1d27', border: '0.5px solid #2d3148', cursor: 'pointer', transition: 'border-color .12s' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>🤖 {c.titulo}</div>
+                      <div style={{ fontSize: 12, color: '#8892a4' }}>{new Date(c.criadaEm).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tela Home, Chat ou Painel de Configurações */}
-      {telaHome && !painelConfig ? (
+      {!telaProjetos && !projetoAtivo && telaHome && !painelConfig ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0f1117', padding: '0 10%', gap: 32 }}>
 
           {/* Logo e saudação */}
@@ -1903,7 +1947,7 @@ Tipos disponíveis:
             </p>
           </div>
         </div>
-      ) : painelConfig ? (
+      ) : !telaProjetos && painelConfig && !telaHome ? (
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 10%', background: '#0f1117', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', paddingLeft: 10, borderLeft: '2px solid #4f8ef7', margin: 0 }}>Configurações do Atlas</h2>
 
@@ -2109,7 +2153,7 @@ Tipos disponíveis:
             Salvar configurações
           </button>
         </div>
-      ) : (
+      ) : !telaProjetos && !telaHome ? (
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
       {/* ── Área principal do chat ── */}
@@ -2135,8 +2179,20 @@ Tipos disponíveis:
           </button>
         )}
 
+        {projetoAtivo && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 0', marginBottom: -8 }}>
+            <button onClick={() => { setAtivaId(null); setPreviousResponseId(null) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a455', fontSize: 11, padding: '3px 8px', borderRadius: 6, transition: 'all .12s', borderColor: 'transparent' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#4f8ef7'; (e.currentTarget as HTMLElement).style.background = '#4f8ef711' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#8892a455'; (e.currentTarget as HTMLElement).style.background = 'none' }}
+            >
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 4l-6 4 6 4"/></svg>
+              📁 {projetoAtivo.nome}
+            </button>
+          </div>
+        )}
         <div ref={chatBodyRef} style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px 4%' : '24px 10%', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {conversa.msgs.map((m, i) => (
+          {(conversa?.msgs ?? []).map((m, i) => (
             <div key={i} style={{
               display: 'flex', flexDirection: 'column', gap: 4,
               maxWidth: m.role === 'note' ? '100%' : m.role === 'user' ? '70%' : '100%',
@@ -2518,6 +2574,23 @@ Tipos disponíveis:
       </div>
 
       {/* ── Painel lateral de artefatos ── */}
+      {painelArtifact && (
+        <PainelArtifact
+          artifact={painelArtifact}
+          copiado={copiadoArtifact}
+          onCopiar={() => {
+            navigator.clipboard.writeText(painelArtifact.content)
+            setCopiadoArtifact(true)
+            setTimeout(() => setCopiadoArtifact(false), 2000)
+          }}
+          onBaixar={() => baixarDocx(painelArtifact)}
+          onFechar={() => setPainelArtifact(null)}
+        />
+      )}
+
+      </div>
+      ) : null}
+
       {/* Modal — Novo Projeto */}
       {modalNovoProjeto && (
         <div style={{ position: 'fixed', inset: 0, background: '#000a', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -2596,22 +2669,6 @@ Tipos disponíveis:
         </div>
       )}
 
-      {painelArtifact && (
-        <PainelArtifact
-          artifact={painelArtifact}
-          copiado={copiadoArtifact}
-          onCopiar={() => {
-            navigator.clipboard.writeText(painelArtifact.content)
-            setCopiadoArtifact(true)
-            setTimeout(() => setCopiadoArtifact(false), 2000)
-          }}
-          onBaixar={() => baixarDocx(painelArtifact)}
-          onFechar={() => setPainelArtifact(null)}
-        />
-      )}
-
-      </div>
-      )}
     </div>
   )
 }
