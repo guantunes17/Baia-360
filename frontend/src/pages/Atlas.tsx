@@ -527,6 +527,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const fileContextoRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const [menuUsuarioAberto, setMenuUsuarioAberto] = useState(false)
+  const [menuConvAberto, setMenuConvAberto] = useState<string | null>(null)
   const token = localStorage.getItem('token') || ''
 
   // ── Persistência de conversas ─────────────────────────────────────────────
@@ -601,11 +602,12 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
       .catch(() => {})
   }, [token])
 
-  //Fecha menu do usuário ao clicar fora
+  //Fecha menu do usuário e menu de conversa ao clicar fora
   useEffect(() => {
   const handler = (e: MouseEvent) => {
     const target = e.target as HTMLElement
     if (!target.closest('[data-menu-usuario]')) setMenuUsuarioAberto(false)
+    if (!target.closest('[data-menu-conv]')) setMenuConvAberto(null)
   }
   document.addEventListener('mousedown', handler)
   return () => document.removeEventListener('mousedown', handler)
@@ -1510,19 +1512,58 @@ Tipos disponíveis:
                         >
                           🤖 {c.titulo}
                         </span>
-                        <div className="item-actions" style={{ display: 'flex', gap: 1, opacity: 0, transition: 'opacity .12s', flexShrink: 0 }}>
-                          <button onClick={e => togglePin(c.id, e)} title={c.pinned ? 'Desafixar' : 'Fixar'}
-                            style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: c.pinned ? '#f0b429' : '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconPin />
+                        <div className="item-actions" style={{ display: 'flex', gap: 1, opacity: 0, transition: 'opacity .12s', flexShrink: 0, position: 'relative' as any }}>
+                          <button
+                            data-menu-conv={c.id}
+                            onClick={e => { e.stopPropagation(); setMenuConvAberto((v: string | null) => v === c.id ? null : c.id) }}
+                            style={{ width: 18, height: 18, borderRadius: 3, background: menuConvAberto === c.id ? '#2d3148' : 'none', border: 'none', color: menuConvAberto === c.id ? '#e2e8f0' : '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                              <circle cx="8" cy="2.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13.5" r="1.3"/>
+                            </svg>
                           </button>
-                          <button onClick={e => { e.stopPropagation(); exportarConversa(c) }} title="Exportar conversa"
-                            style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconDownload />
-                          </button>
-                          <button onClick={e => deletarConversa(c.id, e)} title="Deletar conversa"
-                            style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a4', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            ✕
-                          </button>
+                          {menuConvAberto === c.id && (
+                            <div data-menu-conv={c.id} style={{ position: 'absolute' as any, top: 22, right: 0, background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 9, padding: '4px', minWidth: 172, zIndex: 200, boxShadow: '0 4px 20px #0006' }}>
+                              <button onClick={e => { togglePin(c.id, e); setMenuConvAberto(null) }}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: c.pinned ? '#f0b429' : '#e2e8f0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                              >
+                                <IconPin /> {c.pinned ? 'Desafixar' : 'Fixar'}
+                              </button>
+                              <button onClick={e => { e.stopPropagation(); iniciarRename(c, e); setMenuConvAberto(null) }}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 2l3 3-9 9H2v-3z"/></svg> Renomear
+                              </button>
+                              <button onClick={e => { e.stopPropagation(); exportarConversa(c); setMenuConvAberto(null) }}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                              >
+                                <IconDownload /> Exportar conversa
+                              </button>
+                              <div style={{ height: '0.5px', background: '#2d3148', margin: '4px 6px' }} />
+                              <button
+                                onClick={e => { e.stopPropagation(); setMenuConvAberto(null); alert('Projetos — em breve!') }}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: '#8892a4', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg> Mover para projeto
+                              </button>
+                              <div style={{ height: '0.5px', background: '#2d3148', margin: '4px 6px' }} />
+                              <button onClick={e => { deletarConversa(c.id, e); setMenuConvAberto(null) }}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#ef444411'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h10M8 5V3M6 5v7M10 5v7M4 5l.5 8h7l.5-8"/></svg> Deletar
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </>
                     )}
