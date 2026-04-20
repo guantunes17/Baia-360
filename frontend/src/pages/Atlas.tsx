@@ -526,6 +526,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const fileContextoRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const [menuUsuarioAberto, setMenuUsuarioAberto] = useState(false)
   const token = localStorage.getItem('token') || ''
 
   // ── Persistência de conversas ─────────────────────────────────────────────
@@ -599,6 +600,16 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
       })
       .catch(() => {})
   }, [token])
+
+  //Fecha menu do usuário ao clicar fora
+  useEffect(() => {
+  const handler = (e: MouseEvent) => {
+    const target = e.target as HTMLElement
+    if (!target.closest('[data-menu-usuario]')) setMenuUsuarioAberto(false)
+  }
+  document.addEventListener('mousedown', handler)
+  return () => document.removeEventListener('mousedown', handler)
+}, [])
 
   const SYSTEM_PROMPT = `Você é o Atlas, assistente de inteligência artificial da Baia 4 Logística e Transportes.
 
@@ -1376,7 +1387,7 @@ Tipos disponíveis:
         <div onClick={() => setSidebarAberta(false)} style={{ position: 'fixed', inset: 0, background: '#0008', zIndex: 40 }} />
       )}
 
-      {/* Sidebar */}
+{/* Sidebar */}
       <div style={{
         width: 240, background: '#13161f', borderRight: '1px solid #2d3148',
         display: 'flex', flexDirection: 'column', flexShrink: 0,
@@ -1388,116 +1399,191 @@ Tipos disponíveis:
         } : {})
       }}>
 
+        {/* Header */}
+        <div style={{ padding: '12px 12px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <svg width="22" height="22" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ opacity: 0.85 }}>
+              <circle cx="14" cy="14" r="11" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="1" fill="none"/>
+              <g clipPath="url(#globoClipSidebar)">
+                <ellipse cx="14" cy="14" rx="11" ry="4" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="0.8" fill="none"/>
+                <ellipse cx="14" cy="14" rx="5" ry="11" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="0.8" fill="none"/>
+                <ellipse cx="14" cy="14" rx="9" ry="11" stroke="#ffffff" strokeOpacity="0.4" strokeWidth="0.6" fill="none"/>
+              </g>
+              <defs><clipPath id="globoClipSidebar"><circle cx="14" cy="14" r="11"/></clipPath></defs>
+            </svg>
+            <span style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0' }}>Atlas</span>
+          </div>
+          <button onClick={criarNovaConversa} title="Nova conversa"
+            style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M12 2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l2 2 2-2h1a2 2 0 002-2V4a2 2 0 00-2-2z"/>
+              <path d="M8 6v4M6 8h4"/>
+            </svg>
+          </button>
+        </div>
+
         {/* Busca */}
-        <div style={{ padding: '10px 10px 0', position: 'relative' }}>
-          <div style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', color: '#8892a4', pointerEvents: 'none', display: 'flex' }}>
+        <div style={{ padding: '10px 10px 0', position: 'relative', flexShrink: 0 }}>
+          <div style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', color: '#8892a455', pointerEvents: 'none', display: 'flex' }}>
             <IconSearch />
           </div>
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
             placeholder="Buscar conversas..."
-            style={{ width: '100%', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, padding: '6px 10px 6px 28px', fontSize: 12, color: '#e2e8f0', outline: 'none', boxSizing: 'border-box' }}
+            style={{ width: '100%', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, padding: '6px 10px 6px 28px', fontSize: 12, color: '#e2e8f0', outline: 'none', boxSizing: 'border-box' as any }}
           />
         </div>
 
-        {/* Nova conversa */}
-        <div style={{ padding: '8px 10px' }}>
-          <button onClick={criarNovaConversa} style={{ width: '100%', padding: '9px 14px', borderRadius: 8, background: '#4f8ef711', border: '1px solid #4f8ef733', color: '#4f8ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-            <span style={{ fontSize: 16 }}>+</span> Nova conversa
+        {/* Nav — Nova conversa + Projetos */}
+        <div style={{ padding: '8px 10px 4px', flexShrink: 0 }}>
+          <button onClick={criarNovaConversa} style={{ width: '100%', padding: '8px 14px', borderRadius: 8, background: '#4f8ef711', border: '1px solid #4f8ef733', color: '#4f8ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 15 }}>+</span> Nova conversa
+          </button>
+          <button
+            onClick={() => alert('Projetos — em breve!')}
+            style={{ width: '100%', padding: '7px 10px', borderRadius: 7, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, transition: 'background .12s, color .12s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/>
+            </svg>
+            Projetos
           </button>
         </div>
 
+        {/* Divisor */}
+        <div style={{ height: '0.5px', background: '#2d3148', margin: '2px 10px 4px', flexShrink: 0 }} />
+
         {/* Lista agrupada */}
-        <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8 }}>
-          {grupos.length === 0 && (
-            <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: 12, color: '#8892a455' }}>
-              Nenhuma conversa encontrada
-            </div>
-          )}
-          {grupos.map(grupo => (
-            <div key={grupo.label}>
-              <div style={{ fontSize: 10, fontWeight: 500, color: '#8892a4', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 12px 4px' }}>
-                {grupo.label === 'Fixadas' ? '📌 Fixadas' : grupo.label}
+        <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8, scrollbarWidth: 'thin', scrollbarColor: '#2d314855 transparent' }}>
+          <style>{`
+            .atlas-conv-list::-webkit-scrollbar { width: 3px; }
+            .atlas-conv-list::-webkit-scrollbar-track { background: transparent; }
+            .atlas-conv-list::-webkit-scrollbar-thumb { background: #2d314866; border-radius: 99px; }
+            .atlas-conv-list::-webkit-scrollbar-thumb:hover { background: #4f8ef755; }
+          `}</style>
+          <div className="atlas-conv-list" style={{ height: '100%', overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#2d314855 transparent' }}>
+            {grupos.length === 0 && (
+              <div style={{ padding: '20px 12px', textAlign: 'center' as any, fontSize: 12, color: '#8892a455' }}>
+                Nenhuma conversa encontrada
               </div>
-              {grupo.items.map(c => (
-                <div
-                  key={c.id}
-                  onClick={() => { if (renomeandoId === c.id) return; setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null); setArquivoContexto(null); if (isMobile) setSidebarAberta(false) }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', borderRadius: 7, margin: '1px 8px', background: c.id === ativaId ? '#1a1d27' : 'transparent', border: c.id === ativaId ? '0.5px solid #2d3148' : '0.5px solid transparent', cursor: 'pointer', position: 'relative' }}
-                  onMouseEnter={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '1' }}
-                  onMouseLeave={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '0' }}
-                >
-                  {renomeandoId === c.id ? (
-                    <>
-                      <input
-                        ref={renameInputRef}
-                        value={renomeTitulo}
-                        onChange={e => setRenomeTitulo(e.target.value)}
-                        onKeyDown={handleRenameKey}
-                        onClick={e => e.stopPropagation()}
-                        style={{ flex: 1, background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 4, color: '#e2e8f0', fontSize: 12, padding: '2px 6px', outline: 'none', fontFamily: 'inherit' }}
-                      />
-                      <button onClick={confirmarRename} title="Confirmar"
-                        style={{ width: 18, height: 18, borderRadius: 4, background: 'none', border: 'none', color: '#8892a4', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color .12s' }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#10b981'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
-                      >✓</button>
-                    </>
-                  ) : (
-                    <>
-                      <span
-                        style={{ flex: 1, fontSize: 12, color: c.id === ativaId ? '#e2e8f0' : '#8892a4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                        onDoubleClick={e => iniciarRename(c, e)}
-                      >
-                        🤖 {c.titulo}
-                      </span>
-                      <div className="item-actions" style={{ display: 'flex', gap: 1, opacity: 0, transition: 'opacity .12s', flexShrink: 0 }}>
-                        <button onClick={e => togglePin(c.id, e)} title={c.pinned ? 'Desafixar' : 'Fixar'}
-                          style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: c.pinned ? '#f0b429' : '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <IconPin />
-                        </button>
-                        <button onClick={e => { e.stopPropagation(); exportarConversa(c) }} title="Exportar conversa"
-                          style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <IconDownload />
-                        </button>
-                        <button onClick={e => deletarConversa(c.id, e)} title="Deletar conversa"
-                          style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a4', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          ✕
-                        </button>
-                      </div>
-                    </>
-                  )}
+            )}
+            {grupos.map(grupo => (
+              <div key={grupo.label}>
+                <div style={{ fontSize: 10, fontWeight: 500, color: '#8892a4', textTransform: 'uppercase' as any, letterSpacing: '0.08em', padding: '8px 12px 4px' }}>
+                  {grupo.label === 'Fixadas' ? '📌 Fixadas' : grupo.label}
                 </div>
-              ))}
+                {grupo.items.map(c => (
+                  <div
+                    key={c.id}
+                    onClick={() => { if (renomeandoId === c.id) return; setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null); setArquivoContexto(null); if (isMobile) setSidebarAberta(false) }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', borderRadius: 7, margin: '1px 8px', background: c.id === ativaId ? '#1a1d27' : 'transparent', border: c.id === ativaId ? '0.5px solid #2d3148' : '0.5px solid transparent', cursor: 'pointer', position: 'relative' as any }}
+                    onMouseEnter={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '1' }}
+                    onMouseLeave={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '0' }}
+                  >
+                    {renomeandoId === c.id ? (
+                      <>
+                        <input
+                          ref={renameInputRef}
+                          value={renomeTitulo}
+                          onChange={e => setRenomeTitulo(e.target.value)}
+                          onKeyDown={handleRenameKey}
+                          onClick={e => e.stopPropagation()}
+                          style={{ flex: 1, background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 4, color: '#e2e8f0', fontSize: 12, padding: '2px 6px', outline: 'none', fontFamily: 'inherit' }}
+                        />
+                        <button onClick={confirmarRename} title="Confirmar"
+                          style={{ width: 18, height: 18, borderRadius: 4, background: 'none', border: 'none', color: '#8892a4', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color .12s' }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#10b981'}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+                        >✓</button>
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          style={{ flex: 1, fontSize: 12, color: c.id === ativaId ? '#e2e8f0' : '#8892a4', whiteSpace: 'nowrap' as any, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          onDoubleClick={e => iniciarRename(c, e)}
+                        >
+                          🤖 {c.titulo}
+                        </span>
+                        <div className="item-actions" style={{ display: 'flex', gap: 1, opacity: 0, transition: 'opacity .12s', flexShrink: 0 }}>
+                          <button onClick={e => togglePin(c.id, e)} title={c.pinned ? 'Desafixar' : 'Fixar'}
+                            style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: c.pinned ? '#f0b429' : '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <IconPin />
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); exportarConversa(c) }} title="Exportar conversa"
+                            style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <IconDownload />
+                          </button>
+                          <button onClick={e => deletarConversa(c.id, e)} title="Deletar conversa"
+                            style={{ width: 18, height: 18, borderRadius: 3, background: 'none', border: 'none', color: '#8892a4', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            ✕
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer — perfil + menu */}
+        <div style={{ padding: '10px', borderTop: '0.5px solid #2d3148', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative' as any }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f8ef722', border: '1px solid #4f8ef744', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#4f8ef7', flexShrink: 0 }}>
+              {nomeUsuario.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
             </div>
-          ))}
-          {/* Footer com ícones */}
-          <div style={{ padding: '8px 10px', borderTop: '0.5px solid #2d3148', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 10, color: '#2d3148' }}>v1.0</span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button
-                onClick={() => setPainelConfig(v => !v)}
-                title="Uso da sessão"
-                style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
-              ><IconTokens /></button>
-              <button
-                onClick={gerarBriefing}
-                title="Briefing do dia"
-                style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: gerandoBriefing ? 'not-allowed' : 'pointer', color: gerandoBriefing ? '#4f8ef7' : '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, transition: 'background .12s, color .12s' }}
-                onMouseEnter={e => { if (!gerandoBriefing) { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' } }}
-                onMouseLeave={e => { if (!gerandoBriefing) { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
-              >{gerandoBriefing ? '⏳' : '☀️'}</button>
-              <button
-                onClick={() => setPainelConfig(v => !v)}
-                title="Configurações"
-                style={{ width: 28, height: 28, borderRadius: 6, background: painelConfig ? '#4f8ef711' : 'none', border: 'none', cursor: 'pointer', color: painelConfig ? '#4f8ef7' : '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
-                onMouseEnter={e => { if (!painelConfig) { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' } }}
-                onMouseLeave={e => { if (!painelConfig) { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
-              ><IconSettings /></button>
-            </div>
+            <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 500, whiteSpace: 'nowrap' as any, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120 }}>
+              {nomeUsuario}
+            </span>
+          </div>
+          <div style={{ position: 'relative' as any }}>
+            <button
+              data-menu-usuario
+              onClick={() => setMenuUsuarioAberto((v: boolean) => !v)}
+              title="Menu"
+              style={{ width: 28, height: 28, borderRadius: 6, background: menuUsuarioAberto ? '#1a1d27' : 'none', border: 'none', cursor: 'pointer', color: menuUsuarioAberto ? '#e2e8f0' : '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
+              onMouseLeave={e => { if (!menuUsuarioAberto) { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <circle cx="8" cy="3" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="13" r="1.2"/>
+              </svg>
+            </button>
+            {menuUsuarioAberto && (
+              <div data-menu-usuario style={{ position: 'absolute' as any, bottom: 36, right: 0, background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '4px', minWidth: 180, zIndex: 100, boxShadow: '0 4px 20px #0005' }}>
+                <button onClick={() => { gerarBriefing(); setMenuUsuarioAberto(false) }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                >
+                  <span style={{ fontSize: 14 }}>{gerandoBriefing ? '⏳' : '☀️'}</span>
+                  <span>{gerandoBriefing ? 'Gerando briefing...' : 'Briefing do dia'}</span>
+                </button>
+                <button onClick={() => { setPainelConfig(v => !v); setMenuUsuarioAberto(false) }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                >
+                  <IconSettings />
+                  <span>Configurações</span>
+                </button>
+                <button onClick={() => { setPainelConfig(v => !v); setMenuUsuarioAberto(false) }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                >
+                  <IconTokens />
+                  <span>Uso da sessão</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
