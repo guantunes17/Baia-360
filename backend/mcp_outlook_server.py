@@ -91,7 +91,7 @@ def get_agenda():
         params = {
             "startDateTime": f"{data_inicio}T00:00:00",
             "endDateTime":   f"{data_fim}T23:59:59",
-            "$select":       "subject,start,end,location,organizer,isAllDay,bodyPreview",
+            "$select":       "id,subject,start,end,location,organizer,isAllDay,bodyPreview,webLink,onlineMeeting",
             "$orderby":      "start/dateTime",
             "$top":          50
         }
@@ -103,14 +103,18 @@ def get_agenda():
         for ev in resultado.get("value", []):
             inicio_raw = ev.get("start", {}).get("dateTime", "")
             fim_raw    = ev.get("end",   {}).get("dateTime", "")
+            online     = ev.get("onlineMeeting") or {}
             eventos.append({
-                "titulo":      ev.get("subject", "Sem título"),
-                "inicio":      inicio_raw,
-                "fim":         fim_raw,
-                "local":       ev.get("location", {}).get("displayName", ""),
-                "organizador": ev.get("organizer", {}).get("emailAddress", {}).get("name", ""),
-                "dia_inteiro": ev.get("isAllDay", False),
-                "resumo":      ev.get("bodyPreview", "")
+                "evento_id":      ev.get("id", ""),
+                "titulo":         ev.get("subject", "Sem título"),
+                "inicio":         inicio_raw,
+                "fim":            fim_raw,
+                "local":          ev.get("location", {}).get("displayName", ""),
+                "organizador":    ev.get("organizer", {}).get("emailAddress", {}).get("name", ""),
+                "dia_inteiro":    ev.get("isAllDay", False),
+                "resumo":         ev.get("bodyPreview", ""),
+                "link_web":       ev.get("webLink", ""),
+                "link_reuniao":   online.get("joinUrl", "")
             })
         return jsonify({"eventos": eventos, "total": len(eventos)})
 
@@ -539,6 +543,80 @@ def deletar_evento():
     except Exception as e:
         return erro(str(e), 500)
 
-if __name__ == "__main__":
-    print("🔌 MCP Outlook Server rodando na porta 5002")
-    app.run(host="0.0.0.0", port=5002, debug=False)
+@app.route("/tools/editar_evento", methods=["POST"])
+def editar_evento():
+    """
+    Edita campos de um evento existente no calendário.
+
+    Body esperado:
+      access_token : str
+      evento_id    : str
+      titulo       : str (opcional)
+      data         : str — YYYY-MM-DD (opcional)
+      hora_inicio  : str — HH:MM (opcional)
+      hora_fim     : str — HH:MM (opcional)
+      local        : str (opcional)
+      descricao    : str (opcional)
+    """
+    data        = request.get_json()
+    token       = data.get("access_token")
+    evento_id   = data.get("evento_id")
+
+    if not token or not evento_id:
+        return erro("access_token e evento_id são obrigatórios")
+
+    try:
+        patch_body = {}
+        tz = "America/Sao_Paulo"
+
+        if data.get("titulo"):
+            patch_body["subject"] = data["titulo"]
+        if data.get("local") is not None:
+            patch_body["location"] = {"displayName": data["local"]}
+        if data.get("descricao") is not None:
+            patch_body["body"] = {"contentType": "text", "content": data["descricao"]}
+
+        # Para alterar horário precisamos de data + hora_inicio + hora_fim juntos
+        data_ev     = data.get("data")
+        hora_inicio = data.get("hora_inicio")
+        hora_fim    = data.get("hora_fim")
+        if data_ev and hora_inicio and hora_fim:
+            patch_body["start"] = {"dateTime": f"{data_ev}T{hora_inicio}:00", "timeZone": tz}
+            patch_body["end"]   = {"dateTime": f"{data_ev}T{hora_fim}:00",   "timeZone": tz}
+
+        if not patch_body:
+            return erro("Nenhum campo para atualizar.")
+
+        headers_req = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type":  "application/json"
+        }
+        resp = requests.patch(
+            f"{GRAPH_BASE}/me/events/{evento_id}",
+            headers=headers_req,
+            json=patch_body,
+            timeout=15
+        )
+        if not resp.ok:
+            try:    detalhe = resp.json()
+            except: detalhe = resp.text
+            raise Exception(f"Graph API erro {resp.status_code}: {detalhe}")
+
+        resultado = resp.json()
+        return jsonify({
+            "ok":       True,
+            "evento_id": resultado.get("id"),
+            "titulo":   resultado.get("subject"),
+            "inicio":   resultado.get("start", {}).get("dateTime"),
+            "fim":      resultado.get("end",   {}).get("dateTime"),
+        })
+
+    except requests.HTTPError as e:
+        return erro(f"Erro ao editar evento: {e.response.status_code} — {e.response.text}", 502)
+    except Exception as e:
+        return erro(str(e), 500)
+
+
+if __name__ == '__main__':
+    port = int(os.getenv('MCP_OUTLOOK_PORT', 5002))
+    app.run(host='0.0.0.0', port=port, debug=False)
