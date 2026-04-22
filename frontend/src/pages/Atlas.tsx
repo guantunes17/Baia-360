@@ -521,6 +521,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
   // Grupo 3
   const [painelConfig, setPainelConfig] = useState(false)
+  const usoSessaoRef = useRef<HTMLDivElement>(null)
   const [modo, setModo] = useState<string>(() => localStorage.getItem('atlas_modo') || 'Padrão')
   const [temperatura, setTemperatura] = useState<number>(() => parseFloat(localStorage.getItem('atlas_temp') || '1.0'))
   const [instrucoes, setInstrucoes] = useState<string>(() => localStorage.getItem('atlas_instrucoes') || '')
@@ -1723,7 +1724,11 @@ Tipos disponíveis:
                   <span style={{ fontSize: 14 }}>{gerandoBriefing ? '⏳' : '☀️'}</span>
                   <span>{gerandoBriefing ? 'Gerando briefing...' : 'Briefing do dia'}</span>
                 </button>
-                <button onClick={() => { setPainelConfig(v => !v); setMenuUsuarioAberto(false) }}
+                <button onClick={() => {
+                  setPainelConfig(true)
+                  setAtivaId(null)
+                  setMenuUsuarioAberto(false)
+                }}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
@@ -1731,7 +1736,12 @@ Tipos disponíveis:
                   <IconSettings />
                   <span>Configurações</span>
                 </button>
-                <button onClick={() => { setPainelConfig(v => !v); setMenuUsuarioAberto(false) }}
+                <button onClick={() => {
+                  setPainelConfig(true)
+                  setAtivaId(null)
+                  setMenuUsuarioAberto(false)
+                  setTimeout(() => usoSessaoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120)
+                }}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
@@ -1949,7 +1959,7 @@ Tipos disponíveis:
             </p>
           </div>
         </div>
-      ) : !telaProjetos && painelConfig && !telaHome ? (
+      ) : !telaProjetos && painelConfig ? (
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 10%', background: '#0f1117', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', paddingLeft: 10, borderLeft: '2px solid #4f8ef7', margin: 0 }}>Configurações do Atlas</h2>
 
@@ -2078,7 +2088,7 @@ Tipos disponíveis:
           </div>    
 
           {/* Contador de tokens */}
-          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+          <div ref={usoSessaoRef} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Uso da sessão atual</div>
             <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Estimativa de tokens usados nesta conversa.</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

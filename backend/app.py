@@ -1954,34 +1954,57 @@ def atlas_metricas():
     try:
         from sqlalchemy import func
 
-        # Total de conversas e mensagens
-        total_conversas = AtlasLog.query.count()
-        total_msgs = db.session.query(func.sum(AtlasLog.total_msgs)).scalar() or 0
+        conversas_all = AtlasConversa.query.all()
+
+        total_conversas = len(conversas_all)
+
+        # Conta mensagens reais de cada conversa
+        def contar_msgs(c):
+            try:
+                msgs = json.loads(c.msgs_json or '[]')
+                return len([m for m in msgs if m.get('role') in ('user', 'assistant')])
+            except Exception:
+                return 0
+
+        total_msgs = sum(contar_msgs(c) for c in conversas_all)
 
         # Conversas por usuário
-        por_usuario = (
-            db.session.query(User.nome, func.count(AtlasLog.id).label('conversas'), func.sum(AtlasLog.total_msgs).label('msgs'))
-            .join(AtlasLog, AtlasLog.usuario_id == User.id)
+        por_usuario_raw = (
+            db.session.query(User.nome, func.count(AtlasConversa.id).label('conversas'))
+            .join(AtlasConversa, AtlasConversa.usuario_id == User.id)
             .group_by(User.id, User.nome)
-            .order_by(func.count(AtlasLog.id).desc())
+            .order_by(func.count(AtlasConversa.id).desc())
             .all()
         )
+        por_usuario = []
+        for p in por_usuario_raw:
+            msgs_usuario = sum(
+                contar_msgs(c) for c in conversas_all
+                if c.usuario_id == next((u.id for u in User.query.filter_by(nome=p.nome).all()), None)
+            )
+            por_usuario.append({'nome': p.nome, 'conversas': p.conversas, 'msgs': msgs_usuario})
 
         # Conversa mais longa
-        mais_longa = AtlasLog.query.order_by(AtlasLog.total_msgs.desc()).first()
         mais_longa_dict = None
-        if mais_longa:
-            u = User.query.get(mais_longa.usuario_id)
-            mais_longa_dict = {
-                'usuario': u.nome if u else 'Desconhecido',
-                'primeira_msg': mais_longa.primeira_msg,
-                'total_msgs': mais_longa.total_msgs
-            }
+        if conversas_all:
+            mais_longa = max(conversas_all, key=contar_msgs)
+            n_msgs = contar_msgs(mais_longa)
+            if n_msgs > 0:
+                u = User.query.get(mais_longa.usuario_id)
+                try:
+                    primeira = next((m.get('text','') for m in json.loads(mais_longa.msgs_json or '[]') if m.get('role') == 'user'), '')
+                except Exception:
+                    primeira = ''
+                mais_longa_dict = {
+                    'usuario': u.nome if u else 'Desconhecido',
+                    'primeira_msg': primeira[:100],
+                    'total_msgs': n_msgs
+                }
 
         return jsonify({
             'total_conversas': total_conversas,
-            'total_msgs': int(total_msgs),
-            'por_usuario': [{'nome': p.nome, 'conversas': p.conversas, 'msgs': int(p.msgs or 0)} for p in por_usuario],
+            'total_msgs': total_msgs,
+            'por_usuario': por_usuario,
             'mais_longa': mais_longa_dict
         }), 200
 
