@@ -2016,8 +2016,6 @@ def atlas_briefing():
         tz_br    = ZoneInfo('America/Sao_Paulo')
         agora_br = datetime.now(tz_br)
         hoje     = agora_br.strftime('%Y-%m-%d')
-        inicio   = f'{hoje}T00:00:00'
-        amanha   = f'{hoje}T23:59:59'
 
         agenda_data, emails_data = None, None
         erros = []
@@ -2027,8 +2025,8 @@ def atlas_briefing():
             try:
                 agenda_data = _chamar_mcp('get_agenda', {
                     'access_token': access_token,
-                    'data_inicio':  inicio,
-                    'data_fim':     amanha
+                    'data_inicio':  hoje,
+                    'data_fim':     hoje
                 })
             except Exception as e:
                 erros.append(f'agenda: {e}')
