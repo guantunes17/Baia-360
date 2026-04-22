@@ -2012,9 +2012,12 @@ def atlas_briefing():
     resultado['outlook_conectado'] = outlook_conectado
 
     if outlook_conectado:
-        hoje     = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        amanha   = (datetime.now(timezone.utc).replace(hour=23, minute=59)).strftime('%Y-%m-%dT%H:%M:%S')
+        from zoneinfo import ZoneInfo
+        tz_br    = ZoneInfo('America/Sao_Paulo')
+        agora_br = datetime.now(tz_br)
+        hoje     = agora_br.strftime('%Y-%m-%d')
         inicio   = f'{hoje}T00:00:00'
+        amanha   = f'{hoje}T23:59:59'
 
         agenda_data, emails_data = None, None
         erros = []

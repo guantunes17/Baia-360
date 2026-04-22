@@ -28,12 +28,14 @@ GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def graph_get(access_token: str, endpoint: str, params: dict = None):
+def graph_get(access_token: str, endpoint: str, params: dict = None, extra_headers: dict = None):
     """Faz GET no Microsoft Graph com o token do usuário."""
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
+    if extra_headers:
+        headers.update(extra_headers)
     resp = requests.get(f"{GRAPH_BASE}{endpoint}", headers=headers, params=params)
     if not resp.ok:
         try:
@@ -93,13 +95,18 @@ def get_agenda():
             "$orderby":      "start/dateTime",
             "$top":          50
         }
-        resultado = graph_get(token, "/me/calendarView", params=params)
+        # Prefer: outlook.timezone força o Graph a retornar os horários
+        # no fuso do usuário (America/Sao_Paulo), evitando conversões erradas no cliente
+        extra_headers = {"Prefer": 'outlook.timezone="America/Sao_Paulo"'}
+        resultado = graph_get(token, "/me/calendarView", params=params, extra_headers=extra_headers)
         eventos = []
         for ev in resultado.get("value", []):
+            inicio_raw = ev.get("start", {}).get("dateTime", "")
+            fim_raw    = ev.get("end",   {}).get("dateTime", "")
             eventos.append({
                 "titulo":      ev.get("subject", "Sem título"),
-                "inicio":      ev.get("start", {}).get("dateTime", ""),
-                "fim":         ev.get("end", {}).get("dateTime", ""),
+                "inicio":      inicio_raw,
+                "fim":         fim_raw,
                 "local":       ev.get("location", {}).get("displayName", ""),
                 "organizador": ev.get("organizer", {}).get("emailAddress", {}).get("name", ""),
                 "dia_inteiro": ev.get("isAllDay", False),

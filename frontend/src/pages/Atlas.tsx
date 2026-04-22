@@ -1061,8 +1061,10 @@ Tipos disponíveis:
       if (data.outlook_conectado && data.agenda?.eventos?.length > 0) {
         linhas.push('## 📅 Agenda de hoje')
         data.agenda.eventos.forEach((ev: any) => {
-          const hora = ev.inicio ? new Date(ev.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
-          linhas.push(`- **${hora}** — ${ev.assunto || ev.subject || 'Sem título'}`)
+          const inicioStr = ev.inicio ? ev.inicio.substring(0, 19) : ''
+          const hora = inicioStr ? new Date(inicioStr).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
+          const titulo = ev.titulo || ev.assunto || ev.subject || 'Sem título'
+          linhas.push(`- **${hora}** — ${titulo}`)
         })
       } else if (data.outlook_conectado) {
         linhas.push('## 📅 Agenda de hoje')
