@@ -19,13 +19,13 @@ interface Evento {
 }
 
 interface EventoLocal {
-  date:  string  // YYYY-MM-DD
-  time:  string  // HH:MM
-  title: string
-  loc:   string
-  color: 'blue' | 'green' | 'purple'
+  date:    string
+  time:    string
+  title:   string
+  loc:     string
+  color:   'blue' | 'green' | 'purple'
   hasLink: boolean
-  raw:   Evento
+  raw:     Evento
 }
 
 interface NovoEvento {
@@ -61,10 +61,7 @@ function toDateStr(date: Date): string {
 function formatarHoraBRT(isoStr: string): string {
   if (!isoStr) return ''
   try {
-    // Com o header Prefer do Graph, o datetime vem sem 'Z' (já em BRT)
-    // Truncamos para 19 chars para remover microsegundos
-    const limpo = isoStr.substring(0, 19)
-    const d = new Date(limpo)
+    const d = new Date(isoStr.substring(0, 19))
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   } catch { return '' }
 }
@@ -72,8 +69,7 @@ function formatarHoraBRT(isoStr: string): string {
 function formatarDataHora(isoStr: string): string {
   if (!isoStr) return ''
   try {
-    const limpo = isoStr.substring(0, 19)
-    const d = new Date(limpo)
+    const d = new Date(isoStr.substring(0, 19))
     return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) +
            ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   } catch { return isoStr }
@@ -83,13 +79,11 @@ function corEvento(idx: number): 'blue' | 'green' | 'purple' {
   return (['blue', 'green', 'purple'] as const)[idx % 3]
 }
 
-// Extrai data YYYY-MM-DD de string ISO sem 'Z' (já em BRT)
 function extrairData(isoStr: string): string {
   if (!isoStr) return ''
   return isoStr.substring(0, 10)
 }
 
-// Extrai HH:MM de string ISO sem 'Z'
 function extrairHora(isoStr: string): string {
   if (!isoStr) return ''
   return isoStr.substring(11, 16)
@@ -117,6 +111,11 @@ const btnSaveStyle: React.CSSProperties = {
 const btnDangerStyle: React.CSSProperties = {
   background: '#ef444415', border: '0.5px solid #ef444433', borderRadius: 8,
   color: '#ef4444', padding: '7px 16px', fontSize: 13, cursor: 'pointer'
+}
+const navBtnStyle: React.CSSProperties = {
+  background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 8,
+  color: '#8892a4', width: 28, height: 28, display: 'flex', alignItems: 'center',
+  justifyContent: 'center', cursor: 'pointer', fontSize: 16
 }
 
 // ── Modal: Novo Evento ────────────────────────────────────────────────────────
@@ -203,9 +202,6 @@ function ModalDetalheEvento({
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const temLinkReuniao = !!ev.link_reuniao
-  const temLinkWeb     = !!ev.link_web
-
   return (
     <div onClick={onFechar} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 12, padding: 24, width: 400, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto' }}>
@@ -221,7 +217,6 @@ function ModalDetalheEvento({
           <button onClick={onFechar} style={{ background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 2, flexShrink: 0 }}>✕</button>
         </div>
 
-        {/* Linha divisória */}
         <div style={{ height: '0.5px', background: '#2d3148', marginBottom: 16 }} />
 
         {/* Horário */}
@@ -247,8 +242,8 @@ function ModalDetalheEvento({
           </div>
         )}
 
-        {/* Link de reunião online */}
-        {temLinkReuniao && (
+        {/* Link reunião Teams */}
+        {ev.link_reuniao && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <span style={{ fontSize: 15 }}>🎥</span>
             <a
@@ -256,16 +251,16 @@ function ModalDetalheEvento({
               target="_blank"
               rel="noopener noreferrer"
               style={{ fontSize: 13, color: '#4f8ef7', textDecoration: 'none', fontWeight: 500 }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.textDecoration = 'underline'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.textDecoration = 'none'}
+              onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.textDecoration = 'underline'}
+              onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.textDecoration = 'none'}
             >
               Entrar na reunião Teams
             </a>
           </div>
         )}
 
-        {/* Link web do evento no Outlook */}
-        {temLinkWeb && (
+        {/* Link web Outlook */}
+        {ev.link_web && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <span style={{ fontSize: 15 }}>🔗</span>
             <a
@@ -273,15 +268,15 @@ function ModalDetalheEvento({
               target="_blank"
               rel="noopener noreferrer"
               style={{ fontSize: 13, color: '#8892a4', textDecoration: 'none' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e2e8f0'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+              onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = '#e2e8f0'}
+              onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = '#8892a4'}
             >
               Abrir no Outlook Web
             </a>
           </div>
         )}
 
-        {/* Descrição / corpo */}
+        {/* Descrição */}
         {ev.resumo && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 10, color: '#8892a4', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Descrição</div>
@@ -388,27 +383,107 @@ function ModalEditarEvento({
   )
 }
 
-// ── Componente Principal ───────────────────────────────────────────────────────
+// ── Sub-componente de célula do dia ───────────────────────────────────────────
+
+function DiaCell({
+  num, outro, eventos, selecionado, hoje, onClick, carregando, onDoubleClickEvento
+}: {
+  num: number
+  outro: boolean
+  eventos: EventoLocal[]
+  selecionado: boolean
+  hoje: boolean
+  onClick: () => void
+  carregando: boolean
+  onDoubleClickEvento: (ev: Evento) => void
+}) {
+  const COR: Record<string, string> = { blue: '#4f8ef7', green: '#10b981', purple: '#a78bfa' }
+  const BG:  Record<string, string> = { blue: '#4f8ef722', green: '#10b98122', purple: '#7c3aed22' }
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        background: selecionado ? '#4f8ef711' : hoje ? '#1a1d27' : outro ? '#0c0e15' : '#13161f',
+        minHeight:  90,
+        padding:    8,
+        cursor:     outro ? 'default' : 'pointer',
+        opacity:    outro ? 0.4 : 1,
+        outline:    selecionado ? '1px solid #4f8ef744' : 'none',
+        transition: 'background 0.1s',
+        position:   'relative'
+      }}
+      onMouseEnter={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = selecionado ? '#4f8ef718' : '#1a1d27' }}
+      onMouseLeave={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = selecionado ? '#4f8ef711' : hoje ? '#1a1d27' : '#13161f' }}
+    >
+      {/* Número do dia */}
+      <div style={{
+        width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 12, marginBottom: 4, borderRadius: '50%',
+        background: hoje ? '#4f8ef7' : 'transparent',
+        color:      hoje ? 'white' : '#8892a4',
+        fontWeight: hoje ? 500 : 400
+      }}>
+        {num}
+      </div>
+
+      {/* Pílulas de evento */}
+      {!carregando && eventos.slice(0, 2).map((ev, i) => (
+        <div
+          key={i}
+          onDoubleClick={e => { e.stopPropagation(); onDoubleClickEvento(ev.raw) }}
+          style={{
+            fontSize: 10, borderRadius: 4, marginBottom: 2,
+            background: BG[ev.color], color: COR[ev.color],
+            borderLeft: `2px solid ${COR[ev.color]}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            overflow: 'hidden'
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '2px 0 2px 5px', flex: 1 }}>
+            {ev.time ? `${ev.time} ${ev.title}` : ev.title}
+          </span>
+          {ev.hasLink && (
+            <a
+              href={ev.raw.link_reuniao}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              title="Entrar na reunião"
+              style={{ flexShrink: 0, padding: '2px 5px', color: COR[ev.color], opacity: 0.8, textDecoration: 'none', fontSize: 10 }}
+            >
+              ▶
+            </a>
+          )}
+        </div>
+      ))}
+      {!carregando && eventos.length > 2 && (
+        <div style={{ fontSize: 10, color: '#8892a4', padding: '1px 5px' }}>+{eventos.length-2} mais</div>
+      )}
+    </div>
+  )
+}
+
+// ── Componente Principal ──────────────────────────────────────────────────────
 
 export function Agenda() {
   const hoje = new Date()
-  const [mesCurrent, setMesCurrent]     = useState(new Date(hoje.getFullYear(), hoje.getMonth(), 1))
+  const [mesCurrent, setMesCurrent]         = useState(new Date(hoje.getFullYear(), hoje.getMonth(), 1))
   const [diaSelecionado, setDiaSelecionado] = useState(toDateStr(hoje))
-  const [eventos, setEventos]           = useState<EventoLocal[]>([])
-  const [conectado, setConectado]       = useState<boolean | null>(null)
-  const [carregando, setCarregando]     = useState(false)
-  const [modalNovo, setModalNovo]       = useState(false)
+  const [eventos, setEventos]               = useState<EventoLocal[]>([])
+  const [conectado, setConectado]           = useState<boolean | null>(null)
+  const [carregando, setCarregando]         = useState(false)
+  const [modalNovo, setModalNovo]           = useState(false)
   const [salvandoEvento, setSalvandoEvento] = useState(false)
-  const [toastMsg, setToastMsg]         = useState<string | null>(null)
-  const [erroMsg, setErroMsg]           = useState<string | null>(null)
-  const [eventoDetalhe, setEventoDetalhe] = useState<Evento | null>(null)
-  const [eventoEditar, setEventoEditar] = useState<Evento | null>(null)
-  const [deletando, setDeletando]       = useState(false)
+  const [toastMsg, setToastMsg]             = useState<string | null>(null)
+  const [erroMsg, setErroMsg]               = useState<string | null>(null)
+  const [eventoDetalhe, setEventoDetalhe]   = useState<Evento | null>(null)
+  const [eventoEditar, setEventoEditar]     = useState<Evento | null>(null)
+  const [deletando, setDeletando]           = useState(false)
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
 
   const toast = (msg: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(null), 4000) }
 
-  // Verifica conexão Outlook
   useEffect(() => {
     fetch(`${API}/api/oauth/outlook/status`, { headers: headers() })
       .then(r => r.json())
@@ -416,7 +491,6 @@ export function Agenda() {
       .catch(() => setConectado(false))
   }, [])
 
-  // Carrega eventos do mês
   const carregarEventos = useCallback(async () => {
     if (!conectado) return
     setCarregando(true)
@@ -432,20 +506,15 @@ export function Agenda() {
 
       if (!res.ok) { setErroMsg(data.erro || 'Erro ao carregar agenda.'); return }
 
-      const evsMapeados: EventoLocal[] = (data.eventos || []).map((ev: Evento, i: number) => {
-        const dateKey = ev.dia_inteiro
-          ? ev.inicio.slice(0, 10)
-          : extrairData(ev.inicio)
-        return {
-          date:    dateKey,
-          time:    ev.dia_inteiro ? '' : formatarHoraBRT(ev.inicio),
-          title:   ev.titulo,
-          loc:     ev.local,
-          color:   corEvento(i),
-          hasLink: !!ev.link_reuniao,
-          raw:     ev
-        }
-      })
+      const evsMapeados: EventoLocal[] = (data.eventos || []).map((ev: Evento, i: number) => ({
+        date:    ev.dia_inteiro ? ev.inicio.slice(0, 10) : extrairData(ev.inicio),
+        time:    ev.dia_inteiro ? '' : formatarHoraBRT(ev.inicio),
+        title:   ev.titulo,
+        loc:     ev.local,
+        color:   corEvento(i),
+        hasLink: !!ev.link_reuniao,
+        raw:     ev
+      }))
       setEventos(evsMapeados)
     } catch {
       setErroMsg('Não foi possível carregar os eventos.')
@@ -456,14 +525,13 @@ export function Agenda() {
 
   useEffect(() => { carregarEventos() }, [carregarEventos])
 
-  // Criar evento
   const salvarEvento = async (ev: NovoEvento) => {
     setSalvandoEvento(true)
     try {
       const res  = await fetch(`${API}/api/outlook/evento`, {
-        method: 'POST',
+        method:  'POST',
         headers: { ...headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(ev)
+        body:    JSON.stringify(ev)
       })
       const data = await res.json()
       if (!res.ok) { setErroMsg(data.erro || 'Erro ao criar evento.'); return }
@@ -477,13 +545,12 @@ export function Agenda() {
     }
   }
 
-  // Deletar evento
   const deletarEvento = async () => {
     if (!eventoDetalhe) return
     setDeletando(true)
     try {
       const res = await fetch(`${API}/api/outlook/evento/${encodeURIComponent(eventoDetalhe.evento_id)}`, {
-        method: 'DELETE',
+        method:  'DELETE',
         headers: headers()
       })
       if (!res.ok) {
@@ -501,15 +568,14 @@ export function Agenda() {
     }
   }
 
-  // Editar evento
   const salvarEdicao = async (dados: EditarEvento) => {
     if (!eventoEditar) return
     setSalvandoEdicao(true)
     try {
       const res = await fetch(`${API}/api/outlook/evento/${encodeURIComponent(eventoEditar.evento_id)}`, {
-        method: 'PATCH',
+        method:  'PATCH',
         headers: { ...headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(dados)
+        body:    JSON.stringify(dados)
       })
       const data = await res.json()
       if (!res.ok) { setErroMsg(data.erro || 'Erro ao editar evento.'); return }
@@ -524,8 +590,6 @@ export function Agenda() {
     }
   }
 
-  // ── Render do grid ────────────────────────────────────────────────────────────
-
   const renderGrid = () => {
     const ano       = mesCurrent.getFullYear()
     const mes       = mesCurrent.getMonth()
@@ -536,25 +600,31 @@ export function Agenda() {
     const cells: React.ReactNode[] = []
 
     for (let i = 0; i < first; i++) {
-      const d  = prevTotal - first + 1 + i
-      const ds = `${ano}-${pad(mes)}-${pad(d)}`
-      cells.push(<DiaCell key={`prev-${i}`} num={d} dateStr={ds} outro carregando={carregando}
-        eventos={[]} selecionado={false} hoje={false} onClick={() => {}} />)
+      const d = prevTotal - first + 1 + i
+      cells.push(
+        <DiaCell key={`prev-${i}`} num={d} outro carregando={carregando}
+          eventos={[]} selecionado={false} hoje={false}
+          onClick={() => {}} onDoubleClickEvento={() => {}} />
+      )
     }
 
     for (let d = 1; d <= total; d++) {
       const ds  = `${ano}-${pad(mes+1)}-${pad(d)}`
       const evs = eventos.filter(e => e.date === ds)
-      cells.push(<DiaCell key={ds} num={d} dateStr={ds} outro={false} carregando={carregando}
-        eventos={evs} selecionado={ds === diaSelecionado} hoje={ds === todayStr}
-        onClick={() => setDiaSelecionado(ds)} />)
+      cells.push(
+        <DiaCell key={ds} num={d} outro={false} carregando={carregando}
+          eventos={evs} selecionado={ds === diaSelecionado} hoje={ds === todayStr}
+          onClick={() => setDiaSelecionado(ds)} onDoubleClickEvento={setEventoDetalhe} />
+      )
     }
 
     const restante = 42 - first - total
     for (let d = 1; d <= restante; d++) {
-      const ds = `${ano}-${pad(mes+2)}-${pad(d)}`
-      cells.push(<DiaCell key={`next-${d}`} num={d} dateStr={ds} outro carregando={carregando}
-        eventos={[]} selecionado={false} hoje={false} onClick={() => {}} />)
+      cells.push(
+        <DiaCell key={`next-${d}`} num={d} outro carregando={carregando}
+          eventos={[]} selecionado={false} hoje={false}
+          onClick={() => {}} onDoubleClickEvento={() => {}} />
+      )
     }
     return cells
   }
@@ -634,7 +704,7 @@ export function Agenda() {
         </div>
       )}
 
-      {/* Grid */}
+      {/* Grid do calendário */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 1 }}>
         {DIAS_SEMANA.map(d => (
           <div key={d} style={{ textAlign: 'center', fontSize: 11, color: '#8892a4', padding: '6px 0', fontWeight: 500, letterSpacing: '0.04em' }}>{d}</div>
@@ -667,24 +737,30 @@ export function Agenda() {
               <div
                 key={i}
                 onClick={() => setEventoDetalhe(ev.raw)}
-                style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 8px', borderBottom: i < eventosDia.length-1 ? '0.5px solid #2d3148' : 'none', cursor: 'pointer', borderRadius: 6, transition: 'background 0.1s' }}
+                style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 8px', borderBottom: i < eventosDia.length-1 ? '0.5px solid #2d3148' : 'none', cursor: 'pointer', borderRadius: 6, transition: 'background 0.1s' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0f1117'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
               >
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: cor, marginTop: 5, flexShrink: 0 }} />
-                <div style={{ fontSize: 11, color: '#8892a4', minWidth: 44, marginTop: 1 }}>{ev.time || 'Dia todo'}</div>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: cor, flexShrink: 0 }} />
+                <div style={{ fontSize: 11, color: '#8892a4', minWidth: 44 }}>{ev.time || 'Dia todo'}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, color: '#e2e8f0' }}>{ev.title}</div>
                   {ev.loc && <div style={{ fontSize: 11, color: '#8892a4', marginTop: 2 }}>{ev.loc}</div>}
                 </div>
-                {/* Indicador de reunião online */}
                 {ev.hasLink && (
-                  <div style={{ fontSize: 10, color: '#4f8ef7', background: '#4f8ef715', border: '0.5px solid #4f8ef733', borderRadius: 4, padding: '2px 6px', flexShrink: 0, alignSelf: 'center' }}>
-                    Teams
-                  </div>
+                  <a
+                    href={ev.raw.link_reuniao}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    style={{ fontSize: 10, color: '#4f8ef7', background: '#4f8ef715', border: '0.5px solid #4f8ef733', borderRadius: 4, padding: '3px 8px', flexShrink: 0, textDecoration: 'none', fontWeight: 500 }}
+                    onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = '#4f8ef730'}
+                    onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = '#4f8ef715'}
+                  >
+                    ▶ Entrar
+                  </a>
                 )}
-                {/* Seta indicando que é clicável */}
-                <div style={{ color: '#2d3148', fontSize: 12, alignSelf: 'center', flexShrink: 0 }}>›</div>
+                <div style={{ color: '#2d3148', fontSize: 12, flexShrink: 0 }}>›</div>
               </div>
             )
           })
@@ -692,68 +768,4 @@ export function Agenda() {
       </div>
     </div>
   )
-}
-
-// ── Sub-componente de célula do dia ───────────────────────────────────────────
-
-function DiaCell({ num, dateStr, outro, eventos, selecionado, hoje, onClick, carregando }: {
-  num: number
-  dateStr: string
-  outro: boolean
-  eventos: EventoLocal[]
-  selecionado: boolean
-  hoje: boolean
-  onClick: () => void
-  carregando: boolean
-}) {
-  const COR: Record<string, string> = { blue: '#4f8ef7', green: '#10b981', purple: '#a78bfa' }
-  const BG:  Record<string, string> = { blue: '#4f8ef722', green: '#10b98122', purple: '#7c3aed22' }
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        background:  selecionado ? '#4f8ef711' : hoje ? '#1a1d27' : outro ? '#0c0e15' : '#13161f',
-        minHeight:   90,
-        padding:     8,
-        cursor:      outro ? 'default' : 'pointer',
-        opacity:     outro ? 0.4 : 1,
-        outline:     selecionado ? '1px solid #4f8ef744' : 'none',
-        transition:  'background 0.1s',
-        position:    'relative'
-      }}
-      onMouseEnter={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = selecionado ? '#4f8ef718' : '#1a1d27' }}
-      onMouseLeave={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = selecionado ? '#4f8ef711' : hoje ? '#1a1d27' : '#13161f' }}
-    >
-      <div style={{
-        width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 12, marginBottom: 4, borderRadius: '50%',
-        background: hoje ? '#4f8ef7' : 'transparent',
-        color:      hoje ? 'white' : '#8892a4',
-        fontWeight: hoje ? 500 : 400
-      }}>
-        {num}
-      </div>
-
-      {!carregando && eventos.slice(0, 2).map((ev, i) => (
-        <div key={i} style={{
-          fontSize: 10, padding: '2px 5px', borderRadius: 4, marginBottom: 2,
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          background: BG[ev.color], color: COR[ev.color],
-          borderLeft: `2px solid ${COR[ev.color]}`
-        }}>
-          {ev.time ? `${ev.time} ${ev.title}` : ev.title}
-        </div>
-      ))}
-      {!carregando && eventos.length > 2 && (
-        <div style={{ fontSize: 10, color: '#8892a4', padding: '1px 5px' }}>+{eventos.length-2} mais</div>
-      )}
-    </div>
-  )
-}
-
-const navBtnStyle: React.CSSProperties = {
-  background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 8,
-  color: '#8892a4', width: 28, height: 28, display: 'flex', alignItems: 'center',
-  justifyContent: 'center', cursor: 'pointer', fontSize: 16
 }
