@@ -1,13 +1,15 @@
 import importlib
 import importlib.util
+import json
+import os
+import re
 import tempfile
 import threading
+import traceback
 import uuid
-import pandas as pd
 import msal
+import pandas as pd
 import requests as http_requests
-import os
-import json
 
 def _deletar_temp(path: str):
     """Remove arquivo temporário com tolerância ao PermissionError do Windows."""
@@ -23,17 +25,21 @@ def _deletar_temp(path: str):
         except Exception:
             return
 
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, decode_token
-from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
+from flask_jwt_extended import (
+    JWTManager, create_access_token, jwt_required,
+    get_jwt_identity, decode_token, set_access_cookies, unset_jwt_cookies
+)
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from dotenv import load_dotenv
-from datetime import datetime, timedelta
-import os
+from flask_sqlalchemy import SQLAlchemy
+from openai import OpenAI
+from sqlalchemy import func
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 from pathlib import Path
 _env_path = Path(__file__).resolve().parent / '.env'
@@ -504,7 +510,6 @@ class RelatorioGerado(db.Model):
     usuario = db.relationship('User', backref='relatorios')
 
     def kpis(self):
-        import json
         return json.loads(self.kpis_json) if self.kpis_json else {}
 
     def to_dict(self):
@@ -527,8 +532,6 @@ def health():
 @app.route('/api/auth/login', methods=['POST'])
 @limiter.limit("10 per minute")
 def login():
-    from flask import request, jsonify
-    from flask_jwt_extended import set_access_cookies
     data  = request.get_json()
     email = data.get('email', '').strip().lower()
     senha = data.get('senha', '')
@@ -552,7 +555,6 @@ def login():
 
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
-    from flask_jwt_extended import unset_jwt_cookies
     resp = jsonify({'ok': True})
     unset_jwt_cookies(resp)
     return resp, 200
@@ -576,7 +578,6 @@ def cadastro():
     Rota pública — qualquer pessoa pode criar uma conta.
     Perfil sempre 'usuario', ativo=True imediatamente.
     """
-    from flask import request, jsonify
     data  = request.get_json()
     nome  = data.get('nome', '').strip()
     email = data.get('email', '').strip().lower()
@@ -584,16 +585,15 @@ def cadastro():
     senha_confirmacao = data.get('senha_confirmacao', '')
 
     # Validações
-    import re as _re
     if not all([nome, email, senha, senha_confirmacao]):
         return jsonify({'erro': 'Todos os campos são obrigatórios'}), 400
     if len(nome) < 2:
         return jsonify({'erro': 'Nome deve ter pelo menos 2 caracteres'}), 400
     if len(senha) < 8:
         return jsonify({'erro': 'A senha deve ter pelo menos 8 caracteres'}), 400
-    if not _re.search(r'[A-Z]', senha):
+    if not re.search(r'[A-Z]', senha):
         return jsonify({'erro': 'A senha deve conter pelo menos 1 letra maiúscula'}), 400
-    if not _re.search(r'[^a-zA-Z0-9]', senha):
+    if not re.search(r'[^a-zA-Z0-9]', senha):
         return jsonify({'erro': 'A senha deve conter pelo menos 1 caractere especial (!@#$%...)'}), 400
     if senha != senha_confirmacao:
         return jsonify({'erro': 'As senhas não coincidem'}), 400
@@ -610,7 +610,6 @@ def cadastro():
 @app.route('/api/auth/usuarios', methods=['GET'])
 @jwt_required()
 def listar_usuarios():
-    from flask import jsonify
     admin = User.query.get(int(get_jwt_identity()))
     if admin.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
@@ -620,7 +619,6 @@ def listar_usuarios():
 @app.route('/api/auth/usuarios', methods=['POST'])
 @jwt_required()
 def criar_usuario():
-    from flask import request, jsonify
     admin = User.query.get(int(get_jwt_identity()))
     if admin.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
@@ -631,12 +629,11 @@ def criar_usuario():
         return jsonify({'erro': 'Email já cadastrado'}), 409
 
     senha_nova = data.get('senha', '')
-    import re as _re2
     if len(senha_nova) < 8:
         return jsonify({'erro': 'A senha deve ter pelo menos 8 caracteres'}), 400
-    if not _re2.search(r'[A-Z]', senha_nova):
+    if not re.search(r'[A-Z]', senha_nova):
         return jsonify({'erro': 'A senha deve conter pelo menos 1 letra maiúscula'}), 400
-    if not _re2.search(r'[^a-zA-Z0-9]', senha_nova):
+    if not re.search(r'[^a-zA-Z0-9]', senha_nova):
         return jsonify({'erro': 'A senha deve conter pelo menos 1 caractere especial (!@#$%...)'}), 400
 
     novo = User(nome=data.get('nome',''), email=email, perfil=data.get('perfil','usuario'))
@@ -668,7 +665,6 @@ def seed():
 @app.route('/api/auth/usuarios/<int:user_id>', methods=['GET'])
 @jwt_required()
 def get_usuario(user_id):
-    from flask import jsonify
     admin = User.query.get(int(get_jwt_identity()))
     if admin.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
@@ -681,7 +677,6 @@ def get_usuario(user_id):
 @app.route('/api/auth/usuarios/<int:user_id>', methods=['PUT'])
 @jwt_required()
 def atualizar_usuario(user_id):
-    from flask import request, jsonify
     admin = User.query.get(int(get_jwt_identity()))
     if admin.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
@@ -710,7 +705,6 @@ def atualizar_usuario(user_id):
 @app.route('/api/auth/usuarios/<int:user_id>/senha', methods=['PUT'])
 @jwt_required()
 def redefinir_senha(user_id):
-    from flask import request, jsonify
     admin = User.query.get(int(get_jwt_identity()))
     if admin.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
@@ -731,7 +725,6 @@ def redefinir_senha(user_id):
 @app.route('/api/auth/usuarios/<int:user_id>', methods=['DELETE'])
 @jwt_required()
 def deletar_usuario(user_id):
-    from flask import jsonify
     admin = User.query.get(int(get_jwt_identity()))
     if admin.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
@@ -886,14 +879,10 @@ def _verificar_permissao_modulo(usuario_id: int, modulo: str) -> bool:
     modulos = json.loads(perm.modulos_json)
     return modulo in modulos
 
-import tempfile, threading, uuid
-from flask import send_file
-
 # Dicionário para armazenar progresso dos jobs
 jobs = {}
 
 # ── Extratores de KPIs ────────────────────────────────────────────────────────
-import json
 
 def _extrair_kpis_pedidos(caminho_xlsx):
     try:
@@ -1060,7 +1049,6 @@ def processar_fretes_route():
 @app.route('/api/modulos/status/<job_id>', methods=['GET'])
 @jwt_required()
 def status_job(job_id):
-    from flask import jsonify
     job = jobs.get(job_id)
     if not job:
         return jsonify({'erro': 'Job não encontrado'}), 404
@@ -1169,14 +1157,13 @@ def processar_pedidos_route():
     arquivo = request.files['arquivo']
     mes_ref = request.form.get('mes_ref', '').strip() or None
 
-    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+    nome_seguro = secure_filename(arquivo.filename or 'arquivo')
+    if not nome_seguro.lower().endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
 
     usuario_id = int(get_jwt_identity())
     if not _verificar_permissao_modulo(usuario_id, 'pedidos'):
         return jsonify({'erro': 'Acesso negado'}), 403
-
-    secure_filename(arquivo.filename)
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
@@ -1241,14 +1228,13 @@ def processar_recebimentos_route():
     if not mes_ref:
         return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
 
-    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+    nome_seguro = secure_filename(arquivo.filename or 'arquivo')
+    if not nome_seguro.lower().endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
 
     usuario_id = int(get_jwt_identity())
     if not _verificar_permissao_modulo(usuario_id, 'recebimentos'):
         return jsonify({'erro': 'Acesso negado'}), 403
-
-    secure_filename(arquivo.filename)
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
@@ -1321,14 +1307,13 @@ def processar_cap_operacional_route():
     if not mes_ref:
         return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
 
-    if not arquivo.filename.endswith('.pdf'):
+    nome_seguro = secure_filename(arquivo.filename or 'arquivo')
+    if not nome_seguro.lower().endswith('.pdf'):
         return jsonify({'erro': 'Arquivo deve ser .pdf'}), 400
 
     usuario_id = int(get_jwt_identity())
     if not _verificar_permissao_modulo(usuario_id, 'cap_operacional'):
         return jsonify({'erro': 'Acesso negado'}), 403
-
-    secure_filename(arquivo.filename)
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
@@ -1381,7 +1366,6 @@ def processar_cap_operacional_route():
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
-import json
 
 DB_ESTOQUE_PATH_WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'estoque_db.json')
 os.makedirs(os.path.dirname(DB_ESTOQUE_PATH_WEB), exist_ok=True)
@@ -1393,15 +1377,15 @@ def estoque_db_info():
         if not os.path.exists(DB_ESTOQUE_PATH_WEB):
             return jsonify({'total_skus': 0, 'ultima': None, 'clientes': []}), 200
         with open(DB_ESTOQUE_PATH_WEB, 'r', encoding='utf-8') as f:
-            db = json.load(f)
-        total  = sum(len(skus) for skus in db.values())
+            estoque_data = json.load(f)
+        total  = sum(len(skus) for skus in estoque_data.values())
         datas  = []
-        for skus in db.values():
+        for skus in estoque_data.values():
             for sku in skus.values():
                 if sku.get('atualizado'):
                     datas.append(sku['atualizado'])
         ultima = max(datas) if datas else None
-        return jsonify({'total_skus': total, 'ultima': ultima, 'clientes': list(db.keys())}), 200
+        return jsonify({'total_skus': total, 'ultima': ultima, 'clientes': list(estoque_data.keys())}), 200
     except Exception as e:
         return jsonify({'erro': str(e)}), 500
 
@@ -1429,10 +1413,10 @@ def estoque_db_carga():
         spec.loader.exec_module(mod)
 
         mod.DB_ESTOQUE_PATH = DB_ESTOQUE_PATH_WEB
-        db = mod._carregar_estoque_xlsx(tmp.name, log)
-        if db:
-            mod._salvar_db_estoque(db)
-            total = sum(len(s) for s in db.values())
+        estoque_data = mod._carregar_estoque_xlsx(tmp.name, log)
+        if estoque_data:
+            mod._salvar_db_estoque(estoque_data)
+            total = sum(len(s) for s in estoque_data.values())
             return jsonify({'msg': f'Carga inicial concluída — {total} SKUs', 'logs': logs}), 200
         return jsonify({'erro': 'Falha na carga', 'logs': logs}), 400
     except Exception as e:
@@ -1493,7 +1477,7 @@ def processar_estoque_route():
     if not _verificar_permissao_modulo(usuario_id, 'estoque'):
         return jsonify({'erro': 'Acesso negado'}), 403
 
-    secure_filename(arquivo_pico.filename)
+    _nome_pico = secure_filename(arquivo_pico.filename or 'arquivo')
     tmp_pico  = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo_pico.save(tmp_pico.name)
     tmp_pico.close()
@@ -1568,14 +1552,13 @@ def processar_fat_dist_route():
     if not mes_ref:
         return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
 
-    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+    nome_seguro = secure_filename(arquivo.filename or 'arquivo')
+    if not nome_seguro.lower().endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
 
     usuario_id = int(get_jwt_identity())
     if not _verificar_permissao_modulo(usuario_id, 'fat_dist'):
         return jsonify({'erro': 'Acesso negado'}), 403
-
-    secure_filename(arquivo.filename)
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
@@ -1647,8 +1630,8 @@ def processar_fat_arm_route():
     if not _verificar_permissao_modulo(usuario_id, 'fat_arm'):
         return jsonify({'erro': 'Acesso negado'}), 403
 
-    secure_filename(arquivo_mov.filename)
-    secure_filename(arquivo_volumes.filename)
+    _nome_mov = secure_filename(arquivo_mov.filename or 'arquivo')
+    _nome_vol = secure_filename(arquivo_volumes.filename or 'arquivo')
     tmp_mov = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo_mov.save(tmp_mov.name)
     tmp_mov.close()
@@ -1754,8 +1737,6 @@ def dashboard_resultados():
 @app.route('/api/dashboard', methods=['GET'])
 @jwt_required()
 def dashboard():
-    from sqlalchemy import func
-
     # Total por módulo
     por_modulo = db.session.query(
         RelatorioGerado.modulo,
@@ -1817,13 +1798,8 @@ def atualizar_perfil():
     db.session.commit()
     return jsonify(user.to_dict()), 200
 
-from openai import OpenAI
-import json
-
 def analisar_e_salvar_memorias(app_ctx, usuario_id: int, msgs: list):
     """Roda em background — analisa a conversa e atualiza memórias do usuário."""
-    import threading
-    
     # Gatilho: mínimo 6 mensagens do usuário
     msgs_usuario = [m for m in msgs if m.get('role') == 'user']
     if len(msgs_usuario) < 6:
@@ -2110,7 +2086,7 @@ def atlas_chat():
                         yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
 
             except Exception as e:
-                import traceback; traceback.print_exc()
+                traceback.print_exc()
                 msg = str(e)
                 if '429' in msg or 'quota' in msg.lower() or 'rate_limit' in msg.lower():
                     yield f"data: {json.dumps({'type': 'error', 'message': 'cota_openai'})}\n\n"
@@ -2143,7 +2119,7 @@ def atlas_chat():
                                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({'erro': 'Erro interno no servidor.'}), 500
 
 
@@ -2165,8 +2141,7 @@ def atlas_upload_arquivo():
         '.txt', '.md', '.json', '.html', '.xml',
     }
 
-    import os as _os
-    ext = _os.path.splitext(nome)[1].lower()
+    ext = os.path.splitext(nome)[1].lower()
     if ext not in extensoes_suportadas:
         return jsonify({'erro': f'Tipo de arquivo não suportado: {ext}'}), 400
 
@@ -2175,7 +2150,6 @@ def atlas_upload_arquivo():
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
 
     try:
-        import tempfile
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         arquivo.save(tmp.name)
         tmp.close()
@@ -2192,15 +2166,13 @@ def atlas_upload_arquivo():
         }), 200
 
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
 @app.route('/api/atlas/dashboard_data', methods=['GET'])
 @jwt_required()
 def atlas_dashboard_data():
     try:
-        from sqlalchemy import func
-
         # KPIs do último relatório por módulo
         subq = (
             db.session.query(
@@ -2261,7 +2233,7 @@ def atlas_dashboard_data():
         }), 200
 
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
 @app.route('/api/atlas/metricas', methods=['GET'])
@@ -2273,8 +2245,6 @@ def atlas_metricas():
         return jsonify({'erro': 'Acesso negado'}), 403
 
     try:
-        from sqlalchemy import func
-
         conversas_all = AtlasConversa.query.all()
 
         total_conversas = len(conversas_all)
@@ -2330,7 +2300,7 @@ def atlas_metricas():
         }), 200
 
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
 @app.route('/api/atlas/briefing', methods=['GET'])
@@ -2343,9 +2313,6 @@ def atlas_briefing():
     - Notícias do setor logístico (web search via OpenAI)
     - Pendências de aprovação (apenas admin)
     """
-    import threading
-    from datetime import datetime, timezone
-
     usuario_id = get_jwt_identity()
     usuario    = User.query.get(usuario_id)
     resultado  = {}
@@ -2399,8 +2366,7 @@ def atlas_briefing():
         if emails_brutos:
             try:
                 api_key = os.environ.get('OPENAI_API_KEY', '')
-                from openai import OpenAI as _OpenAI
-                _client_email = _OpenAI(api_key=api_key)
+                _client_email = OpenAI(api_key=api_key)
 
                 lista_emails = '\n'.join([
                     f"{i+1}. De: {e.get('remetente') or e.get('from', {}).get('emailAddress', {}).get('name', 'Desconhecido')} | Assunto: {e.get('assunto') or e.get('subject', 'Sem assunto')}"
@@ -2442,26 +2408,25 @@ Sem introdução, sem explicação, apenas a lista."""
         resultado['pendentes'] = pendentes
 
     # ── 3. Notícias logísticas via OpenAI web search ──────────────────────────
-        try:
-            api_key = os.environ.get('OPENAI_API_KEY', '')
-            from openai import OpenAI as _OpenAI
-            _client = _OpenAI(api_key=api_key)
-            resp = _client.responses.create(
-                model='gpt-4o-mini',
-                tools=[{'type': 'web_search_preview'}],
-                input='Busque as 3 principais notícias do setor logístico e de transportes no Brasil hoje. Retorne apenas os títulos, fontes e um resumo de 1 frase cada.',
-            )
-            noticias_texto = ''
-            for bloco in resp.output:
-                if hasattr(bloco, 'content'):
-                    for c in bloco.content:
-                        if hasattr(c, 'text'):
-                            noticias_texto += c.text
-            resultado['noticias'] = noticias_texto.strip() or 'Nenhuma notícia encontrada.'
-        except Exception as e:
-            resultado['noticias'] = f'Erro ao buscar notícias: {e}'
+    try:
+        api_key = os.environ.get('OPENAI_API_KEY', '')
+        _client = OpenAI(api_key=api_key)
+        resp = _client.responses.create(
+            model='gpt-4o-mini',
+            tools=[{'type': 'web_search_preview'}],
+            input='Busque as 3 principais notícias do setor logístico e de transportes no Brasil hoje. Retorne apenas os títulos, fontes e um resumo de 1 frase cada.',
+        )
+        noticias_texto = ''
+        for bloco in resp.output:
+            if hasattr(bloco, 'content'):
+                for c in bloco.content:
+                    if hasattr(c, 'text'):
+                        noticias_texto += c.text
+        resultado['noticias'] = noticias_texto.strip() or 'Nenhuma notícia encontrada.'
+    except Exception as e:
+        resultado['noticias'] = f'Erro ao buscar notícias: {e}'
 
-        return jsonify(resultado)
+    return jsonify(resultado)
 
 @app.route('/api/atlas/log_conversas', methods=['GET'])
 @jwt_required()
@@ -2758,7 +2723,7 @@ def base_conhecimento_listar():
             'documentos': resultado
         }), 200
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
 
@@ -2786,7 +2751,6 @@ def base_conhecimento_upload():
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
 
     try:
-        import tempfile
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         arquivo.save(tmp.name)
         tmp.close()
@@ -2813,7 +2777,7 @@ def base_conhecimento_upload():
         }), 200
 
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
 
@@ -2840,7 +2804,7 @@ def base_conhecimento_deletar(file_id):
             pass
         return jsonify({'ok': True}), 200
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
 
