@@ -21,3 +21,8 @@ dist-ssr/
 
 # OS
 .DS_Store
+
+# Playwright
+test-results/
+tests/screenshots/
+playwright-report/

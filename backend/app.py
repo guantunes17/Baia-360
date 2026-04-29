@@ -28,6 +28,9 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, decode_token
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import os
@@ -37,19 +40,52 @@ _env_path = Path(__file__).resolve().parent / '.env'
 load_dotenv(dotenv_path=_env_path, override=True)
 
 app = Flask(__name__)
+_is_prod = os.getenv('FLASK_ENV', 'development') == 'production'
+
 app.config['SECRET_KEY']                     = os.getenv('SECRET_KEY')
 app.config['JWT_SECRET_KEY']                 = os.getenv('JWT_SECRET_KEY')
 app.config['SQLALCHEMY_DATABASE_URI']        = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH']             = 50 * 1024 * 1024  # 50 MB
 
-# CORS — em produção lê FRONTEND_URL do ambiente; em dev aceita localhost
-_frontend_origins = ["http://localhost:5173", "http://localhost:3000"]
+# JWT via httpOnly cookie
+app.config['JWT_TOKEN_LOCATION']             = ['cookies']
+app.config['JWT_COOKIE_SECURE']              = _is_prod        # True em prod (HTTPS), False em dev (HTTP)
+app.config['JWT_COOKIE_SAMESITE']            = 'Lax'           # Proteção CSRF básica
+app.config['JWT_COOKIE_CSRF_PROTECT']        = False           # CSRF desabilitado — SPA no mesmo domínio
+app.config['JWT_ACCESS_COOKIE_NAME']         = 'access_token_cookie'
+app.config['JWT_COOKIE_DOMAIN']              = None            # Usa o domínio atual automaticamente
+
+# CORS — em produção usa apenas FRONTEND_URL; em dev também aceita localhost
 _prod_url = os.getenv("FRONTEND_URL", "").strip()
-if _prod_url:
-    _frontend_origins.append(_prod_url)
-CORS(app, origins=_frontend_origins)
-db  = SQLAlchemy(app)
-jwt = JWTManager(app)
+if _is_prod and _prod_url:
+    _frontend_origins = [_prod_url]
+elif _prod_url:
+    _frontend_origins = ["http://localhost:5173", "http://localhost:3000", _prod_url]
+else:
+    _frontend_origins = ["http://localhost:5173", "http://localhost:3000"]
+CORS(app, origins=_frontend_origins, supports_credentials=True)
+db      = SQLAlchemy(app)
+jwt     = JWTManager(app)
+limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options']        = 'DENY'
+    response.headers['Referrer-Policy']        = 'strict-origin-when-cross-origin'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
+    if _is_prod:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
 
 
 # ── Model ─────────────────────────────────────────────────────────────────────
@@ -117,6 +153,270 @@ class AtlasMemoria(db.Model):
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     usuario = db.relationship('User', backref='memorias_atlas')
+
+# ── Atlas: configurações server-side (imutáveis pelo cliente) ────────────────
+ATLAS_MODEL            = 'gpt-5.4-mini'
+ATLAS_TEMPERATURE      = 1.0
+ATLAS_REASONING_EFFORT = 'medium'
+
+ATLAS_MODO_SUFFIXES: dict = {
+    'Resumido':  '\n\nIMPORTANTE: Seja extremamente conciso, máximo 3 linhas por resposta.',
+    'Analítico': '\n\nIMPORTANTE: Forneça análise detalhada com dados, contexto e implicações.',
+    'Detalhado': '\n\nIMPORTANTE: Seja completo e didático, explique cada ponto com exemplos.',
+}
+
+ATLAS_SYSTEM_PROMPT_BASE = """Você é o Atlas, assistente de inteligência artificial da Baia 4 Logística e Transportes.
+
+Você está conversando com {nome_usuario}.
+
+Personalidade e estilo de resposta:
+- Você tem personalidade própria — é direto, inteligente e ocasionalmente usa humor leve quando o contexto permite
+- Use o nome {nome_usuario} naturalmente nas respostas, como um colega faria — não em toda mensagem, apenas quando fizer sentido
+- Escreva em texto corrido, como uma pessoa escreveria — evite listas com marcadores a menos que o conteúdo realmente exija
+- Respostas curtas para perguntas simples, mais detalhadas apenas quando necessário
+- Nunca comece respostas com "Com certeza!", "Claro!", "Ótimo!" ou variações robóticas
+- Não repita o que o usuário acabou de dizer antes de responder
+- Quando não souber algo, diga diretamente — sem rodeios
+- Use dados antes de especular
+- Responda sempre em português brasileiro informal mas profissional
+
+Capacidades:
+- Consulta e análise de KPIs e relatórios operacionais via ferramentas
+- Geração de relatórios (requer upload do arquivo Excel correspondente)
+- Consulta, criação e exclusão de eventos na agenda do Outlook
+- Leitura e envio de e-mails via Outlook
+- Integração com Microsoft Teams: listar times e canais, enviar mensagens em canais, criar reuniões online e enviar mensagens diretas entre usuários
+- Interpretação de arquivos enviados pelo usuário (Excel, PDF, Word, imagens)
+- Geração de documentos formais para download em .docx ou .pdf
+- Responder perguntas gerais sobre logística, operações ou qualquer outro assunto
+- Buscar informações atuais na internet quando necessário (cotações, notícias, dados externos)
+- Briefing diário com agenda, e-mails prioritários e notícias do setor
+
+Contexto da empresa:
+- Baia 4 é um operador logístico focado em distribuição farmacêutica
+- Clientes: ADITUS, BIOGEN, EPHARMA, BHC-Xofigo, CSL BEHRING, IPSEN, CELLTRION, YELUM, CM HOSPITALAR, GSK, PINT PHARMA, FUNCIONAL
+- Módulos: Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem
+
+Sobre consulta de dados operacionais:
+- Use get_dashboard quando o usuário perguntar sobre KPIs, desempenho, faturamento, SLA, estoque, picos ou qualquer dado operacional histórico — essa ferramenta retorna os dados do último relatório gerado por módulo
+- Prefira get_dashboard para consultas sobre dados já processados. Use gerar_relatorio apenas quando o usuário explicitamente pedir para GERAR um novo relatório com upload de arquivo
+
+Sobre arquivos enviados pelo usuário:
+- Quando o usuário enviar qualquer arquivo (Excel, PDF, Word, imagem), analise o conteúdo e responda o que foi pedido
+- Para arquivos Excel, PDF, Word e imagens, leia os dados e forneça insights, resumos, análises ou responda perguntas sobre o conteúdo
+- Nunca diga que não consegue ler ou interpretar um arquivo — você tem essa capacidade
+- A geração de relatórios é um fluxo separado que usa arquivos de entrada específicos da operação. Não confunda com arquivos enviados para análise
+- Quando receber um arquivo, você TEM acesso ao conteúdo real dele — leia e analise de verdade, nunca diga que não consegue ler
+
+Sobre geração de relatórios operacionais:
+- Quando o usuário pedir para GERAR um relatório operacional (Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem), use IMEDIATAMENTE a ferramenta gerar_relatorio — nunca diga que não consegue gerar
+- Após usar a ferramenta, informe que um botão aparecerá na tela para o usuário enviar o arquivo Excel correspondente
+- Gerar relatório e analisar um arquivo são coisas distintas: gerar usa a ferramenta gerar_relatorio; analisar lê um arquivo enviado pelo usuário
+
+Sobre agenda e eventos:
+- Use get_agenda para consultar eventos do calendário Outlook do usuário
+- Use criar_evento para criar eventos no calendário Outlook
+- Use deletar_evento para cancelar ou remover eventos — sempre busque o ID do evento via get_agenda antes de deletar
+- Sempre que criar uma reunião no Teams (teams_criar_reuniao), obrigatoriamente também crie o evento na agenda (criar_evento) com o link da reunião na descrição no formato: "🔗 Link da reunião Teams: {link}". Nunca crie reunião Teams sem registrar na agenda
+
+Sobre Microsoft Teams:
+- Use teams_listar_times para listar os times do usuário no Teams
+- Use teams_listar_canais para listar os canais de um time específico (requer o ID do time obtido via teams_listar_times)
+- Use teams_enviar_mensagem para enviar mensagens em canais do Teams (requer team_id e channel_id)
+- Use teams_criar_reuniao para criar reuniões online com link do Teams — sempre registre também na agenda via criar_evento
+- Use teams_chat_enviar para enviar mensagens diretas a outros usuários pelo Teams
+
+Sobre e-mails:
+- Use buscar_emails para consultar e-mails do usuário no Outlook
+- Use enviar_email para enviar e-mails pelo Outlook do usuário
+
+Sobre conversas anteriores:
+- Você TEM acesso às conversas anteriores do usuário via ferramenta buscar_conversas
+- Use essa ferramenta quando o usuário pedir para você se atualizar, revisar o histórico, ou referenciar algo que foi discutido antes
+- Após buscar, leia os resumos e responda com base no que foi encontrado
+
+Sobre busca na internet:
+- Você TEM acesso à internet via Google Search — nunca diga que não consegue pesquisar
+- Use a busca quando o usuário pedir informações atuais: cotações, câmbio, notícias, eventos recentes, dados de mercado
+- Use a busca também para complementar respostas sobre logística, regulações, notícias do setor farmacêutico
+- Nunca cite URLs ou domínios inline no texto — as fontes são exibidas automaticamente no rodapé da resposta
+
+Sobre geração de documentos formais (artefatos):
+- Quando o usuário pedir para gerar um documento formal como ITO, POP, e-mail corporativo, contrato, procedimento, relatório narrativo ou qualquer documento extenso que será baixado ou impresso, SEMPRE use o formato de artefato abaixo
+- O artefato será renderizado em um painel lateral com preview e botões de download em .docx e .pdf
+- Formato obrigatório para artefatos:
+<artifact type="TIPO" title="Título">
+conteúdo
+</artifact>
+
+Tipos disponíveis:
+- type="document" → documentos formais em markdown (ITOs, POPs, contratos, relatórios narrativos)
+- type="html" → páginas HTML completas, dashboards, layouts, visualizações (use quando o usuário pedir algo visual ou interativo)
+- type="react" → componentes React com hooks e lógica interativa (use para calculadoras, formulários, jogos, widgets complexos)
+
+- No chat, escreva apenas uma mensagem curta e natural — pode ser uma frase introdutória, um comentário, uma oferta para ajustar. Seja humano e fluido
+- PROIBIDO escrever o conteúdo do artefato fora da tag
+- Para type="html": gere HTML completo e válido com CSS inline ou tag <style>. Use cores escuras (#0f1117 fundo, #e2e8f0 texto) para combinar com o tema do Atlas
+- Para type="react": gere apenas o corpo do componente (function App() {{ ... }}), sem imports — React e useState já estão disponíveis
+- Para respostas normais, análises curtas e tabelas simples, responda normalmente sem artifact
+- Use artifact quando: o usuário pedir algo visual, interativo, um documento formal, ou qualquer conteúdo que se beneficie de uma área dedicada"""
+
+ATLAS_TOOLS_DECLARATIONS = [
+    {
+        'name': 'get_dashboard',
+        'description': 'Retorna KPIs e histórico de relatórios gerados. Use quando o usuário perguntar sobre métricas, faturamento, SLA, estoque, ou qualquer dado operacional.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'modulo': {'type': ['string', 'null'], 'description': 'Filtrar por módulo específico. Passar null para retornar todos os módulos.'}
+            },
+            'required': ['modulo']
+        }
+    },
+    {
+        'name': 'gerar_relatorio',
+        'description': 'Inicia a geração de um relatório para um módulo e mês de referência. Após chamar esta ferramenta, informe ao usuário que ele precisa enviar o arquivo Excel correspondente para continuar.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'modulo': {'type': 'string', 'description': 'Nome do módulo: Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem'},
+                'mes_ref': {'type': 'string', 'description': 'Mês de referência no formato YYYY-MM. Ex: 2025-03'}
+            },
+            'required': ['modulo', 'mes_ref']
+        }
+    },
+    {
+        'name': 'get_agenda',
+        'description': 'Retorna eventos da agenda do usuário no Outlook.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'data_inicio': {'type': 'string', 'description': 'Data inicial YYYY-MM-DD'},
+                'data_fim':    {'type': 'string', 'description': 'Data final YYYY-MM-DD'}
+            },
+            'required': ['data_inicio', 'data_fim']
+        }
+    },
+    {
+        'name': 'criar_evento',
+        'description': 'Cria um novo evento na agenda do Outlook.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'titulo':      {'type': 'string'},
+                'data':        {'type': 'string', 'description': 'YYYY-MM-DD'},
+                'hora_inicio': {'type': 'string', 'description': 'HH:MM'},
+                'hora_fim':    {'type': 'string', 'description': 'HH:MM'},
+                'descricao':   {'type': 'string'}
+            },
+            'required': ['titulo', 'data', 'hora_inicio', 'hora_fim', 'descricao']
+        }
+    },
+    {
+        'name': 'deletar_evento',
+        'description': 'Deleta um evento do calendário do Outlook do usuário. Use quando o usuário pedir para cancelar, remover ou deletar um evento da agenda.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'evento_id': {'type': 'string', 'description': 'ID do evento a ser deletado. Obtido via get_agenda.'}
+            },
+            'required': ['evento_id']
+        }
+    },
+    {
+        'name': 'buscar_conversas',
+        'description': 'Busca conversas anteriores do usuário com o Atlas. Use quando o usuário pedir para se atualizar, revisar o que foi discutido, ou referenciar algo de conversas passadas.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'query': {'type': 'string', 'description': 'Palavras-chave para buscar nas conversas. Pode ser vazio para trazer as mais recentes.'}
+            },
+            'required': ['query']
+        }
+    },
+    {
+        'name': 'buscar_emails',
+        'description': 'Busca e-mails do usuário no Outlook. Use quando o usuário perguntar sobre e-mails, mensagens recebidas, ou quiser encontrar um e-mail específico.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'query':            {'type': 'string', 'description': 'Texto para buscar no assunto ou remetente. Pode ser vazio para trazer os mais recentes.'},
+                'apenas_nao_lidos': {'type': 'boolean', 'description': 'Se true, retorna apenas e-mails não lidos.'},
+                'limite':           {'type': 'number', 'description': 'Quantidade máxima de e-mails a retornar. Default 20, máximo 50.'}
+            },
+            'required': ['query', 'apenas_nao_lidos', 'limite']
+        }
+    },
+    {
+        'name': 'enviar_email',
+        'description': 'Envia um e-mail pelo Outlook do usuário. Use quando o usuário pedir para enviar, encaminhar ou redigir um e-mail para alguém.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'destinatario':      {'type': 'string', 'description': 'Endereço de e-mail do destinatário.'},
+                'nome_destinatario': {'type': ['string', 'null'], 'description': 'Nome de exibição do destinatário. Pode ser null.'},
+                'assunto':           {'type': 'string', 'description': 'Assunto do e-mail.'},
+                'corpo':             {'type': 'string', 'description': 'Corpo do e-mail em texto simples.'}
+            },
+            'required': ['destinatario', 'nome_destinatario', 'assunto', 'corpo']
+        }
+    },
+    {
+        'name': 'teams_listar_times',
+        'description': 'Lista os times do Microsoft Teams do usuário.',
+        'parameters': {'type': 'object', 'properties': {}, 'required': []}
+    },
+    {
+        'name': 'teams_listar_canais',
+        'description': 'Lista os canais de um time específico do Teams.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'team_id': {'type': 'string', 'description': 'ID do time.'}
+            },
+            'required': ['team_id']
+        }
+    },
+    {
+        'name': 'teams_enviar_mensagem',
+        'description': 'Envia uma mensagem em um canal do Teams.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'team_id':    {'type': 'string'},
+                'channel_id': {'type': 'string'},
+                'mensagem':   {'type': 'string'}
+            },
+            'required': ['team_id', 'channel_id', 'mensagem']
+        }
+    },
+    {
+        'name': 'teams_criar_reuniao',
+        'description': 'Cria uma reunião online no Microsoft Teams com link de videoconferência.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'titulo':        {'type': 'string'},
+                'inicio':        {'type': 'string', 'description': 'Data e hora de início no formato ISO 8601. Ex: 2026-04-15T14:00:00'},
+                'fim':           {'type': 'string', 'description': 'Data e hora de fim no formato ISO 8601. Ex: 2026-04-15T15:00:00'},
+                'participantes': {'type': ['array', 'null'], 'items': {'type': 'string'}, 'description': 'Lista de e-mails dos participantes. Passar null se não houver participantes.'}
+            },
+            'required': ['titulo', 'inicio', 'fim', 'participantes']
+        }
+    },
+    {
+        'name': 'teams_chat_enviar',
+        'description': 'Envia uma mensagem direta para um usuário no Teams.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'email_destino': {'type': 'string', 'description': 'E-mail do destinatário.'},
+                'mensagem':      {'type': 'string'}
+            },
+            'required': ['email_destino', 'mensagem']
+        }
+    },
+]
 
 # Defaults de permissão por perfil
 PERMISSOES_PADRAO = {
@@ -225,8 +525,10 @@ def health():
 
 # ── Rotas Auth ────────────────────────────────────────────────────────────────
 @app.route('/api/auth/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def login():
     from flask import request, jsonify
+    from flask_jwt_extended import set_access_cookies
     data  = request.get_json()
     email = data.get('email', '').strip().lower()
     senha = data.get('senha', '')
@@ -243,11 +545,32 @@ def login():
         return jsonify({'erro': 'Usuário inativo'}), 403
 
     token = create_access_token(identity=str(user.id), expires_delta=timedelta(hours=8))
-    return jsonify({'token': token, 'usuario': user.to_dict()}), 200
+    resp  = jsonify({'usuario': user.to_dict()})
+    set_access_cookies(resp, token)
+    return resp, 200
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    from flask_jwt_extended import unset_jwt_cookies
+    resp = jsonify({'ok': True})
+    unset_jwt_cookies(resp)
+    return resp, 200
+
+
+@app.route('/api/auth/me', methods=['GET'])
+@jwt_required()
+def me():
+    """Retorna os dados do usuário logado a partir do cookie — frontend usa para validar sessão."""
+    user = User.query.get(int(get_jwt_identity()))
+    if not user:
+        return jsonify({'erro': 'Usuário não encontrado'}), 404
+    return jsonify(user.to_dict()), 200
 
 
 
 @app.route('/api/auth/cadastro', methods=['POST'])
+@limiter.limit("5 per hour")
 def cadastro():
     """
     Rota pública — qualquer pessoa pode criar uma conta.
@@ -283,16 +606,6 @@ def cadastro():
     db.session.commit()
 
     return jsonify({'mensagem': 'Cadastro realizado! Aguarde a aprovação do administrador.'}), 201
-
-@app.route('/api/auth/me', methods=['GET'])
-@jwt_required()
-def me():
-    from flask import jsonify
-    user = User.query.get(int(get_jwt_identity()))
-    if not user:
-        return jsonify({'erro': 'Usuário não encontrado'}), 404
-    return jsonify(user.to_dict()), 200
-
 
 @app.route('/api/auth/usuarios', methods=['GET'])
 @jwt_required()
@@ -339,7 +652,9 @@ def seed():
         return jsonify({'erro': 'Não autorizado'}), 403
 
     admin_email = os.getenv('ADMIN_EMAIL', 'admin@baia360.com')
-    admin_senha = os.getenv('ADMIN_SENHA', 'admin123')
+    admin_senha = os.getenv('ADMIN_SENHA', '')
+    if not admin_senha:
+        return jsonify({'erro': 'ADMIN_SENHA não configurada'}), 500
 
     if User.query.filter_by(email=admin_email).first():
         return jsonify({'msg': 'Admin já existe'}), 200
@@ -405,8 +720,8 @@ def redefinir_senha(user_id):
 
     data = request.get_json()
     nova_senha = data.get('nova_senha', '')
-    if len(nova_senha) < 6:
-        return jsonify({'erro': 'Senha deve ter pelo menos 6 caracteres'}), 400
+    if len(nova_senha) < 8:
+        return jsonify({'erro': 'Senha deve ter pelo menos 8 caracteres'}), 400
 
     user.set_senha(nova_senha)
     db.session.commit()
@@ -675,41 +990,38 @@ _EXTRATORES_KPIS = {
 }
 
 @app.route('/api/modulos/fretes', methods=['POST'])
+@limiter.limit("20 per minute")
 @jwt_required()
 def processar_fretes_route():
-    from flask import request, jsonify
+    usuario_id = int(get_jwt_identity())
+    if not _verificar_permissao_modulo(usuario_id, 'fretes'):
+        return jsonify({'erro': 'Acesso negado'}), 403
 
     if 'arquivo' not in request.files:
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
 
     arquivo  = request.files['arquivo']
-    nome_aba = request.form.get('nome_aba', '').strip()
     mes_ref  = request.form.get('mes_ref', '').strip() or None
 
-    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+    nome_seguro = secure_filename(arquivo.filename or 'arquivo')
+    if not nome_seguro.lower().endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
 
-    # Salva arquivo temporário de entrada
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
 
-    # Arquivo temporário de saída
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id     = str(uuid.uuid4())
-    usuario_id = int(get_jwt_identity())
-    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None, 'usuario_id': usuario_id}
 
     def log(msg):
         jobs[job_id]['logs'].append(msg)
 
     def executar():
         try:
-            import sys, os
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
             spec = importlib.util.spec_from_file_location(
                 'central',
                 os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -741,10 +1053,6 @@ def processar_fretes_route():
         finally:
             _deletar_temp(tmp_entrada.name)
 
-        if not _verificar_permissao_modulo(usuario_id, 'fretes'):
-            return jsonify({'erro': 'Acesso negado'}), 403
-
-
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
@@ -756,27 +1064,23 @@ def status_job(job_id):
     job = jobs.get(job_id)
     if not job:
         return jsonify({'erro': 'Job não encontrado'}), 404
+    if job.get('usuario_id') != int(get_jwt_identity()):
+        return jsonify({'erro': 'Acesso negado'}), 403
     return jsonify(job), 200
 
 
 @app.route('/api/modulos/download/<job_id>', methods=['GET'])
+@jwt_required()
 def download_resultado(job_id):
-    from flask import request as freq
-    # Aceita token via query string para download direto
-    token = freq.args.get('token')
-    if not token:
-        return jsonify({'erro': 'Token não fornecido'}), 401
-    
-    try:
-        from flask_jwt_extended import decode_token
-        decode_token(token)
-    except Exception:
-        return jsonify({'erro': 'Token inválido'}), 401
-
+    # Cookie httpOnly enviado automaticamente pelo browser — sem token na URL
     job = jobs.get(job_id)
-    if not job or job['status'] != 'concluido':
+    if not job:
         return jsonify({'erro': 'Arquivo não disponível'}), 404
-    
+    if job.get('usuario_id') != int(get_jwt_identity()):
+        return jsonify({'erro': 'Acesso negado'}), 403
+    if job['status'] != 'concluido':
+        return jsonify({'erro': 'Arquivo não disponível'}), 404
+
     return send_file(
         job['arquivo'],
         as_attachment=True,
@@ -785,18 +1089,24 @@ def download_resultado(job_id):
     )
 
 @app.route('/api/modulos/armazenagem', methods=['POST'])
+@limiter.limit("20 per minute")
 @jwt_required()
 def processar_armazenagem_route():
+    usuario_id = int(get_jwt_identity())
+    if not _verificar_permissao_modulo(usuario_id, 'armazenagem'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+
     if 'arquivo' not in request.files:
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
 
-    arquivo   = request.files['arquivo']
+    arquivo    = request.files['arquivo']
     mes_filtro = request.form.get('mes_filtro', '').strip()
 
     if not mes_filtro:
         return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
 
-    if not arquivo.filename.endswith(('.xlsx', '.xls')):
+    nome_seguro = secure_filename(arquivo.filename or 'arquivo')
+    if not nome_seguro.lower().endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
 
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
@@ -806,18 +1116,14 @@ def processar_armazenagem_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id     = str(uuid.uuid4())
-    usuario_id = int(get_jwt_identity())
-    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None, 'usuario_id': usuario_id}
 
     def log(msg):
         jobs[job_id]['logs'].append(msg)
 
     def executar():
         try:
-            import sys, os
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
             spec = importlib.util.spec_from_file_location(
                 'central',
                 os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -841,7 +1147,6 @@ def processar_armazenagem_route():
                         db.session.commit()
                 except Exception as e:
                     log(f'Erro ao salvar KPIs: {str(e)}')
-                    pass
             else:
                 jobs[job_id]['status'] = 'erro'
                 jobs[job_id]['erro']   = 'Processamento falhou'
@@ -851,13 +1156,11 @@ def processar_armazenagem_route():
         finally:
             _deletar_temp(tmp_entrada.name)
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'armazenagem'):
-            return jsonify({'erro': 'Acesso negado'}), 403
-
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
 @app.route('/api/modulos/pedidos', methods=['POST'])
+@limiter.limit("20 per minute")
 @jwt_required()
 def processar_pedidos_route():
     if 'arquivo' not in request.files:
@@ -869,6 +1172,11 @@ def processar_pedidos_route():
     if not arquivo.filename.endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
 
+    usuario_id = int(get_jwt_identity())
+    if not _verificar_permissao_modulo(usuario_id, 'pedidos'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    secure_filename(arquivo.filename)
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
@@ -876,9 +1184,8 @@ def processar_pedidos_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id     = str(uuid.uuid4())
-    usuario_id = int(get_jwt_identity())
-    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None, 'usuario_id': usuario_id}
 
     def log(msg):
         jobs[job_id]['logs'].append(msg)
@@ -918,13 +1225,11 @@ def processar_pedidos_route():
         finally:
             _deletar_temp(tmp_entrada.name)
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'pedidos'):
-            return jsonify({'erro': 'Acesso negado'}), 403
-
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
 @app.route('/api/modulos/recebimentos', methods=['POST'])
+@limiter.limit("20 per minute")
 @jwt_required()
 def processar_recebimentos_route():
     if 'arquivo' not in request.files:
@@ -939,6 +1244,11 @@ def processar_recebimentos_route():
     if not arquivo.filename.endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
 
+    usuario_id = int(get_jwt_identity())
+    if not _verificar_permissao_modulo(usuario_id, 'recebimentos'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    secure_filename(arquivo.filename)
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
@@ -946,9 +1256,8 @@ def processar_recebimentos_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id     = str(uuid.uuid4())
-    usuario_id = int(get_jwt_identity())
-    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None, 'usuario_id': usuario_id}
 
     def log(msg):
         jobs[job_id]['logs'].append(msg)
@@ -971,14 +1280,14 @@ def processar_recebimentos_route():
             jobs[job_id]['arquivo'] = tmp_saida.name
             jobs[job_id]['nome']    = f'relatorio_recebimentos_{mes_ref}.xlsx'
             try:
-                    with app.app_context():
-                        kpis = _extrair_kpis_recebimentos(tmp_saida.name)
-                        reg  = RelatorioGerado(modulo='Recebimentos', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
-                        db.session.add(reg)
-                        db.session.commit()
+                with app.app_context():
+                    kpis = _extrair_kpis_recebimentos(tmp_saida.name)
+                    reg  = RelatorioGerado(modulo='Recebimentos', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
+                    db.session.add(reg)
+                    db.session.commit()
             except Exception as e:
-                    log(f'Erro ao salvar KPIs: {str(e)}')
-                    pass
+                log(f'Erro ao salvar KPIs: {str(e)}')
+                pass
         except Exception as e:
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
@@ -988,13 +1297,11 @@ def processar_recebimentos_route():
             except Exception:
                 pass
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'recebimentos'):
-            return jsonify({'erro': 'Acesso negado'}), 403
-
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
 @app.route('/api/modulos/cap_operacional', methods=['POST'])
+@limiter.limit("20 per minute")
 @jwt_required()
 def processar_cap_operacional_route():
     if 'arquivo' not in request.files:
@@ -1002,8 +1309,14 @@ def processar_cap_operacional_route():
 
     arquivo = request.files['arquivo']
     mes_ref = request.form.get('mes_ref', '').strip()
-    limiar_media = float(request.form.get('limiar_media', 3.0))
-    limiar_alta  = float(request.form.get('limiar_alta', 5.0))
+
+    try:
+        limiar_media = float(request.form.get('limiar_media', 3.0))
+        limiar_alta  = float(request.form.get('limiar_alta', 5.0))
+        if not (0 <= limiar_media <= 100 and 0 <= limiar_alta <= 100):
+            raise ValueError()
+    except (ValueError, TypeError):
+        return jsonify({'erro': 'Limiares inválidos'}), 400
 
     if not mes_ref:
         return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
@@ -1011,6 +1324,11 @@ def processar_cap_operacional_route():
     if not arquivo.filename.endswith('.pdf'):
         return jsonify({'erro': 'Arquivo deve ser .pdf'}), 400
 
+    usuario_id = int(get_jwt_identity())
+    if not _verificar_permissao_modulo(usuario_id, 'cap_operacional'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    secure_filename(arquivo.filename)
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
@@ -1018,9 +1336,8 @@ def processar_cap_operacional_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id     = str(uuid.uuid4())
-    usuario_id = int(get_jwt_identity())
-    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None, 'usuario_id': usuario_id}
 
     def log(msg):
         jobs[job_id]['logs'].append(msg)
@@ -1036,7 +1353,7 @@ def processar_cap_operacional_route():
 
             mod._caminho_saida = lambda *args, **kwargs: tmp_saida.name
 
-            resultado = mod.run_cap_operacional_pdf(
+            mod.run_cap_operacional_pdf(
                 tmp_entrada.name, mes_ref, log,
                 limiar_media=limiar_media,
                 limiar_alta=limiar_alta)
@@ -1045,14 +1362,14 @@ def processar_cap_operacional_route():
             jobs[job_id]['arquivo'] = tmp_saida.name
             jobs[job_id]['nome']    = f'cap_operacional_{mes_ref}.xlsx'
             try:
-                    with app.app_context():
-                        kpis = _extrair_kpis_cap_operacional(tmp_saida.name)
-                        reg  = RelatorioGerado(modulo='Cap. Operacional', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
-                        db.session.add(reg)
-                        db.session.commit()
+                with app.app_context():
+                    kpis = _extrair_kpis_cap_operacional(tmp_saida.name)
+                    reg  = RelatorioGerado(modulo='Cap. Operacional', mes_ref=mes_ref, usuario_id=usuario_id, kpis_json=json.dumps(kpis))
+                    db.session.add(reg)
+                    db.session.commit()
             except Exception as e:
-                    log(f'Erro ao salvar KPIs: {str(e)}')
-                    pass
+                log(f'Erro ao salvar KPIs: {str(e)}')
+                pass
         except Exception as e:
             jobs[job_id]['status'] = 'erro'
             jobs[job_id]['erro']   = str(e)
@@ -1061,9 +1378,6 @@ def processar_cap_operacional_route():
                 _deletar_temp(tmp_entrada.name)
             except Exception:
                 pass
-
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'cap_operacional'):
-            return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -1165,6 +1479,7 @@ def estoque_db_atualizar():
 
 
 @app.route('/api/modulos/estoque/gerar', methods=['POST'])
+@limiter.limit("20 per minute")
 @jwt_required()
 def processar_estoque_route():
     if 'arquivo_pico' not in request.files:
@@ -1174,6 +1489,11 @@ def processar_estoque_route():
     dias_ocioso  = int(request.form.get('dias_ocioso', 120))
     mes_ref      = request.form.get('mes_ref', '').strip()
 
+    usuario_id = int(get_jwt_identity())
+    if not _verificar_permissao_modulo(usuario_id, 'estoque'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    secure_filename(arquivo_pico.filename)
     tmp_pico  = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo_pico.save(tmp_pico.name)
     tmp_pico.close()
@@ -1181,9 +1501,8 @@ def processar_estoque_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id     = str(uuid.uuid4())
-    usuario_id = int(get_jwt_identity())
-    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None, 'usuario_id': usuario_id}
 
     def log(msg):
         jobs[job_id]['logs'].append(msg)
@@ -1233,13 +1552,11 @@ def processar_estoque_route():
             except Exception:
                 pass
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'estoque'):
-            return jsonify({'erro': 'Acesso negado'}), 403
-
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
 @app.route('/api/modulos/fat_dist', methods=['POST'])
+@limiter.limit("20 per minute")
 @jwt_required()
 def processar_fat_dist_route():
     if 'arquivo' not in request.files:
@@ -1254,15 +1571,19 @@ def processar_fat_dist_route():
     if not arquivo.filename.endswith(('.xlsx', '.xls')):
         return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
 
+    usuario_id = int(get_jwt_identity())
+    if not _verificar_permissao_modulo(usuario_id, 'fat_dist'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    secure_filename(arquivo.filename)
     tmp_entrada = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo.save(tmp_entrada.name)
     tmp_entrada.close()
 
     tmp_dir = tempfile.mkdtemp()
 
-    job_id     = str(uuid.uuid4())
-    usuario_id = int(get_jwt_identity())
-    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None, 'usuario_id': usuario_id}
 
     def log(msg):
         jobs[job_id]['logs'].append(msg)
@@ -1305,13 +1626,11 @@ def processar_fat_dist_route():
             except Exception:
                 pass
 
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'fat_dist'):
-            return jsonify({'erro': 'Acesso negado'}), 403
-
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
 @app.route('/api/modulos/fat_arm', methods=['POST'])
+@limiter.limit("20 per minute")
 @jwt_required()
 def processar_fat_arm_route():
     if 'arquivo_mov' not in request.files or 'arquivo_volumes' not in request.files:
@@ -1324,6 +1643,12 @@ def processar_fat_arm_route():
     if not mes_ref:
         return jsonify({'erro': 'Mês de referência é obrigatório'}), 400
 
+    usuario_id = int(get_jwt_identity())
+    if not _verificar_permissao_modulo(usuario_id, 'fat_arm'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+
+    secure_filename(arquivo_mov.filename)
+    secure_filename(arquivo_volumes.filename)
     tmp_mov = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     arquivo_mov.save(tmp_mov.name)
     tmp_mov.close()
@@ -1335,9 +1660,8 @@ def processar_fat_arm_route():
     tmp_saida = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
     tmp_saida.close()
 
-    job_id     = str(uuid.uuid4())
-    usuario_id = int(get_jwt_identity())
-    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None}
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {'status': 'processando', 'logs': [], 'erro': None, 'usuario_id': usuario_id}
 
     def log(msg):
         jobs[job_id]['logs'].append(msg)
@@ -1381,9 +1705,6 @@ def processar_fat_arm_route():
                     os.unlink(f)
                 except Exception:
                     pass
-
-        if not _verificar_permissao_modulo(int(get_jwt_identity()), 'fat_arm'):
-            return jsonify({'erro': 'Acesso negado'}), 403
 
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
@@ -1587,30 +1908,62 @@ Sem explicações, sem markdown, apenas o JSON."""
             print(f'[AtlasMemoria] Erro na análise: {e}')
 
 @app.route('/api/atlas/chat', methods=['POST'])
+@limiter.limit("60 per minute")
 @jwt_required()
 def atlas_chat():
-    data          = request.get_json()
-    api_key       = os.getenv('OPENAI_API_KEY', '').strip()
-    model_id      = data.get('model', 'gpt-5.4-mini')
-    history       = data.get('history', [])
-    tools_def     = data.get('tools', [])
-    temp          = float(data.get('temperature', 1.0))
-    system_prompt = data.get('system_prompt', '')
-
+    """Proxy para a OpenAI Responses API com parâmetros fixados server-side."""
+    data = request.get_json()
+    api_key = os.getenv('OPENAI_API_KEY', '').strip()
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada no servidor'}), 500
+
+    # ── Parâmetros aceitos do cliente (apenas preferências de UI seguras) ─────
+    history          = data.get('history', [])
+    msgs             = data.get('msgs', [])
+    conv_id          = data.get('conv_id', '')
+    previous_resp_id = data.get('previous_response_id', None)
+    use_code_interp  = bool(data.get('code_interpreter', False))
+
+    # Preferências de apresentação — validadas server-side
+    modo = data.get('modo', 'Padrão')
+    if modo not in ATLAS_MODO_SUFFIXES:
+        modo = 'Padrão'
+
+    instrucoes      = str(data.get('instrucoes') or '')[:500]
+    memorias_raw    = data.get('memorias', [])
+    memorias        = [str(m)[:200] for m in memorias_raw[:20] if m and str(m).strip()]
+    projeto_nome    = str(data.get('projeto_nome') or '')[:200].strip()
+    projeto_desc    = str(data.get('projeto_descricao') or '')[:1000].strip()
+
+    # ── Busca dados do usuário para personalizar o system prompt ──────────────
+    usuario_id  = int(get_jwt_identity())
+    usuario     = User.query.get(usuario_id)
+    nome_usuario = usuario.nome if usuario else 'Usuário'
+
+    # ── Monta system prompt a partir de componentes confiáveis do servidor ────
+    system_prompt = ATLAS_SYSTEM_PROMPT_BASE.replace('{nome_usuario}', nome_usuario)
+    if modo in ATLAS_MODO_SUFFIXES:
+        system_prompt += ATLAS_MODO_SUFFIXES[modo]
+    if instrucoes:
+        system_prompt += f'\n\nInstruções do usuário:\n{instrucoes}'
+    if memorias:
+        system_prompt += '\n\nFatos que o usuário quer que você lembre:\n' + '\n'.join(f'- {m}' for m in memorias)
+    if projeto_nome:
+        system_prompt += f'\n\n## Contexto do projeto ativo\nVocê está trabalhando dentro do projeto **{projeto_nome}**.'
+        if projeto_desc:
+            system_prompt += f'\n\nDescrição e contexto:\n{projeto_desc}'
+        system_prompt += '\n\nTodas as respostas devem considerar esse contexto.'
 
     try:
         client = OpenAI(api_key=api_key)
 
         # ── Converter histórico do formato interno para Responses API ─────────
-        def converter_input(history):
+        def converter_input(hist: list) -> list:
             input_list = []
-            for m in history:
+            for m in hist:
                 role = 'assistant' if m['role'] == 'model' else m['role']
                 parts = m.get('parts', [])
 
-                # Mensagem de tool result (role=user com functionResponse)
                 fn_responses = [p for p in parts if 'functionResponse' in p]
                 if fn_responses:
                     for fr in fn_responses:
@@ -1621,7 +1974,6 @@ def atlas_chat():
                         })
                     continue
 
-                # Mensagem de function call (role=assistant com functionCall)
                 fn_calls = [p for p in parts if 'functionCall' in p]
                 if fn_calls:
                     for fc in fn_calls:
@@ -1633,77 +1985,61 @@ def atlas_chat():
                         })
                     continue
 
-                # Mensagem normal (texto e/ou arquivo)
                 content = []
                 for p in parts:
                     if 'text' in p:
-                        # user → input_text | assistant (model) → output_text
                         text_type = 'output_text' if role == 'assistant' else 'input_text'
                         content.append({'type': text_type, 'text': p['text']})
                     elif 'file_data' in p:
                         content.append({'type': 'input_file', 'file_id': p['file_data']['file_id']})
-
                 if content:
                     input_list.append({'role': role, 'content': content})
 
             return input_list
 
-        # ── Converter tools para formato OpenAI (com Structured Outputs) ─────
-        def build_tools(tools_def):
+        # ── Converte declarações de tools para formato OpenAI strict mode ─────
+        def build_tools(declarations: list) -> list:
             tools = []
-            for t in tools_def:
+            for t in declarations:
                 params = t.get('parameters', {'type': 'object', 'properties': {}})
                 properties = params.get('properties', {})
-                # Strict mode exige que TODOS os campos estejam em required
-                # Campos opcionais devem usar type: [string, null] no frontend
                 all_keys = list(properties.keys())
-                params = {
-                    'type': 'object',
-                    'properties': properties,
-                    'required': all_keys,
-                    'additionalProperties': False
-                }
                 tools.append({
                     'type': 'function',
                     'name': t['name'],
                     'description': t.get('description', ''),
-                    'parameters': params,
+                    'parameters': {
+                        'type': 'object',
+                        'properties': properties,
+                        'required': all_keys,
+                        'additionalProperties': False
+                    },
                     'strict': True
                 })
             return tools
 
-        input_list        = converter_input(history)
-        openai_tools      = build_tools(tools_def) if tools_def else []
-        reasoning_effort  = data.get('reasoning_effort', 'medium')
-        use_code_interp   = data.get('code_interpreter', False)
-        previous_resp_id  = data.get('previous_response_id', None)
+        input_list   = converter_input(history)
+        openai_tools = build_tools(ATLAS_TOOLS_DECLARATIONS)
 
         # ── Chamada à Responses API com streaming SSE ─────────────────────────
         def generate():
             try:
-                # Tools: funções customizadas + web_search + code_interpreter
-                all_tools = []
-                if openai_tools:
-                    all_tools.extend(openai_tools)
+                all_tools = list(openai_tools)
                 all_tools.append({'type': 'web_search_preview'})
                 if use_code_interp:
                     all_tools.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
-                # File Search — ativa se houver Vector Store configurado
                 vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
                 if vs_id:
-                    all_tools.append({
-                        'type': 'file_search',
-                        'vector_store_ids': [vs_id]
-                    })
+                    all_tools.append({'type': 'file_search', 'vector_store_ids': [vs_id]})
 
                 kwargs = dict(
-                    model=model_id,
+                    model=ATLAS_MODEL,
                     input=input_list,
-                    instructions=system_prompt or None,
-                    temperature=temp,
+                    instructions=system_prompt,
+                    temperature=ATLAS_TEMPERATURE,
                     tools=all_tools,
                     stream=True,
-                    reasoning={'effort': reasoning_effort, 'summary': 'auto'},
+                    reasoning={'effort': ATLAS_REASONING_EFFORT, 'summary': 'auto'},
                     store=True,
                 )
                 if previous_resp_id:
@@ -1711,19 +2047,17 @@ def atlas_chat():
 
                 stream = client.responses.create(**kwargs)
 
-                text_buffer = ''
-                fn_calls_buffer = {}   # call_id → {name, arguments}
+                text_buffer     = ''
+                fn_calls_buffer: dict = {}
 
                 for event in stream:
                     etype = event.type
 
-                    # Chunk de texto chegando
                     if etype == 'response.output_text.delta':
                         delta = event.delta or ''
                         text_buffer += delta
                         yield f"data: {json.dumps({'type': 'text_delta', 'delta': delta})}\n\n"
 
-                    # Início de function call ou reasoning
                     elif etype == 'response.output_item.added':
                         item = event.item
                         if getattr(item, 'type', None) == 'function_call':
@@ -1731,18 +2065,15 @@ def atlas_chat():
                         elif getattr(item, 'type', None) == 'reasoning':
                             yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
 
-                    # Delta do reasoning chegando
                     elif etype == 'response.reasoning_summary_text.delta':
                         delta = event.delta or ''
                         yield f"data: {json.dumps({'type': 'reasoning_delta', 'delta': delta})}\n\n"
 
-                    # Delta dos argumentos de function call
                     elif etype == 'response.function_call_arguments.delta':
                         if fn_calls_buffer:
                             call_id = list(fn_calls_buffer.keys())[-1]
                             fn_calls_buffer[call_id]['arguments'] += (event.delta or '')
 
-                    # Function call completa
                     elif etype == 'response.output_item.done':
                         item = event.item
                         if getattr(item, 'type', None) == 'function_call':
@@ -1754,12 +2085,9 @@ def atlas_chat():
                             fn_calls_buffer[call_id] = {'name': item.name, 'arguments': item.arguments}
                             yield f"data: {json.dumps({'type': 'function_call', 'call_id': call_id, 'name': item.name, 'args': args})}\n\n"
 
-                    # Resposta completa — retorna response_id para conversation state
                     elif etype == 'response.completed':
-                        resp_id = getattr(event.response, 'id', None)
-                        # Extrai anotações de citação do web search
+                        resp_id   = getattr(event.response, 'id', None)
                         citations = []
-
                         try:
                             output = getattr(event.response, 'output', None) or []
                             for item in output:
@@ -1768,22 +2096,18 @@ def atlas_chat():
                                     annotations = getattr(part, 'annotations', None) or []
                                     for ann in annotations:
                                         if getattr(ann, 'type', '') == 'url_citation':
-                                            url = getattr(ann, 'url', '')
+                                            url   = getattr(ann, 'url', '')
                                             title = getattr(ann, 'title', url)
                                             start = getattr(ann, 'start_index', None)
-                                            end = getattr(ann, 'end_index', None)
+                                            end   = getattr(ann, 'end_index', None)
                                             if url and not any(c['url'] == url for c in citations):
                                                 citations.append({'url': url, 'title': title, 'start': start, 'end': end})
                         except Exception:
                             pass
-
                         yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations})}\n\n"
 
                     elif etype == 'error':
                         yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
-
-                    # Todos os outros eventos ignorados silenciosamente
-                    # (web search, content parts, response.in_progress, etc.)
 
             except Exception as e:
                 import traceback; traceback.print_exc()
@@ -1791,11 +2115,9 @@ def atlas_chat():
                 if '429' in msg or 'quota' in msg.lower() or 'rate_limit' in msg.lower():
                     yield f"data: {json.dumps({'type': 'error', 'message': 'cota_openai'})}\n\n"
                 else:
-                    yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Erro interno ao processar resposta.'})}\n\n"
 
-# Dispara análise de memórias em background
-        usuario_id = int(get_jwt_identity())
-        msgs = data.get('msgs', [])
+        # Dispara análise de memórias em background
         threading.Thread(
             target=analisar_e_salvar_memorias,
             args=(app.app_context(), usuario_id, msgs),
@@ -1803,7 +2125,6 @@ def atlas_chat():
         ).start()
 
         # Popula AtlasLog na primeira mensagem da conversa
-        conv_id  = data.get('conv_id', '')
         primeira = next((m.get('text', '') for m in msgs if m.get('role') == 'user'), '')
         if conv_id and primeira:
             existe = AtlasLog.query.filter_by(usuario_id=usuario_id, primeira_msg=primeira[:200]).first()
@@ -1823,7 +2144,7 @@ def atlas_chat():
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'erro': str(e)}), 500
+        return jsonify({'erro': 'Erro interno no servidor.'}), 500
 
 
 @app.route('/api/atlas/upload_arquivo', methods=['POST'])
@@ -1833,7 +2154,7 @@ def atlas_upload_arquivo():
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
 
     arquivo = request.files['arquivo']
-    nome = arquivo.filename or 'arquivo'
+    nome = secure_filename(arquivo.filename or 'arquivo')
 
     extensoes_suportadas = {
         '.xlsx', '.xls', '.csv',
@@ -2230,9 +2551,10 @@ def atlas_salvar_conversa():
 def atlas_deletar_conversa(conv_id):
     usuario_id = int(get_jwt_identity())
     conversa = AtlasConversa.query.filter_by(usuario_id=usuario_id, conv_id=conv_id).first()
-    if conversa:
-        db.session.delete(conversa)
-        db.session.commit()
+    if not conversa:
+        return jsonify({'erro': 'Conversa não encontrada'}), 404
+    db.session.delete(conversa)
+    db.session.commit()
     return jsonify({'ok': True}), 200
 
 @app.route('/api/atlas/memorias', methods=['GET'])
@@ -2340,8 +2662,6 @@ def mover_conversa_projeto(conv_id):
 # ── FIM PROJETOS ──────────────────────────────────────────────────────────────
 
 @app.route('/api/atlas/conversas/buscar', methods=['GET'])
-
-@app.route('/api/atlas/conversas/buscar', methods=['GET'])
 @jwt_required()
 def atlas_buscar_conversas():
     """Busca conversas por texto — usada pelo Atlas para se atualizar."""
@@ -2446,11 +2766,15 @@ def base_conhecimento_listar():
 @jwt_required()
 def base_conhecimento_upload():
     """Faz upload de um documento para o Vector Store."""
+    _admin = User.query.get(int(get_jwt_identity()))
+    if not _admin or _admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
     if 'arquivo' not in request.files:
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
 
     arquivo = request.files['arquivo']
-    nome = arquivo.filename or 'documento'
+    nome = secure_filename(arquivo.filename or 'documento')
     ext = os.path.splitext(nome)[1].lower()
 
     extensoes_suportadas = {'.pdf', '.docx', '.doc', '.txt', '.md', '.pptx', '.ppt', '.xlsx', '.csv'}
@@ -2497,6 +2821,10 @@ def base_conhecimento_upload():
 @jwt_required()
 def base_conhecimento_deletar(file_id):
     """Remove um documento do Vector Store e da Files API."""
+    _admin = User.query.get(int(get_jwt_identity()))
+    if not _admin or _admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
     api_key = os.getenv('OPENAI_API_KEY', '').strip()
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
@@ -2689,7 +3017,7 @@ def outlook_callback():
     <html><body>
     <script>
       if (window.opener) {
-        window.opener.postMessage({ type: 'OUTLOOK_CONNECTED', email: '""" + (email_outlook or '') + """' }, '*');
+        window.opener.postMessage({ type: 'OUTLOOK_CONNECTED', email: '""" + (email_outlook or '') + """' }, '""" + os.getenv('FRONTEND_URL', 'http://localhost:5173') + """');
         window.close();
       }
     </script>
@@ -2864,7 +3192,7 @@ def outlook_buscar_emails():
     usuario_id       = get_jwt_identity()
     query            = request.args.get('q', '')
     apenas_nao_lidos = request.args.get('nao_lidos', 'false').lower() == 'true'
-    limite           = int(request.args.get('limite', 20))
+    limite           = min(int(request.args.get('limite', 20)), 50)
 
     access_token, erro_msg = _get_access_token(usuario_id)
     if not access_token:

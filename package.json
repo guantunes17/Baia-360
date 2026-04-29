@@ -2,5 +2,8 @@
   "dependencies": {
     "jspdf": "^4.2.1",
     "react-markdown": "^10.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
   }
 }
