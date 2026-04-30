@@ -28,11 +28,13 @@ export function FatArmazenagem() {
   const inputVolRef                     = useRef<HTMLInputElement>(null)
   const intervalRef                     = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const [dbStatus, setDbStatus]         = useState<DbStatus | null>(null)
+  const [dbStatus, setDbStatus]           = useState<DbStatus | null>(null)
   const [carregandoFam, setCarregandoFam] = useState(false)
   const [carregandoCfg, setCarregandoCfg] = useState(false)
-  const inputFamRef                     = useRef<HTMLInputElement>(null)
-  const inputCfgRef                     = useRef<HTMLInputElement>(null)
+  const [erroFam, setErroFam]             = useState('')
+  const [erroCfg, setErroCfg]             = useState('')
+  const inputFamRef                       = useRef<HTMLInputElement>(null)
+  const inputCfgRef                       = useRef<HTMLInputElement>(null)
 
   const carregarStatus = async () => {
     try {
@@ -49,6 +51,7 @@ export function FatArmazenagem() {
     const file = e.target.files?.[0]
     if (!file) return
     setCarregandoFam(true)
+    setErroFam('')
     const form = new FormData()
     form.append('arquivo', file)
     try {
@@ -58,7 +61,9 @@ export function FatArmazenagem() {
       ;(window as any)._toast?.('sucesso', `DB Famílias: ${res.data.total_skus} SKUs em ${res.data.total_clientes} clientes`)
       await carregarStatus()
     } catch (err: any) {
-      ;(window as any)._toast?.('erro', err.response?.data?.erro || 'Erro ao carregar famílias')
+      const msg = err.response?.data?.erro || 'Erro ao carregar famílias'
+      setErroFam(msg)
+      ;(window as any)._toast?.('erro', msg)
     } finally {
       setCarregandoFam(false)
       if (inputFamRef.current) inputFamRef.current.value = ''
@@ -69,6 +74,7 @@ export function FatArmazenagem() {
     const file = e.target.files?.[0]
     if (!file) return
     setCarregandoCfg(true)
+    setErroCfg('')
     const form = new FormData()
     form.append('arquivo', file)
     try {
@@ -78,7 +84,9 @@ export function FatArmazenagem() {
       ;(window as any)._toast?.('sucesso', `Configuração: ${res.data.total_clientes} clientes com preço`)
       await carregarStatus()
     } catch (err: any) {
-      ;(window as any)._toast?.('erro', err.response?.data?.erro || 'Erro ao carregar configuração')
+      const msg = err.response?.data?.erro || 'Erro ao carregar configuração'
+      setErroCfg(msg)
+      ;(window as any)._toast?.('erro', msg)
     } finally {
       setCarregandoCfg(false)
       if (inputCfgRef.current) inputCfgRef.current.value = ''
@@ -209,6 +217,9 @@ export function FatArmazenagem() {
                 >
                   {carregandoFam ? '⏳ Carregando...' : '📥 Carregar / Atualizar Famílias'}
                 </Button>
+                {erroFam && (
+                  <p className="text-xs mt-1" style={{ color: '#ef4444' }}>❌ {erroFam}</p>
+                )}
               </div>
               <DicaExtracao linhas={[
                 '📋 Exportação do cadastro de produtos do ESL (abas por cliente)',
@@ -250,6 +261,9 @@ export function FatArmazenagem() {
                 >
                   {carregandoCfg ? '⏳ Carregando...' : '📥 Carregar Configuração'}
                 </Button>
+                {erroCfg && (
+                  <p className="text-xs mt-1" style={{ color: '#ef4444' }}>❌ {erroCfg}</p>
+                )}
               </div>
               <DicaExtracao linhas={[
                 '📋 Planilha com abas "Grupo-Familia" e "Valor de armaz."',

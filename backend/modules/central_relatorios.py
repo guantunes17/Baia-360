@@ -8,8 +8,13 @@ try:
     import pdfplumber as _pdfplumber
 except ImportError:
     _pdfplumber = None
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, ttk
+    _HAS_TK = True
+except ImportError:
+    tk = None  # ambiente headless (Docker/servidor) — UI Tkinter não disponível
+    _HAS_TK = False
 import os
 import threading
 from datetime import datetime, date, timedelta

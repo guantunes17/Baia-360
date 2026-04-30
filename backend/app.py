@@ -1685,7 +1685,8 @@ def fat_arm_carregar_familias():
         db  = mod._carregar_familias_xlsx(tmp.name, logs.append)
         if not db:
             return jsonify({'erro': 'Nenhum dado encontrado no arquivo', 'logs': logs}), 422
-        mod._salvar_db_familias(db)
+        if not mod._salvar_db_familias(db):
+            return jsonify({'erro': 'Falha ao salvar DB de famílias no servidor', 'logs': logs}), 500
         return jsonify({
             'total_skus':     sum(len(skus) for skus in db.values()),
             'total_clientes': len(db),
@@ -1718,7 +1719,8 @@ def fat_arm_carregar_config():
         db  = mod._carregar_config_fat_arm_xlsx(tmp.name, logs.append)
         if not db:
             return jsonify({'erro': 'Arquivo inválido — verifique as abas "Grupo-Familia" e "Valor de armaz."', 'logs': logs}), 422
-        mod._salvar_db_precos_arm(db)
+        if not mod._salvar_db_precos_arm(db):
+            return jsonify({'erro': 'Falha ao salvar DB de configuração no servidor', 'logs': logs}), 500
         return jsonify({
             'total_clientes': len(db.get('clientes', {})),
             'logs':           logs,
