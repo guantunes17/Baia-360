@@ -527,6 +527,10 @@ class RelatorioGerado(db.Model):
 
 # db.create_all() é executado pelo entrypoint.sh antes do gunicorn subir
 
+@app.errorhandler(413)
+def arquivo_muito_grande(e):
+    return jsonify({'erro': 'Arquivo excede o tamanho máximo permitido (50MB)'}), 413
+
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'}), 200
