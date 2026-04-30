@@ -1,0 +1,143 @@
+{
+  "ADITUS": {
+    "001-ADI": {
+      "desc": "PRODUTO ALFA 10MG",
+      "saldo": 92,
+      "reservado": 10,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "002-ADI": {
+      "desc": "PRODUTO BETA 20MG",
+      "saldo": 238,
+      "reservado": 25,
+      "bloqueado": 5,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "003-ADI": {
+      "desc": "PRODUTO GAMA 50MG",
+      "saldo": 78,
+      "reservado": 0,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "004-ADI": {
+      "desc": "PRODUTO DELTA 100MG",
+      "saldo": 320,
+      "reservado": 32,
+      "bloqueado": 10,
+      "atualizado": "30/04/2026"
+    },
+    "005-ADI": {
+      "desc": "PRODUTO SIGMA 200MG",
+      "saldo": 50,
+      "reservado": 5,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026"
+    },
+    "006-ADI": {
+      "desc": "PRODUTO OMEGA 5MG",
+      "saldo": 175,
+      "reservado": 17,
+      "bloqueado": 3,
+      "atualizado": "30/04/2026"
+    }
+  },
+  "BIOGEN": {
+    "001-BIO": {
+      "desc": "PRODUTO ALFA 10MG",
+      "saldo": 92,
+      "reservado": 10,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "002-BIO": {
+      "desc": "PRODUTO BETA 20MG",
+      "saldo": 238,
+      "reservado": 25,
+      "bloqueado": 5,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "003-BIO": {
+      "desc": "PRODUTO GAMA 50MG",
+      "saldo": 78,
+      "reservado": 0,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "004-BIO": {
+      "desc": "PRODUTO DELTA 100MG",
+      "saldo": 320,
+      "reservado": 32,
+      "bloqueado": 10,
+      "atualizado": "30/04/2026"
+    },
+    "005-BIO": {
+      "desc": "PRODUTO SIGMA 200MG",
+      "saldo": 50,
+      "reservado": 5,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026"
+    },
+    "006-BIO": {
+      "desc": "PRODUTO OMEGA 5MG",
+      "saldo": 175,
+      "reservado": 17,
+      "bloqueado": 3,
+      "atualizado": "30/04/2026"
+    }
+  },
+  "IPSEN": {
+    "001-IPS": {
+      "desc": "PRODUTO ALFA 10MG",
+      "saldo": 92,
+      "reservado": 10,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "002-IPS": {
+      "desc": "PRODUTO BETA 20MG",
+      "saldo": 238,
+      "reservado": 25,
+      "bloqueado": 5,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "003-IPS": {
+      "desc": "PRODUTO GAMA 50MG",
+      "saldo": 78,
+      "reservado": 0,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026",
+      "ultima_mov": "30/04/2026"
+    },
+    "004-IPS": {
+      "desc": "PRODUTO DELTA 100MG",
+      "saldo": 320,
+      "reservado": 32,
+      "bloqueado": 10,
+      "atualizado": "30/04/2026"
+    },
+    "005-IPS": {
+      "desc": "PRODUTO SIGMA 200MG",
+      "saldo": 50,
+      "reservado": 5,
+      "bloqueado": 0,
+      "atualizado": "30/04/2026"
+    },
+    "006-IPS": {
+      "desc": "PRODUTO OMEGA 5MG",
+      "saldo": 175,
+      "reservado": 17,
+      "bloqueado": 3,
+      "atualizado": "30/04/2026"
+    }
+  }
+}

@@ -5,25 +5,12 @@ import os
 import re
 import tempfile
 import threading
+import time
 import traceback
 import uuid
 import msal
 import pandas as pd
 import requests as http_requests
-
-def _deletar_temp(path: str):
-    """Remove arquivo temporário com tolerância ao PermissionError do Windows."""
-    import time
-    for _ in range(5):
-        try:
-            os.unlink(path)
-            return
-        except PermissionError:
-            time.sleep(0.2)
-        except FileNotFoundError:
-            return
-        except Exception:
-            return
 
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -38,10 +25,26 @@ from flask_limiter.util import get_remote_address
 from flask_sqlalchemy import SQLAlchemy
 from openai import OpenAI
 from sqlalchemy import func
+from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from zoneinfo import ZoneInfo
 
-from pathlib import Path
+
+def _deletar_temp(path: str):
+    """Remove arquivo temporário com tolerância ao PermissionError do Windows."""
+    for _ in range(5):
+        try:
+            os.unlink(path)
+            return
+        except PermissionError:
+            time.sleep(0.2)
+        except FileNotFoundError:
+            return
+        except Exception:
+            return
+
+
 _env_path = Path(__file__).resolve().parent / '.env'
 load_dotenv(dotenv_path=_env_path, override=True)
 
@@ -2323,7 +2326,6 @@ def atlas_briefing():
     resultado['outlook_conectado'] = outlook_conectado
 
     if outlook_conectado:
-        from zoneinfo import ZoneInfo
         tz_br    = ZoneInfo('America/Sao_Paulo')
         agora_br = datetime.now(tz_br)
         hoje     = agora_br.strftime('%Y-%m-%d')
@@ -2463,7 +2465,7 @@ def atlas_log_conversas():
         } for l in logs]), 200
 
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
 @app.route('/api/atlas/conversas', methods=['GET'])
