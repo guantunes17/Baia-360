@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod +x entrypoint.sh \
+RUN mkdir -p /app/data \
+    && chmod +x entrypoint.sh \
     && chown -R appuser:appgroup /app
 
 USER appuser
