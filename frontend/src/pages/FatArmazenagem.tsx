@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,11 @@ const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}
 
 type Status = 'idle' | 'processando' | 'concluido' | 'erro'
 
+interface DbStatus {
+  familias: { total_skus: number; total_clientes: number; ultima: string | null }
+  config:   { total_clientes: number; ultima: string | null }
+}
+
 export function FatArmazenagem() {
   const [arquivoMov, setArquivoMov]     = useState<File | null>(null)
   const [arquivoVol, setArquivoVol]     = useState<File | null>(null)
@@ -22,6 +27,63 @@ export function FatArmazenagem() {
   const inputMovRef                     = useRef<HTMLInputElement>(null)
   const inputVolRef                     = useRef<HTMLInputElement>(null)
   const intervalRef                     = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [dbStatus, setDbStatus]         = useState<DbStatus | null>(null)
+  const [carregandoFam, setCarregandoFam] = useState(false)
+  const [carregandoCfg, setCarregandoCfg] = useState(false)
+  const inputFamRef                     = useRef<HTMLInputElement>(null)
+  const inputCfgRef                     = useRef<HTMLInputElement>(null)
+
+  const carregarStatus = async () => {
+    try {
+      const res = await axios.get(`${API}/api/modulos/fat_arm/status`, { headers: headers() })
+      setDbStatus(res.data)
+    } catch {
+      // silencioso — só não mostra status
+    }
+  }
+
+  useEffect(() => { carregarStatus() }, [])
+
+  const uploadFamilias = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setCarregandoFam(true)
+    const form = new FormData()
+    form.append('arquivo', file)
+    try {
+      const res = await axios.post(`${API}/api/modulos/fat_arm/familias`, form, {
+        headers: { ...headers(), 'Content-Type': 'multipart/form-data' }
+      })
+      ;(window as any)._toast?.('sucesso', `DB Famílias: ${res.data.total_skus} SKUs em ${res.data.total_clientes} clientes`)
+      await carregarStatus()
+    } catch (err: any) {
+      ;(window as any)._toast?.('erro', err.response?.data?.erro || 'Erro ao carregar famílias')
+    } finally {
+      setCarregandoFam(false)
+      if (inputFamRef.current) inputFamRef.current.value = ''
+    }
+  }
+
+  const uploadConfig = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setCarregandoCfg(true)
+    const form = new FormData()
+    form.append('arquivo', file)
+    try {
+      const res = await axios.post(`${API}/api/modulos/fat_arm/config`, form, {
+        headers: { ...headers(), 'Content-Type': 'multipart/form-data' }
+      })
+      ;(window as any)._toast?.('sucesso', `Configuração: ${res.data.total_clientes} clientes com preço`)
+      await carregarStatus()
+    } catch (err: any) {
+      ;(window as any)._toast?.('erro', err.response?.data?.erro || 'Erro ao carregar configuração')
+    } finally {
+      setCarregandoCfg(false)
+      if (inputCfgRef.current) inputCfgRef.current.value = ''
+    }
+  }
 
   const resetar = () => {
     setArquivoMov(null)
@@ -86,6 +148,9 @@ export function FatArmazenagem() {
     window.open(`${API}/api/modulos/download/${jobId}?token=${localStorage.getItem('token')}`, '_blank')
   }
 
+  const famOk  = dbStatus && dbStatus.familias.total_skus > 0
+  const cfgOk  = dbStatus && dbStatus.config.total_clientes > 0
+
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-8">
@@ -97,6 +162,105 @@ export function FatArmazenagem() {
         </p>
       </div>
 
+      {/* ── Banco de Dados ── */}
+      <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
+        <CardHeader>
+          <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>
+            Banco de Dados
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs" style={{ color: '#8892a4' }}>
+            Carregue os dois bancos de dados antes de gerar o relatório. Eles ficam salvos no servidor — não é necessário recarregar a cada uso.
+          </p>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* DB Famílias */}
+            <div className="rounded-md border p-4 space-y-3" style={{ borderColor: famOk ? '#10b981' : '#ef4444', background: '#0f1117' }}>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: '#e2e8f0' }}>📦 DB de Famílias</p>
+                {dbStatus ? (
+                  famOk ? (
+                    <p className="text-xs mt-1" style={{ color: '#10b981' }}>
+                      ✅ {dbStatus.familias.total_skus} SKUs · {dbStatus.familias.total_clientes} clientes
+                      {dbStatus.familias.ultima ? ` · ${dbStatus.familias.ultima}` : ''}
+                    </p>
+                  ) : (
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>⚠️ DB vazio — carregue o arquivo</p>
+                  )
+                ) : (
+                  <p className="text-xs mt-1" style={{ color: '#8892a4' }}>Carregando...</p>
+                )}
+              </div>
+              <div>
+                <input
+                  ref={inputFamRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={uploadFamilias}
+                  className="hidden"
+                  id="input-familias"
+                />
+                <Button
+                  size="sm"
+                  disabled={carregandoFam}
+                  onClick={() => inputFamRef.current?.click()}
+                  style={{ background: '#4c1d95', color: 'white', fontSize: '0.75rem' }}
+                >
+                  {carregandoFam ? '⏳ Carregando...' : '📥 Carregar / Atualizar Famílias'}
+                </Button>
+              </div>
+              <DicaExtracao linhas={[
+                '📋 Exportação do cadastro de produtos do ESL (abas por cliente)',
+                'ℹ️ Também aceita planilha de correções de família (formato com coluna "Família Sugerida")',
+              ]} />
+            </div>
+
+            {/* DB Configuração */}
+            <div className="rounded-md border p-4 space-y-3" style={{ borderColor: cfgOk ? '#10b981' : '#ef4444', background: '#0f1117' }}>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: '#e2e8f0' }}>💰 Configuração (Preços)</p>
+                {dbStatus ? (
+                  cfgOk ? (
+                    <p className="text-xs mt-1" style={{ color: '#10b981' }}>
+                      ✅ {dbStatus.config.total_clientes} clientes com preço
+                      {dbStatus.config.ultima ? ` · ${dbStatus.config.ultima}` : ''}
+                    </p>
+                  ) : (
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>⚠️ DB vazio — carregue o arquivo</p>
+                  )
+                ) : (
+                  <p className="text-xs mt-1" style={{ color: '#8892a4' }}>Carregando...</p>
+                )}
+              </div>
+              <div>
+                <input
+                  ref={inputCfgRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={uploadConfig}
+                  className="hidden"
+                  id="input-config"
+                />
+                <Button
+                  size="sm"
+                  disabled={carregandoCfg}
+                  onClick={() => inputCfgRef.current?.click()}
+                  style={{ background: '#065f46', color: 'white', fontSize: '0.75rem' }}
+                >
+                  {carregandoCfg ? '⏳ Carregando...' : '📥 Carregar Configuração'}
+                </Button>
+              </div>
+              <DicaExtracao linhas={[
+                '📋 Planilha com abas "Grupo-Familia" e "Valor de armaz."',
+                'ℹ️ Define agrupamentos e preço/m³ por cliente',
+              ]} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Configuração do relatório ── */}
       <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
         <CardHeader>
           <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>

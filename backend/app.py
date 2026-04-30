@@ -1619,6 +1619,118 @@ def processar_fat_dist_route():
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
+DB_FAMILIAS_PATH_WEB   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'fat_arm_familias.json')
+DB_PRECOS_ARM_PATH_WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'fat_arm_precos.json')
+
+def _carregar_modulo_central():
+    spec = importlib.util.spec_from_file_location(
+        'central',
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'modules', 'central_relatorios.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.DB_FAMILIAS_PATH   = DB_FAMILIAS_PATH_WEB
+    mod.DB_PRECOS_ARM_PATH = DB_PRECOS_ARM_PATH_WEB
+    return mod
+
+@app.route('/api/modulos/fat_arm/status', methods=['GET'])
+@jwt_required()
+def fat_arm_db_status():
+    resultado = {
+        'familias': {'total_skus': 0, 'total_clientes': 0, 'ultima': None},
+        'config':   {'total_clientes': 0, 'ultima': None},
+    }
+    try:
+        with open(DB_FAMILIAS_PATH_WEB, 'r', encoding='utf-8') as f:
+            db_fam = json.load(f)
+        ultima = None
+        for skus in db_fam.values():
+            for info in skus.values():
+                ultima = info.get('atualizado')
+                break
+            break
+        resultado['familias'] = {
+            'total_skus':      sum(len(skus) for skus in db_fam.values()),
+            'total_clientes':  len(db_fam),
+            'ultima':          ultima,
+        }
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    try:
+        with open(DB_PRECOS_ARM_PATH_WEB, 'r', encoding='utf-8') as f:
+            db_cfg = json.load(f)
+        resultado['config'] = {
+            'total_clientes': sum(1 for v in db_cfg.get('clientes', {}).values() if v.get('preco_m3', 0) > 0),
+            'ultima':         db_cfg.get('atualizado'),
+        }
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return jsonify(resultado), 200
+
+@app.route('/api/modulos/fat_arm/familias', methods=['POST'])
+@limiter.limit("5 per minute")
+@jwt_required()
+def fat_arm_carregar_familias():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Arquivo obrigatório'}), 400
+    arquivo = request.files['arquivo']
+    if not arquivo.filename or not arquivo.filename.lower().endswith(('.xlsx', '.xls')):
+        return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp.name)
+    tmp.close()
+    try:
+        logs = []
+        mod = _carregar_modulo_central()
+        db  = mod._carregar_familias_xlsx(tmp.name, logs.append)
+        if not db:
+            return jsonify({'erro': 'Nenhum dado encontrado no arquivo', 'logs': logs}), 422
+        mod._salvar_db_familias(db)
+        return jsonify({
+            'total_skus':     sum(len(skus) for skus in db.values()),
+            'total_clientes': len(db),
+            'logs':           logs,
+        }), 200
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+@app.route('/api/modulos/fat_arm/config', methods=['POST'])
+@limiter.limit("5 per minute")
+@jwt_required()
+def fat_arm_carregar_config():
+    if 'arquivo' not in request.files:
+        return jsonify({'erro': 'Arquivo obrigatório'}), 400
+    arquivo = request.files['arquivo']
+    if not arquivo.filename or not arquivo.filename.lower().endswith(('.xlsx', '.xls')):
+        return jsonify({'erro': 'Arquivo deve ser .xlsx ou .xls'}), 400
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    arquivo.save(tmp.name)
+    tmp.close()
+    try:
+        logs = []
+        mod = _carregar_modulo_central()
+        db  = mod._carregar_config_fat_arm_xlsx(tmp.name, logs.append)
+        if not db:
+            return jsonify({'erro': 'Arquivo inválido — verifique as abas "Grupo-Familia" e "Valor de armaz."', 'logs': logs}), 422
+        mod._salvar_db_precos_arm(db)
+        return jsonify({
+            'total_clientes': len(db.get('clientes', {})),
+            'logs':           logs,
+        }), 200
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
 @app.route('/api/modulos/fat_arm', methods=['POST'])
 @limiter.limit("20 per minute")
 @jwt_required()
@@ -1665,7 +1777,9 @@ def processar_fat_arm_route():
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
 
-            mod._caminho_saida = lambda *args, **kwargs: tmp_saida.name
+            mod._caminho_saida      = lambda *args, **kwargs: tmp_saida.name
+            mod.DB_FAMILIAS_PATH    = DB_FAMILIAS_PATH_WEB
+            mod.DB_PRECOS_ARM_PATH  = DB_PRECOS_ARM_PATH_WEB
 
             resultado = mod.run_faturamento_armazenagem(
                 tmp_mov.name, tmp_vol.name, mes_ref, log)
