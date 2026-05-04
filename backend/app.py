@@ -946,9 +946,8 @@ def _extrair_kpis_recebimentos(caminho_xlsx):
 def _extrair_kpis_fat_dist(caminho_xlsx):
     try:
         df = pd.read_excel(caminho_xlsx, sheet_name='Fechamento', header=None)
-        # Linha do total está na coluna 3 (Valor do Frete), filtra linhas numéricas
-        valores = pd.to_numeric(df[3], errors='coerce').dropna()
-        total   = round(float(valores.sum()), 2)
+        mask_total = df[1].astype(str).str.contains('TOTAL GERAL', na=False)
+        total = round(float(pd.to_numeric(df.loc[mask_total, 3], errors='coerce').iloc[0]), 2)
         clientes = int(df[1].dropna().apply(lambda x: str(x).strip()).str.endswith('›').sum())
         return {'total_frete': total, 'clientes': clientes}
     except Exception:
