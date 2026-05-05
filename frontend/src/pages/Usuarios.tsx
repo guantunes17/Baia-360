@@ -1,31 +1,20 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
-} from '@/components/ui/dialog'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
-} from '@/components/ui/alert-dialog'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { T } from '@/lib/theme'
+import { glass, neoShadow, neoShadowInset } from '@/lib/glass'
 import { API } from '../config'
 
 interface Usuario {
-  id: number
-  nome: string
-  email: string
-  perfil: string
-  ativo: boolean
-  status: string
+  id:        number
+  nome:      string
+  email:     string
+  perfil:    string
+  ativo:     boolean
+  status:    string
   criado_em: string
 }
 
-const token = () => localStorage.getItem('token')
+const token   = () => localStorage.getItem('token')
 const headers = () => ({ Authorization: `Bearer ${token()}` })
 
 const PERFIS = [
@@ -36,14 +25,14 @@ const PERFIS = [
 ]
 
 const MODULOS_DISPONIVEIS = [
-  { key: 'pedidos',        label: 'Pedidos e Recebimentos' },
-  { key: 'fretes',         label: 'Fretes' },
-  { key: 'armazenagem',    label: 'Armazenagem' },
-  { key: 'estoque',        label: 'Estoque' },
-  { key: 'cap_operacional',label: 'Capacidade Operacional' },
-  { key: 'recebimentos',   label: 'Recebimentos e Devoluções' },
-  { key: 'fat_dist',       label: 'Faturamento Distribuição' },
-  { key: 'fat_arm',        label: 'Faturamento Armazenagem' },
+  { key: 'pedidos',         label: 'Pedidos e Recebimentos' },
+  { key: 'fretes',          label: 'Fretes' },
+  { key: 'armazenagem',     label: 'Armazenagem' },
+  { key: 'estoque',         label: 'Estoque' },
+  { key: 'cap_operacional', label: 'Capacidade Operacional' },
+  { key: 'recebimentos',    label: 'Recebimentos e Devoluções' },
+  { key: 'fat_dist',        label: 'Faturamento Distribuição' },
+  { key: 'fat_arm',         label: 'Faturamento Armazenagem' },
 ]
 
 const HUB_ITEMS = [
@@ -53,62 +42,75 @@ const HUB_ITEMS = [
   { key: 'agenda',            label: 'Agenda' },
 ]
 
+const inp: React.CSSProperties = {
+  width: '100%', padding: '8px 12px',
+  background: 'rgba(8,11,20,0.7)',
+  border: `1px solid ${T.border}`,
+  borderRadius: 8, color: T.text, fontSize: 13,
+  outline: 'none', boxShadow: neoShadowInset,
+  boxSizing: 'border-box', fontFamily: 'inherit',
+}
+const lbl: React.CSSProperties = {
+  display: 'block', fontSize: 11, color: T.textMuted,
+  marginBottom: 6, fontWeight: 500,
+}
+
+const PERFIL_CORES: Record<string, string> = {
+  admin: T.accentBlue, analista: T.accentPurple,
+  financeiro: T.accentAmber, operacional: T.accentGreen,
+}
 
 function badgePerfil(perfil: string) {
-  const map: Record<string, { bg: string; color: string; label: string }> = {
-    admin:       { bg: '#E6F1FB', color: '#0C447C', label: 'Admin' },
-    analista:    { bg: '#EEEDFE', color: '#3C3489', label: 'Analista' },
-    financeiro:  { bg: '#FAEEDA', color: '#633806', label: 'Financeiro' },
-    operacional: { bg: '#E1F5EE', color: '#085041', label: 'Operacional' },
-  }
-  const s = map[perfil] || { bg: '#8892a422', color: '#8892a4', label: perfil }
+  const cor   = PERFIL_CORES[perfil] || T.textMuted
+  const label = PERFIS.find(p => p.value === perfil)?.label || perfil
   return (
-    <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 99, background: s.bg, color: s.color, flexShrink: 0 }}>
-      {s.label}
+    <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 99, background: `${cor}22`, color: cor, flexShrink: 0 }}>
+      {label}
     </span>
   )
 }
 
 function badgeStatus(status: string) {
-  const map: Record<string, { bg: string; color: string; label: string }> = {
-    ativo:     { bg: '#EAF3DE', color: '#27500A', label: 'Ativo' },
-    pendente:  { bg: '#FAEEDA', color: '#633806', label: 'Pendente' },
-    rejeitado: { bg: '#FCEBEB', color: '#791F1F', label: 'Rejeitado' },
-    inativo:   { bg: '#8892a422', color: '#8892a4', label: 'Inativo' },
+  const map: Record<string, { cor: string; label: string }> = {
+    ativo:     { cor: T.accentGreen,  label: 'Ativo' },
+    pendente:  { cor: T.accentAmber,  label: 'Pendente' },
+    rejeitado: { cor: T.accentRed,    label: 'Rejeitado' },
+    inativo:   { cor: T.textMuted,    label: 'Inativo' },
   }
-  const s = map[status] || { bg: '#8892a422', color: '#8892a4', label: status }
+  const s = map[status] || { cor: T.textMuted, label: status }
   return (
-    <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 99, background: s.bg, color: s.color, flexShrink: 0 }}>
+    <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 99, background: `${s.cor}22`, color: s.cor, flexShrink: 0 }}>
       {s.label}
     </span>
   )
 }
 
 export function Usuarios() {
-  const [usuarios, setUsuarios]             = useState<Usuario[]>([])
-  const [loading, setLoading]               = useState(true)
-  const [erro, setErro]                     = useState('')
+  const [usuarios,      setUsuarios]      = useState<Usuario[]>([])
+  const [loading,       setLoading]       = useState(true)
+  const [erro,          setErro]          = useState('')
+  const [openMenuId,    setOpenMenuId]    = useState<number | null>(null)
 
-  const [modalAberto, setModalAberto]       = useState(false)
-  const [editando, setEditando]             = useState<Usuario | null>(null)
-  const [form, setForm]                     = useState({ nome: '', email: '', senha: '', perfil: 'operacional' })
-  const [salvando, setSalvando]             = useState(false)
-  const [erroModal, setErroModal]           = useState('')
+  const [modalAberto,   setModalAberto]   = useState(false)
+  const [editando,      setEditando]      = useState<Usuario | null>(null)
+  const [form,          setForm]          = useState({ nome: '', email: '', senha: '', perfil: 'operacional' })
+  const [salvando,      setSalvando]      = useState(false)
+  const [erroModal,     setErroModal]     = useState('')
 
-  const [modalSenha, setModalSenha]         = useState(false)
-  const [usuarioSenha, setUsuarioSenha]     = useState<Usuario | null>(null)
-  const [novaSenha, setNovaSenha]           = useState('')
-  const [salvandoSenha, setSalvandoSenha]   = useState(false)
+  const [modalSenha,    setModalSenha]    = useState(false)
+  const [usuarioSenha,  setUsuarioSenha]  = useState<Usuario | null>(null)
+  const [novaSenha,     setNovaSenha]     = useState('')
+  const [salvandoSenha, setSalvandoSenha] = useState(false)
 
-  const [modalDeletar, setModalDeletar]     = useState(false)
-  const [usuarioDeletar, setUsuarioDeletar] = useState<Usuario | null>(null)
+  const [modalDeletar,    setModalDeletar]    = useState(false)
+  const [usuarioDeletar,  setUsuarioDeletar]  = useState<Usuario | null>(null)
 
-  const [aprovandoId, setAprovandoId]       = useState<number | null>(null)
+  const [aprovandoId,     setAprovandoId]     = useState<number | null>(null)
   const [perfilAprovacao, setPerfilAprovacao] = useState<Record<number, string>>({})
 
   const [painelPermissoes, setPainelPermissoes] = useState<Usuario | null>(null)
-  const [permissoes, setPermissoes]             = useState<{ hub: string[]; modulos: string[] }>({ hub: [], modulos: [] })
-  const [salvandoPerm, setSalvandoPerm]         = useState(false)
+  const [permissoes,       setPermissoes]       = useState<{ hub: string[]; modulos: string[] }>({ hub: [], modulos: [] })
+  const [salvandoPerm,     setSalvandoPerm]     = useState(false)
 
   const abrirPermissoes = async (u: Usuario) => {
     try {
@@ -134,19 +136,8 @@ export function Usuarios() {
     }
   }
 
-  const toggleHub = (key: string) => {
-    setPermissoes(p => ({
-      ...p,
-      hub: p.hub.includes(key) ? p.hub.filter(k => k !== key) : [...p.hub, key]
-    }))
-  }
-
-  const toggleModulo = (modulo: string) => {
-    setPermissoes(p => ({
-      ...p,
-      modulos: p.modulos.includes(modulo) ? p.modulos.filter(m => m !== modulo) : [...p.modulos, modulo]
-    }))
-  }
+  const toggleHub    = (key: string) => setPermissoes(p => ({ ...p, hub:    p.hub.includes(key)    ? p.hub.filter(k => k !== key)    : [...p.hub, key] }))
+  const toggleModulo = (m: string)   => setPermissoes(p => ({ ...p, modulos: p.modulos.includes(m) ? p.modulos.filter(k => k !== m) : [...p.modulos, m] }))
 
   const carregar = async () => {
     try {
@@ -222,9 +213,7 @@ export function Usuarios() {
 
   const toggleAtivo = async (u: Usuario) => {
     try {
-      await axios.put(`${API}/api/auth/usuarios/${u.id}`,
-        { ativo: !u.ativo },
-        { headers: headers() })
+      await axios.put(`${API}/api/auth/usuarios/${u.id}`, { ativo: !u.ativo }, { headers: headers() })
       carregar()
     } catch {
       alert('Erro ao atualizar status')
@@ -234,8 +223,7 @@ export function Usuarios() {
   const deletar = async () => {
     if (!usuarioDeletar) return
     try {
-      await axios.delete(`${API}/api/auth/usuarios/${usuarioDeletar.id}`,
-        { headers: headers() })
+      await axios.delete(`${API}/api/auth/usuarios/${usuarioDeletar.id}`, { headers: headers() })
       setModalDeletar(false)
       carregar()
     } catch (err: any) {
@@ -259,9 +247,7 @@ export function Usuarios() {
 
   const rejeitar = async (u: Usuario) => {
     try {
-      await axios.post(`${API}/api/auth/usuarios/${u.id}/rejeitar`,
-        {},
-        { headers: headers() })
+      await axios.post(`${API}/api/auth/usuarios/${u.id}/rejeitar`, {}, { headers: headers() })
       carregar()
     } catch (err: any) {
       alert(err.response?.data?.erro || 'Erro ao rejeitar')
@@ -274,25 +260,38 @@ export function Usuarios() {
     return (p[0][0] + p[p.length - 1][0]).toUpperCase()
   }
 
-  const avatarColors: Record<string, { bg: string; color: string }> = {
-    admin:       { bg: '#E6F1FB', color: '#0C447C' },
-    analista:    { bg: '#EEEDFE', color: '#3C3489' },
-    financeiro:  { bg: '#FAEEDA', color: '#633806' },
-    operacional: { bg: '#E1F5EE', color: '#085041' },
+  const overlayStyle: React.CSSProperties = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
+  }
+  const modalInnerStyle: React.CSSProperties = {
+    ...glass(0.98, 30), boxShadow: neoShadow, borderRadius: 14,
+    padding: 28, width: 420, maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto'
+  }
+  const modalTitle: React.CSSProperties = { fontSize: 16, fontWeight: 600, color: T.text, marginBottom: 20 }
+  const btnCancel: React.CSSProperties = {
+    padding: '8px 20px', borderRadius: 8, border: `1px solid ${T.border}`,
+    background: 'transparent', color: T.textMuted, cursor: 'pointer', fontSize: 13
+  }
+  const btnPrimary: React.CSSProperties = {
+    padding: '8px 20px', borderRadius: 8, border: 'none',
+    background: T.accentBlue, color: 'white', cursor: 'pointer', fontSize: 13, fontWeight: 600
   }
 
   const renderRow = (u: Usuario, isPendente = false) => {
-    const av = avatarColors[u.perfil] || { bg: '#8892a422', color: '#8892a4' }
+    const cor = PERFIL_CORES[u.perfil] || T.textMuted
+    const isMenuOpen = openMenuId === u.id
+
     return (
-      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderBottom: '0.5px solid #2d3148', flexWrap: 'wrap' }}>
-        <div style={{ width: 34, height: 34, borderRadius: '50%', background: av.bg, border: `0.5px solid ${av.color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: av.color, flexShrink: 0 }}>
+      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderBottom: `1px solid ${T.border}`, flexWrap: 'wrap' }}>
+        <div style={{ width: 34, height: 34, borderRadius: '50%', background: `${cor}22`, border: `1px solid ${cor}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: cor, flexShrink: 0 }}>
           {iniciais(u.nome)}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: '#e2e8f0' }}>{u.nome}</div>
-          <div style={{ fontSize: 11, color: '#8892a4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{u.nome}</div>
+          <div style={{ fontSize: 11, color: T.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
         </div>
-        <div style={{ fontSize: 11, color: '#8892a4', flexShrink: 0 }}>
+        <div style={{ fontSize: 11, color: T.textMuted, flexShrink: 0 }}>
           {new Date(u.criado_em).toLocaleDateString('pt-BR')}
         </div>
 
@@ -302,20 +301,20 @@ export function Usuarios() {
             <select
               value={perfilAprovacao[u.id] || 'analista'}
               onChange={e => setPerfilAprovacao(p => ({ ...p, [u.id]: e.target.value }))}
-              style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: '0.5px solid #2d3148', background: '#0f1117', color: '#e2e8f0', flexShrink: 0 }}
+              style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: `1px solid ${T.border}`, background: T.bg, color: T.text, flexShrink: 0, outline: 'none' }}
             >
               {PERFIS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
             <button
               onClick={() => aprovar(u)}
               disabled={aprovandoId === u.id}
-              style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '0.5px solid #639922', background: '#EAF3DE', color: '#27500A', cursor: 'pointer', flexShrink: 0 }}
+              style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${T.accentGreen}44`, background: `${T.accentGreen}18`, color: T.accentGreen, cursor: 'pointer', flexShrink: 0 }}
             >
               {aprovandoId === u.id ? '...' : 'Aprovar'}
             </button>
             <button
               onClick={() => rejeitar(u)}
-              style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '0.5px solid #E24B4A', background: '#FCEBEB', color: '#791F1F', cursor: 'pointer', flexShrink: 0 }}
+              style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${T.accentRed}44`, background: `${T.accentRed}18`, color: T.accentRed, cursor: 'pointer', flexShrink: 0 }}
             >
               Rejeitar
             </button>
@@ -324,18 +323,34 @@ export function Usuarios() {
           <>
             {badgePerfil(u.perfil)}
             {badgeStatus(u.status || (u.ativo ? 'ativo' : 'inativo'))}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" style={{ color: '#8892a4', flexShrink: 0 }}>···</Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-                <DropdownMenuItem onClick={() => abrirEditar(u)} style={{ color: '#e2e8f0', cursor: 'pointer' }}>✏️ Editar</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => abrirPermissoes(u)} style={{ color: '#e2e8f0', cursor: 'pointer' }}>🔐 Permissões</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { setUsuarioSenha(u); setModalSenha(true) }} style={{ color: '#e2e8f0', cursor: 'pointer' }}>🔑 Redefinir Senha</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => toggleAtivo(u)} style={{ color: u.ativo ? '#ef4444' : '#10b981', cursor: 'pointer' }}>{u.ativo ? '🚫 Desativar' : '✅ Ativar'}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { setUsuarioDeletar(u); setModalDeletar(true) }} style={{ color: '#ef4444', cursor: 'pointer' }}>🗑️ Deletar</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <button
+                onClick={() => setOpenMenuId(prev => prev === u.id ? null : u.id)}
+                style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 6, color: T.textMuted, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 14 }}
+              >···</button>
+              {isMenuOpen && (
+                <>
+                  <div onClick={() => setOpenMenuId(null)} style={{ position: 'fixed', inset: 0, zIndex: 10 }} />
+                  <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 20, ...glass(0.98, 30), borderRadius: 8, minWidth: 200, padding: 4, boxShadow: neoShadow }}>
+                    {[
+                      { label: '✏️ Editar',          action: () => { abrirEditar(u); setOpenMenuId(null) },                                   color: T.text },
+                      { label: '🔐 Permissões',       action: () => { abrirPermissoes(u); setOpenMenuId(null) },                               color: T.text },
+                      { label: '🔑 Redefinir Senha',  action: () => { setUsuarioSenha(u); setModalSenha(true); setOpenMenuId(null) },           color: T.text },
+                      { label: u.ativo ? '🚫 Desativar' : '✅ Ativar', action: () => { toggleAtivo(u); setOpenMenuId(null) }, color: u.ativo ? T.accentRed : T.accentGreen },
+                      { label: '🗑️ Deletar',         action: () => { setUsuarioDeletar(u); setModalDeletar(true); setOpenMenuId(null) },        color: T.accentRed },
+                    ].map((item, i) => (
+                      <button
+                        key={i}
+                        onClick={item.action}
+                        style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: item.color, fontSize: 13, padding: '8px 14px', cursor: 'pointer', borderRadius: 6, display: 'block' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(14,22,45,0.6)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                      >{item.label}</button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -343,37 +358,39 @@ export function Usuarios() {
   }
 
   return (
-    <div className="p-8">
+    <div style={{ padding: '32px 40px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 500, color: '#e2e8f0', margin: 0 }}>Gestão de Usuários</h1>
-          <p style={{ fontSize: 13, color: '#8892a4', marginTop: 4 }}>{usuarios.length} usuário{usuarios.length !== 1 ? 's' : ''} cadastrado{usuarios.length !== 1 ? 's' : ''}</p>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: T.text, margin: 0 }}>Gestão de Usuários</h1>
+          <p style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>{usuarios.length} usuário{usuarios.length !== 1 ? 's' : ''} cadastrado{usuarios.length !== 1 ? 's' : ''}</p>
         </div>
-        <Button onClick={abrirCriar} style={{ background: '#4f8ef7', color: 'white' }}>+ Novo Usuário</Button>
+        <button onClick={abrirCriar} style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          + Novo Usuário
+        </button>
       </div>
 
-      {erro && <p style={{ color: '#ef4444', marginBottom: 16 }}>{erro}</p>}
+      {erro && <p style={{ color: T.accentRed, marginBottom: 16 }}>{erro}</p>}
 
       {loading ? (
-        <div style={{ padding: 32, textAlign: 'center', color: '#8892a4', fontSize: 13 }}>Carregando...</div>
+        <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>Carregando...</div>
       ) : (
-        <div style={{ borderRadius: 10, border: '0.5px solid #2d3148', background: '#1a1d27', padding: '0 16px' }}>
+        <div style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 12, padding: '0 16px' }}>
 
           {pendentes.length > 0 && (
             <>
-              <div style={{ padding: '12px 0 6px', fontSize: 11, fontWeight: 500, color: '#633806', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              <div style={{ padding: '12px 0 6px', fontSize: 11, fontWeight: 500, color: T.accentAmber, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                 Aprovações pendentes ({pendentes.length})
               </div>
               {pendentes.map(u => renderRow(u, true))}
-              <div style={{ height: 0.5, background: '#2d3148', margin: '4px 0 0' }} />
-              <div style={{ padding: '12px 0 6px', fontSize: 11, fontWeight: 500, color: '#8892a4', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              <div style={{ height: 1, background: T.border, margin: '4px 0 0' }} />
+              <div style={{ padding: '12px 0 6px', fontSize: 11, fontWeight: 500, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                 Usuários
               </div>
             </>
           )}
 
           {ativos.length === 0 && pendentes.length === 0 && (
-            <div style={{ padding: 32, textAlign: 'center', color: '#8892a4', fontSize: 13 }}>Nenhum usuário cadastrado.</div>
+            <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>Nenhum usuário cadastrado.</div>
           )}
 
           {ativos.map(u => renderRow(u, false))}
@@ -381,163 +398,110 @@ export function Usuarios() {
       )}
 
       {/* Modal Criar/Editar */}
-      <Dialog open={modalAberto} onOpenChange={setModalAberto}>
-        <DialogContent style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-          <DialogHeader>
-            <DialogTitle style={{ color: '#e2e8f0' }}>{editando ? '✏️ Editar Usuário' : '+ Novo Usuário'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label style={{ color: '#8892a4' }}>Nome</Label>
-              <Input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} placeholder="Nome completo" style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }} />
-            </div>
-            <div className="space-y-2">
-              <Label style={{ color: '#8892a4' }}>Email</Label>
-              <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="email@baia4.com.br" style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }} />
-            </div>
-            {!editando && (
-              <div className="space-y-2">
-                <Label style={{ color: '#8892a4' }}>Senha</Label>
-                <Input type="password" value={form.senha} onChange={e => setForm({ ...form, senha: e.target.value })} placeholder="Mínimo 8 caracteres" style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }} />
+      {modalAberto && (
+        <div onClick={() => setModalAberto(false)} style={overlayStyle}>
+          <div onClick={e => e.stopPropagation()} style={modalInnerStyle}>
+            <div style={modalTitle}>{editando ? '✏️ Editar Usuário' : '+ Novo Usuário'}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div><label style={lbl}>Nome</label><input value={form.nome} onChange={e => setForm({...form, nome: e.target.value})} placeholder="Nome completo" style={inp} /></div>
+              <div><label style={lbl}>Email</label><input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="email@baia4.com.br" style={inp} /></div>
+              {!editando && (
+                <div><label style={lbl}>Senha</label><input type="password" value={form.senha} onChange={e => setForm({...form, senha: e.target.value})} placeholder="Mínimo 8 caracteres" style={inp} /></div>
+              )}
+              <div>
+                <label style={lbl}>Perfil</label>
+                <select value={form.perfil} onChange={e => setForm({...form, perfil: e.target.value})} style={{ ...inp, cursor: 'pointer' }}>
+                  {PERFIS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
               </div>
-            )}
-            <div className="space-y-2">
-              <Label style={{ color: '#8892a4' }}>Perfil</Label>
-              <select value={form.perfil} onChange={e => setForm({ ...form, perfil: e.target.value })} className="w-full rounded-md border px-3 py-2 text-sm" style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}>
-                {PERFIS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-              </select>
+              {erroModal && <p style={{ fontSize: 13, color: T.accentRed }}>{erroModal}</p>}
             </div>
-            {erroModal && <p style={{ color: '#ef4444', fontSize: 13 }}>{erroModal}</p>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button onClick={() => setModalAberto(false)} style={btnCancel}>Cancelar</button>
+              <button onClick={salvar} disabled={salvando} style={{ ...btnPrimary, opacity: salvando ? 0.7 : 1 }}>{salvando ? 'Salvando...' : 'Salvar'}</button>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModalAberto(false)} style={{ borderColor: '#4a5568', color: '#e2e8f0', background: 'transparent' }}>Cancelar</Button>
-            <Button onClick={salvar} disabled={salvando} style={{ background: '#4f8ef7', color: 'white' }}>{salvando ? 'Salvando...' : 'Salvar'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
 
-      {/* Modal Redefinir Senha */}
-      <Dialog open={modalSenha} onOpenChange={setModalSenha}>
-        <DialogContent style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-          <DialogHeader>
-            <DialogTitle style={{ color: '#e2e8f0' }}>🔑 Redefinir Senha — {usuarioSenha?.nome}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label style={{ color: '#8892a4' }}>Nova Senha</Label>
-              <Input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="Mínimo 8 caracteres" style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }} />
+      {/* Modal Senha */}
+      {modalSenha && (
+        <div onClick={() => setModalSenha(false)} style={overlayStyle}>
+          <div onClick={e => e.stopPropagation()} style={{ ...modalInnerStyle, width: 380 }}>
+            <div style={modalTitle}>🔑 Redefinir Senha — {usuarioSenha?.nome}</div>
+            <div><label style={lbl}>Nova Senha</label><input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="Mínimo 8 caracteres" style={inp} /></div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button onClick={() => setModalSenha(false)} style={btnCancel}>Cancelar</button>
+              <button onClick={salvarSenha} disabled={salvandoSenha || novaSenha.length < 8} style={{ ...btnPrimary, opacity: salvandoSenha || novaSenha.length < 8 ? 0.5 : 1 }}>{salvandoSenha ? 'Salvando...' : 'Redefinir'}</button>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModalSenha(false)} style={{ borderColor: '#4a5568', color: '#e2e8f0', background: 'transparent' }}>Cancelar</Button>
-            <Button onClick={salvarSenha} disabled={salvandoSenha || novaSenha.length < 8} style={{ background: '#4f8ef7', color: 'white' }}>{salvandoSenha ? 'Salvando...' : 'Redefinir'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
 
       {/* Modal Deletar */}
-      <AlertDialog open={modalDeletar} onOpenChange={setModalDeletar}>
-        <AlertDialogContent style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-          <AlertDialogHeader>
-            <AlertDialogTitle style={{ color: '#e2e8f0' }}>Deletar usuário?</AlertDialogTitle>
-            <AlertDialogDescription style={{ color: '#8892a4' }}>
-              Tem certeza que deseja deletar <strong style={{ color: '#e2e8f0' }}>{usuarioDeletar?.nome}</strong>? Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel style={{ background: 'transparent', borderColor: '#4a5568', color: '#e2e8f0' }}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={deletar} style={{ background: '#ef4444', color: 'white' }}>Deletar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {/* Painel de Permissões */}
+      {modalDeletar && (
+        <div onClick={() => setModalDeletar(false)} style={overlayStyle}>
+          <div onClick={e => e.stopPropagation()} style={{ ...modalInnerStyle, width: 400 }}>
+            <div style={modalTitle}>Deletar usuário?</div>
+            <p style={{ fontSize: 13, color: T.textMuted, marginBottom: 24 }}>
+              Tem certeza que deseja deletar <strong style={{ color: T.text }}>{usuarioDeletar?.nome}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalDeletar(false)} style={btnCancel}>Cancelar</button>
+              <button onClick={deletar} style={{ ...btnPrimary, background: T.accentRed }}>Deletar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Painel Permissões */}
       {painelPermissoes && (
-        <div style={{
-          position: 'fixed', inset: 0, background: '#00000088',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50
-        }}>
-          <div style={{
-            background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 12,
-            padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto'
-          }}>
-            {/* Header */}
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ ...glass(0.98, 30), boxShadow: neoShadow, borderRadius: 14, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
               <div>
-                <p style={{ fontSize: 16, fontWeight: 600, color: '#e2e8f0', margin: 0 }}>
-                  🔐 Permissões — {painelPermissoes.nome}
-                </p>
-                <p style={{ fontSize: 12, color: '#8892a4', marginTop: 4 }}>
-                  {badgePerfil(painelPermissoes.perfil)}
-                </p>
+                <p style={{ fontSize: 16, fontWeight: 600, color: T.text, margin: 0 }}>🔐 Permissões — {painelPermissoes.nome}</p>
+                <p style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>{badgePerfil(painelPermissoes.perfil)}</p>
               </div>
-              <button onClick={() => setPainelPermissoes(null)} style={{ background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', fontSize: 18 }}>✕</button>
+              <button onClick={() => setPainelPermissoes(null)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 18 }}>✕</button>
             </div>
 
-            {/* Hub */}
             <div style={{ marginBottom: 24 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: '#4f8ef7', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, paddingLeft: 8, borderLeft: '2px solid #4f8ef7' }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: T.accentBlue, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, paddingLeft: 8, borderLeft: `2px solid ${T.accentBlue}` }}>
                 Cards do Hub
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {HUB_ITEMS.map(item => (
-                  <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: '#0f1117', border: `1px solid ${permissoes.hub.includes(item.key) ? '#4f8ef744' : '#2d3148'}` }}>
-                    <input
-                      type="checkbox"
-                      checked={permissoes.hub.includes(item.key)}
-                      onChange={() => toggleHub(item.key)}
-                      style={{ accentColor: '#4f8ef7', width: 15, height: 15 }}
-                    />
-                    <span style={{ fontSize: 13, color: permissoes.hub.includes(item.key) ? '#e2e8f0' : '#8892a4' }}>
-                      {item.label}
-                    </span>
+                  <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: 'rgba(8,11,20,0.7)', border: `1px solid ${permissoes.hub.includes(item.key) ? T.accentBlue + '44' : T.border}` }}>
+                    <input type="checkbox" checked={permissoes.hub.includes(item.key)} onChange={() => toggleHub(item.key)} style={{ accentColor: T.accentBlue, width: 15, height: 15 }} />
+                    <span style={{ fontSize: 13, color: permissoes.hub.includes(item.key) ? T.text : T.textMuted }}>{item.label}</span>
                   </label>
                 ))}
               </div>
             </div>
 
-            {/* Módulos */}
             <div style={{ marginBottom: 28 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, paddingLeft: 8, borderLeft: '2px solid #10b981' }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: T.accentGreen, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, paddingLeft: 8, borderLeft: `2px solid ${T.accentGreen}` }}>
                 Módulos da Central de Relatórios
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {MODULOS_DISPONIVEIS.map(modulo => (
-                  <label key={modulo.key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: '#0f1117', border: `1px solid ${permissoes.modulos.includes(modulo.key) ? '#10b98144' : '#2d3148'}` }}>
-                    <input
-                      type="checkbox"
-                      checked={permissoes.modulos.includes(modulo.key)}
-                      onChange={() => toggleModulo(modulo.key)}
-                      style={{ accentColor: '#10b981', width: 15, height: 15 }}
-                    />
-                    <span style={{ fontSize: 12, color: permissoes.modulos.includes(modulo.key) ? '#e2e8f0' : '#8892a4' }}>
-                      {modulo.label}
-                    </span>
+                  <label key={modulo.key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: 'rgba(8,11,20,0.7)', border: `1px solid ${permissoes.modulos.includes(modulo.key) ? T.accentGreen + '44' : T.border}` }}>
+                    <input type="checkbox" checked={permissoes.modulos.includes(modulo.key)} onChange={() => toggleModulo(modulo.key)} style={{ accentColor: T.accentGreen, width: 15, height: 15 }} />
+                    <span style={{ fontSize: 12, color: permissoes.modulos.includes(modulo.key) ? T.text : T.textMuted }}>{modulo.label}</span>
                   </label>
                 ))}
               </div>
             </div>
 
-            {/* Atlas — informativo */}
-            <div style={{ marginBottom: 28, padding: '12px 14px', background: '#7c3aed11', border: '1px solid #7c3aed33', borderRadius: 8 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', marginBottom: 4 }}>🤖 Atlas</p>
-              <p style={{ fontSize: 12, color: '#8892a4' }}>Disponível para todos os usuários com acesso total.</p>
+            <div style={{ marginBottom: 28, padding: '12px 14px', background: `${T.accentPurple}11`, border: `1px solid ${T.accentPurple}33`, borderRadius: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: T.accentPurple, marginBottom: 4 }}>🤖 Atlas</p>
+              <p style={{ fontSize: 12, color: T.textMuted }}>Disponível para todos os usuários com acesso total.</p>
             </div>
 
-            {/* Botões */}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setPainelPermissoes(null)}
-                style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid #4a5568', background: 'transparent', color: '#e2e8f0', cursor: 'pointer', fontSize: 13 }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={salvarPermissoes}
-                disabled={salvandoPerm}
-                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#4f8ef7', color: 'white', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-              >
-                {salvandoPerm ? 'Salvando...' : 'Salvar Permissões'}
-              </button>
+              <button onClick={() => setPainelPermissoes(null)} style={btnCancel}>Cancelar</button>
+              <button onClick={salvarPermissoes} disabled={salvandoPerm} style={{ ...btnPrimary, opacity: salvandoPerm ? 0.7 : 1 }}>{salvandoPerm ? 'Salvando...' : 'Salvar Permissões'}</button>
             </div>
           </div>
         </div>

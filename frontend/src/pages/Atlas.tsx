@@ -8,6 +8,8 @@ import { saveAs } from 'file-saver'
 import jsPDF from 'jspdf'
 
 import { API } from '@/config'
+import { T } from '@/lib/theme'
+import { glass, neoShadow } from '@/lib/glass'
 
 // TOOLS_DEF removido: definições de tools movidas para o backend (segurança).
 // MOCK_RESPONSES abaixo usa apenas os nomes das tools para dispatch local.
@@ -415,22 +417,22 @@ function IcBtn({ onClick, tip, children, active, color }: {
       title={tip}
       style={{
         position: 'relative', width: 28, height: 28,
-        background: active ? (color === 'green' ? '#10b98122' : color === 'red' ? '#ef444422' : '#1a1d27') : 'none',
+        background: active ? (color === 'green' ? `${T.accentGreen}22` : color === 'red' ? `${T.accentRed}22` : 'rgba(14,22,45,0.6)') : 'none',
         border: 'none', cursor: 'pointer',
-        color: active ? (color === 'green' ? '#10b981' : color === 'red' ? '#ef4444' : '#e2e8f0') : '#8892a4',
+        color: active ? (color === 'green' ? T.accentGreen : color === 'red' ? T.accentRed : T.text) : T.textMuted,
         borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
         transition: 'background .12s, color .12s',
       }}
       onMouseEnter={e => {
         if (!active) {
-          (e.currentTarget as HTMLElement).style.background = '#1a1d27'
-          ;(e.currentTarget as HTMLElement).style.color = '#e2e8f0'
+          (e.currentTarget as HTMLElement).style.background = 'rgba(14,22,45,0.6)'
+          ;(e.currentTarget as HTMLElement).style.color = T.text
         }
       }}
       onMouseLeave={e => {
         if (!active) {
           (e.currentTarget as HTMLElement).style.background = 'none'
-          ;(e.currentTarget as HTMLElement).style.color = '#8892a4'
+          ;(e.currentTarget as HTMLElement).style.color = T.textMuted
         }
       }}
     >
@@ -1362,7 +1364,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
 {/* Sidebar */}
       <div style={{
-        width: 240, background: '#13161f', borderRight: '1px solid #2d3148',
+        width: 240, background: 'rgba(6,8,14,0.97)', borderRight: `1px solid ${T.border}`,
         display: 'flex', flexDirection: 'column', flexShrink: 0,
         ...(isMobile ? {
           position: 'fixed', top: 0, left: 0, height: '100%', zIndex: 50,
@@ -1384,12 +1386,12 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               </g>
               <defs><clipPath id="globoClipSidebar"><circle cx="14" cy="14" r="11"/></clipPath></defs>
             </svg>
-            <span style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0' }}>Atlas</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: T.text }}>Atlas</span>
           </div>
           <button onClick={criarNovaConversa} title="Nova conversa"
-            style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+            style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(14,22,45,0.6)'; (e.currentTarget as HTMLElement).style.color = T.text }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = T.textMuted }}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M12 2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l2 2 2-2h1a2 2 0 002-2V4a2 2 0 00-2-2z"/><path d="M8 6v4M6 8h4"/></svg>
           </button>
@@ -1400,28 +1402,28 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
           <>
             {/* Busca */}
             <div style={{ padding: '10px 10px 0', position: 'relative', flexShrink: 0 }}>
-              <div style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', color: '#8892a455', pointerEvents: 'none', display: 'flex' }}>
+              <div style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', color: `${T.textMuted}55`, pointerEvents: 'none', display: 'flex' }}>
                 <IconSearch />
               </div>
               <input
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
                 placeholder={projetoAtivo ? `Buscar em ${projetoAtivo.nome}...` : 'Buscar conversas...'}
-                style={{ width: '100%', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, padding: '6px 10px 6px 28px', fontSize: 12, color: '#e2e8f0', outline: 'none', boxSizing: 'border-box' as any }}
+                style={{ width: '100%', background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 7, padding: '6px 10px 6px 28px', fontSize: 12, color: T.text, outline: 'none', boxSizing: 'border-box' as any }}
               />
             </div>
 
             {/* Nav — Nova conversa + Projetos (só na visão geral) */}
             {!projetoAtivo && (
               <div style={{ padding: '8px 10px 4px', flexShrink: 0 }}>
-                <button onClick={criarNovaConversa} style={{ width: '100%', padding: '8px 14px', borderRadius: 8, background: '#4f8ef711', border: '1px solid #4f8ef733', color: '#4f8ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: 4 }}>
+                <button onClick={criarNovaConversa} style={{ width: '100%', padding: '8px 14px', borderRadius: 8, background: `${T.accentBlue}11`, border: `1px solid ${T.accentBlue}33`, color: T.accentBlue, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: 4 }}>
                   <span style={{ fontSize: 15 }}>+</span> Nova conversa
                 </button>
                 <button
                   onClick={() => { setProjetoAtivo(null); setAtivaId(null); setTelaProjetos(true); setPreviousResponseId(null); carregarProjetos() }}
-                  style={{ width: '100%', padding: '7px 10px', borderRadius: 7, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, transition: 'background .12s, color .12s' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: 7, background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, transition: 'background .12s, color .12s' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(14,22,45,0.6)'; (e.currentTarget as HTMLElement).style.color = T.text }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = T.textMuted }}
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/>
@@ -1432,32 +1434,32 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             )}
 
             {/* Divisor */}
-            <div style={{ height: '0.5px', background: '#2d3148', margin: '2px 10px 4px', flexShrink: 0 }} />
+            <div style={{ height: '0.5px', background: T.border, margin: '2px 10px 4px', flexShrink: 0 }} />
 
             {/* Lista agrupada */}
-            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8, scrollbarWidth: 'thin', scrollbarColor: '#2d314855 transparent' }}>
+            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8, scrollbarWidth: 'thin', scrollbarColor: `${T.border} transparent` }}>
               <style>{`
                 .atlas-conv-list::-webkit-scrollbar { width: 3px; }
                 .atlas-conv-list::-webkit-scrollbar-track { background: transparent; }
-                .atlas-conv-list::-webkit-scrollbar-thumb { background: #2d314866; border-radius: 99px; }
-                .atlas-conv-list::-webkit-scrollbar-thumb:hover { background: #4f8ef755; }
+                .atlas-conv-list::-webkit-scrollbar-thumb { background: rgba(240,180,41,0.15); border-radius: 99px; }
+                .atlas-conv-list::-webkit-scrollbar-thumb:hover { background: rgba(240,180,41,0.25); }
               `}</style>
-          <div className="atlas-conv-list" style={{ height: '100%', overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#2d314855 transparent' }}>
+          <div className="atlas-conv-list" style={{ height: '100%', overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: `${T.border} transparent` }}>
             {grupos.length === 0 && (
-              <div style={{ padding: '20px 12px', textAlign: 'center' as any, fontSize: 12, color: '#8892a455' }}>
+              <div style={{ padding: '20px 12px', textAlign: 'center' as any, fontSize: 12, color: `${T.textMuted}55` }}>
                 Nenhuma conversa encontrada
               </div>
             )}
             {grupos.map(grupo => (
               <div key={grupo.label}>
-                <div style={{ fontSize: 10, fontWeight: 500, color: '#8892a4', textTransform: 'uppercase' as any, letterSpacing: '0.08em', padding: '8px 12px 4px' }}>
+                <div style={{ fontSize: 10, fontWeight: 500, color: T.textMuted, textTransform: 'uppercase' as any, letterSpacing: '0.08em', padding: '8px 12px 4px' }}>
                   {grupo.label === 'Fixadas' ? '📌 Fixadas' : grupo.label}
                 </div>
                 {grupo.items.map(c => (
                   <div
                     key={c.id}
                     onClick={() => { if (renomeandoId === c.id) return; setAtivaId(c.id); setUploadInfo(null); setArquivoPendente(null); setArquivoContexto(null); if (isMobile) setSidebarAberta(false) }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', borderRadius: 7, margin: '1px 8px', background: c.id === ativaId ? '#1a1d27' : 'transparent', border: c.id === ativaId ? '0.5px solid #2d3148' : '0.5px solid transparent', cursor: 'pointer', position: 'relative' as any }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', borderRadius: 7, margin: '1px 8px', background: c.id === ativaId ? 'rgba(14,22,45,0.7)' : 'transparent', border: c.id === ativaId ? `0.5px solid ${T.border}` : '0.5px solid transparent', cursor: 'pointer', position: 'relative' as any }}
                     onMouseEnter={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '1' }}
                     onMouseLeave={e => { const btns = (e.currentTarget as HTMLElement).querySelector('.item-actions') as HTMLElement; if (btns) btns.style.opacity = '0' }}
                   >
@@ -1469,18 +1471,18 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                           onChange={e => setRenomeTitulo(e.target.value)}
                           onKeyDown={handleRenameKey}
                           onClick={e => e.stopPropagation()}
-                          style={{ flex: 1, background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 4, color: '#e2e8f0', fontSize: 12, padding: '2px 6px', outline: 'none', fontFamily: 'inherit' }}
+                          style={{ flex: 1, background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 4, color: T.text, fontSize: 12, padding: '2px 6px', outline: 'none', fontFamily: 'inherit' }}
                         />
                         <button onClick={confirmarRename} title="Confirmar"
-                          style={{ width: 18, height: 18, borderRadius: 4, background: 'none', border: 'none', color: '#8892a4', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color .12s' }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#10b981'}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+                          style={{ width: 18, height: 18, borderRadius: 4, background: 'none', border: 'none', color: T.textMuted, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color .12s' }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = T.accentGreen}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = T.textMuted}
                         >✓</button>
                       </>
                     ) : (
                       <>
                         <span
-                          style={{ flex: 1, fontSize: 12, color: c.id === ativaId ? '#e2e8f0' : '#8892a4', whiteSpace: 'nowrap' as any, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          style={{ flex: 1, fontSize: 12, color: c.id === ativaId ? T.text : T.textMuted, whiteSpace: 'nowrap' as any, overflow: 'hidden', textOverflow: 'ellipsis' }}
                           onDoubleClick={e => iniciarRename(c, e)}
                         >
                           🤖 {c.titulo}
@@ -1489,48 +1491,48 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                           <button
                             data-menu-conv={c.id}
                             onClick={e => { e.stopPropagation(); setMenuConvAberto((v: string | null) => v === c.id ? null : c.id) }}
-                            style={{ width: 18, height: 18, borderRadius: 3, background: menuConvAberto === c.id ? '#2d3148' : 'none', border: 'none', color: menuConvAberto === c.id ? '#e2e8f0' : '#8892a4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+                            style={{ width: 18, height: 18, borderRadius: 3, background: menuConvAberto === c.id ? T.border : 'none', border: 'none', color: menuConvAberto === c.id ? T.text : T.textMuted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
                           >
                             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                               <circle cx="8" cy="2.5" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13.5" r="1.3"/>
                             </svg>
                           </button>
                           {menuConvAberto === c.id && (
-                            <div data-menu-conv={c.id} style={{ position: 'absolute' as any, top: 22, right: 0, background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 9, padding: '4px', minWidth: 172, zIndex: 200, boxShadow: '0 4px 20px #0006' }}>
+                            <div data-menu-conv={c.id} style={{ position: 'absolute' as any, top: 22, right: 0, ...glass(0.98, 20), border: `0.5px solid ${T.border}`, borderRadius: 9, padding: '4px', minWidth: 172, zIndex: 200, boxShadow: neoShadow }}>
                               <button onClick={e => { togglePin(c.id, e); setMenuConvAberto(null) }}
-                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: c.pinned ? '#f0b429' : '#e2e8f0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
-                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: c.pinned ? T.gold : T.text, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = T.border}
                                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
                               >
                                 <IconPin /> {c.pinned ? 'Desafixar' : 'Fixar'}
                               </button>
                               <button onClick={e => { e.stopPropagation(); iniciarRename(c, e); setMenuConvAberto(null) }}
-                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
-                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: T.text, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = T.border}
                                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
                               >
                                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 2l3 3-9 9H2v-3z"/></svg> Renomear
                               </button>
                               <button onClick={e => { e.stopPropagation(); exportarConversa(c); setMenuConvAberto(null) }}
-                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
-                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: T.text, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = T.border}
                                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
                               >
                                 <IconDownload /> Exportar conversa
                               </button>
-                              <div style={{ height: '0.5px', background: '#2d3148', margin: '4px 6px' }} />
+                              <div style={{ height: '0.5px', background: T.border, margin: '4px 6px' }} />
                               <button
                                 onClick={e => { e.stopPropagation(); setMenuConvAberto(null); setModalMoverConversa(c.id) }}
-                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: '#8892a4', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
-                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: T.textMuted, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = T.border}
                                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
                               >
                                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg> Mover para projeto
                               </button>
-                              <div style={{ height: '0.5px', background: '#2d3148', margin: '4px 6px' }} />
+                              <div style={{ height: '0.5px', background: T.border, margin: '4px 6px' }} />
                               <button onClick={e => { deletarConversa(c.id, e); setMenuConvAberto(null) }}
-                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
-                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#ef444411'}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'none', border: 'none', color: T.accentRed, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' as any }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = `${T.accentRed}11`}
                                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
                               >
                                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h10M8 5V3M6 5v7M10 5v7M4 5l.5 8h7l.5-8"/></svg> Deletar
@@ -1550,12 +1552,12 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
         )}
 
         {/* Footer — perfil + menu */}
-        <div style={{ padding: '10px', borderTop: '0.5px solid #2d3148', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative' as any }}>
+        <div style={{ padding: '10px', borderTop: `0.5px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative' as any }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f8ef722', border: '1px solid #4f8ef744', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#4f8ef7', flexShrink: 0 }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: `${T.accentBlue}22`, border: `1px solid ${T.accentBlue}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: T.accentBlue, flexShrink: 0 }}>
               {nomeUsuario.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
             </div>
-            <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 500, whiteSpace: 'nowrap' as any, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120 }}>
+            <span style={{ fontSize: 12, color: T.text, fontWeight: 500, whiteSpace: 'nowrap' as any, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120 }}>
               {nomeUsuario}
             </span>
           </div>
@@ -1564,19 +1566,19 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               data-menu-usuario
               onClick={() => setMenuUsuarioAberto((v: boolean) => !v)}
               title="Menu"
-              style={{ width: 28, height: 28, borderRadius: 6, background: menuUsuarioAberto ? '#1a1d27' : 'none', border: 'none', cursor: 'pointer', color: menuUsuarioAberto ? '#e2e8f0' : '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-              onMouseLeave={e => { if (!menuUsuarioAberto) { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
+              style={{ width: 28, height: 28, borderRadius: 6, background: menuUsuarioAberto ? 'rgba(14,22,45,0.6)' : 'none', border: 'none', cursor: 'pointer', color: menuUsuarioAberto ? T.text : T.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(14,22,45,0.6)'; (e.currentTarget as HTMLElement).style.color = T.text }}
+              onMouseLeave={e => { if (!menuUsuarioAberto) { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = T.textMuted } }}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                 <circle cx="8" cy="3" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="13" r="1.2"/>
               </svg>
             </button>
             {menuUsuarioAberto && (
-              <div data-menu-usuario style={{ position: 'absolute' as any, bottom: 36, right: 0, background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '4px', minWidth: 180, zIndex: 100, boxShadow: '0 4px 20px #0005' }}>
+              <div data-menu-usuario style={{ position: 'absolute' as any, bottom: 36, right: 0, ...glass(0.98, 20), border: `0.5px solid ${T.border}`, borderRadius: 10, padding: '4px', minWidth: 180, zIndex: 100, boxShadow: neoShadow }}>
                 <button onClick={() => { gerarBriefing(); setMenuUsuarioAberto(false) }}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: T.text, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = T.border}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
                 >
                   <span style={{ fontSize: 14 }}>{gerandoBriefing ? '⏳' : '☀️'}</span>
@@ -1587,8 +1589,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   setAtivaId(null)
                   setMenuUsuarioAberto(false)
                 }}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: T.text, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = T.border}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
                 >
                   <IconSettings />
@@ -1600,8 +1602,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   setMenuUsuarioAberto(false)
                   setTimeout(() => usoSessaoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120)
                 }}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2d3148'}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 7, background: 'none', border: 'none', color: T.text, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' as any }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = T.border}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
                 >
                   <IconTokens />
@@ -1615,13 +1617,13 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
       {/* Página de Projetos */}
       {telaProjetos && !projetoAtivo && (
-        <div style={{ flex: 1, background: '#0f1117', overflowY: 'auto', padding: '48px 10% 48px' }}>
+        <div style={{ flex: 1, background: T.bg, overflowY: 'auto', padding: '48px 10% 48px' }}>
           <div style={{ maxWidth: 800, margin: '0 auto' }}>
             {/* Botão voltar */}
             <button onClick={() => { setTelaProjetos(false); setPreviousResponseId(null) }}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 13, marginBottom: 24, padding: 0, transition: 'color .12s' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e2e8f0'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 13, marginBottom: 24, padding: 0, transition: 'color .12s' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = T.text}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = T.textMuted}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 4l-6 4 6 4"/></svg>
               Atlas
@@ -1629,25 +1631,25 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             {/* Header da página */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
               <div>
-                <h1 style={{ fontSize: 24, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>Projetos</h1>
-                <p style={{ fontSize: 14, color: '#8892a4', margin: '6px 0 0' }}>Organize suas conversas por contexto e objetivo</p>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: T.text, margin: 0 }}>Projetos</h1>
+                <p style={{ fontSize: 14, color: T.textMuted, margin: '6px 0 0' }}>Organize suas conversas por contexto e objetivo</p>
               </div>
               <button onClick={() => setModalNovoProjeto(true)}
-                style={{ padding: '9px 20px', borderRadius: 9, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                style={{ padding: '9px 20px', borderRadius: 9, background: T.accentBlue, border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>
                 Novo projeto
               </button>
             </div>
 
             {carregandoProjetos ? (
-              <div style={{ textAlign: 'center' as any, color: '#8892a4', paddingTop: 48 }}>Carregando...</div>
+              <div style={{ textAlign: 'center' as any, color: T.textMuted, paddingTop: 48 }}>Carregando...</div>
             ) : projetos.length === 0 ? (
               <div style={{ textAlign: 'center' as any, paddingTop: 64, display: 'flex', flexDirection: 'column' as any, alignItems: 'center', gap: 16 }}>
-                <svg width="56" height="56" viewBox="0 0 16 16" fill="none" stroke="#2d3148" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
-                <p style={{ fontSize: 15, color: '#8892a4', margin: 0 }}>Nenhum projeto ainda</p>
-                <p style={{ fontSize: 13, color: '#8892a455', margin: 0, maxWidth: 320 }}>Crie um projeto para organizar conversas relacionadas e dar contexto automático ao Atlas.</p>
+                <svg width="56" height="56" viewBox="0 0 16 16" fill="none" stroke={T.border} strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
+                <p style={{ fontSize: 15, color: T.textMuted, margin: 0 }}>Nenhum projeto ainda</p>
+                <p style={{ fontSize: 13, color: `${T.textMuted}55`, margin: 0, maxWidth: 320 }}>Crie um projeto para organizar conversas relacionadas e dar contexto automático ao Atlas.</p>
                 <button onClick={() => setModalNovoProjeto(true)}
-                  style={{ marginTop: 8, padding: '9px 24px', borderRadius: 9, background: '#4f8ef711', border: '1px solid #4f8ef733', color: '#4f8ef7', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  style={{ marginTop: 8, padding: '9px 24px', borderRadius: 9, background: `${T.accentBlue}11`, border: `1px solid ${T.accentBlue}33`, color: T.accentBlue, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                   Criar primeiro projeto
                 </button>
               </div>
@@ -1656,19 +1658,19 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 {projetos.map(p => (
                   <div key={p.id}
                     onClick={() => entrarNoProjeto(p)}
-                    style={{ padding: '20px', borderRadius: 12, background: '#1a1d27', border: '0.5px solid #2d3148', cursor: 'pointer', transition: 'border-color .15s, transform .15s', position: 'relative' as any }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}
+                    style={{ padding: '20px', borderRadius: 12, ...glass(0.35, 20), border: `0.5px solid ${T.border}`, cursor: 'pointer', transition: 'border-color .15s, transform .15s', position: 'relative' as any, boxShadow: neoShadow }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55`; (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = T.border; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}
                   >
                     <div style={{ fontSize: 24, marginBottom: 10 }}>📁</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>{p.nome}</div>
-                    {p.descricao && <div style={{ fontSize: 12, color: '#8892a4', lineHeight: 1.5, marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>{p.descricao}</div>}
-                    <div style={{ fontSize: 11, color: '#8892a455' }}>{p.total_conversas ?? 0} conversa{(p.total_conversas ?? 0) !== 1 ? 's' : ''}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 6 }}>{p.nome}</div>
+                    {p.descricao && <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.5, marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>{p.descricao}</div>}
+                    <div style={{ fontSize: 11, color: `${T.textMuted}55` }}>{p.total_conversas ?? 0} conversa{(p.total_conversas ?? 0) !== 1 ? 's' : ''}</div>
                     <button
                       onClick={e => { e.stopPropagation(); if (confirm(`Deletar projeto "${p.nome}"?`)) deletarProjeto(p.id) }}
-                      style={{ position: 'absolute' as any, top: 12, right: 12, width: 24, height: 24, borderRadius: 6, background: 'none', border: 'none', color: '#8892a433', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color .12s, background .12s' }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#ef444411' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#8892a433'; (e.currentTarget as HTMLElement).style.background = 'none' }}
+                      style={{ position: 'absolute' as any, top: 12, right: 12, width: 24, height: 24, borderRadius: 6, background: 'none', border: 'none', color: `${T.textMuted}33`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color .12s, background .12s' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = T.accentRed; (e.currentTarget as HTMLElement).style.background = `${T.accentRed}11` }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = `${T.textMuted}33`; (e.currentTarget as HTMLElement).style.background = 'none' }}
                     >
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 5h10M8 5V3M6 5v7M10 5v7M4 5l.5 8h7l.5-8"/></svg>
                     </button>
@@ -1682,14 +1684,14 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
       {/* Página do Projeto selecionado (home do projeto) */}
       {projetoAtivo && telaHome && !painelConfig && (
-        <div style={{ flex: 1, background: '#0f1117', overflowY: 'auto', padding: '48px 10% 48px' }}>
+        <div style={{ flex: 1, background: T.bg, overflowY: 'auto', padding: '48px 10% 48px' }}>
           <div style={{ maxWidth: 800, margin: '0 auto' }}>
             {/* Header */}
             <div style={{ marginBottom: 32 }}>
               <button onClick={() => { setProjetoAtivo(null); setTelaProjetos(true); setAtivaId(null) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', fontSize: 13, marginBottom: 16, padding: 0, transition: 'color .12s' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e2e8f0'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 13, marginBottom: 16, padding: 0, transition: 'color .12s' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = T.text}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = T.textMuted}
               >
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 4l-6 4 6 4"/></svg>
                 Projetos
@@ -1698,12 +1700,12 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                     <span style={{ fontSize: 24 }}>📁</span>
-                    <h1 style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>{projetoAtivo.nome}</h1>
+                    <h1 style={{ fontSize: 22, fontWeight: 700, color: T.text, margin: 0 }}>{projetoAtivo.nome}</h1>
                   </div>
-                  {projetoAtivo.descricao && <p style={{ fontSize: 13, color: '#8892a4', margin: 0, lineHeight: 1.6, maxWidth: 520 }}>{projetoAtivo.descricao}</p>}
+                  {projetoAtivo.descricao && <p style={{ fontSize: 13, color: T.textMuted, margin: 0, lineHeight: 1.6, maxWidth: 520 }}>{projetoAtivo.descricao}</p>}
                 </div>
                 <button onClick={criarNovaConversa}
-                  style={{ padding: '9px 20px', borderRadius: 9, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  style={{ padding: '9px 20px', borderRadius: 9, background: T.accentBlue, border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>
                   Nova conversa
                 </button>
@@ -1712,23 +1714,23 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
             {/* Lista de conversas do projeto */}
             <div>
-              <h2 style={{ fontSize: 13, fontWeight: 500, color: '#8892a4', textTransform: 'uppercase' as any, letterSpacing: '0.08em', marginBottom: 12 }}>Conversas</h2>
+              <h2 style={{ fontSize: 13, fontWeight: 500, color: T.textMuted, textTransform: 'uppercase' as any, letterSpacing: '0.08em', marginBottom: 12 }}>Conversas</h2>
               {conversasFiltradas.length === 0 ? (
                 <div style={{ textAlign: 'center' as any, padding: '48px 0', display: 'flex', flexDirection: 'column' as any, alignItems: 'center', gap: 12 }}>
-                  <p style={{ fontSize: 14, color: '#8892a4', margin: 0 }}>Nenhuma conversa neste projeto ainda</p>
-                  <p style={{ fontSize: 12, color: '#8892a455', margin: 0 }}>Clique em "Nova conversa" para começar</p>
+                  <p style={{ fontSize: 14, color: T.textMuted, margin: 0 }}>Nenhuma conversa neste projeto ainda</p>
+                  <p style={{ fontSize: 12, color: `${T.textMuted}55`, margin: 0 }}>Clique em "Nova conversa" para começar</p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column' as any, gap: 8 }}>
                   {conversasFiltradas.map(c => (
                     <div key={c.id}
                       onClick={() => setAtivaId(c.id)}
-                      style={{ padding: '14px 18px', borderRadius: 10, background: '#1a1d27', border: '0.5px solid #2d3148', cursor: 'pointer', transition: 'border-color .12s' }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'}
+                      style={{ padding: '14px 18px', borderRadius: 10, ...glass(0.35, 20), border: `0.5px solid ${T.border}`, cursor: 'pointer', transition: 'border-color .12s', boxShadow: neoShadow }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55`}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = T.border}
                     >
-                      <div style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>🤖 {c.titulo}</div>
-                      <div style={{ fontSize: 12, color: '#8892a4' }}>{new Date(c.criadaEm).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: T.text, marginBottom: 4 }}>🤖 {c.titulo}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted }}>{new Date(c.criadaEm).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
                     </div>
                   ))}
                 </div>
@@ -1740,7 +1742,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
       {/* Tela Home, Chat ou Painel de Configurações */}
       {!telaProjetos && !projetoAtivo && telaHome && !painelConfig ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0f1117', padding: '0 10%', gap: 32 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: T.bg, padding: '0 10%', gap: 32 }}>
 
           {/* Logo e saudação */}
           <div style={{ textAlign: 'center' as any, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
@@ -1754,14 +1756,14 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               <defs><clipPath id="globoClipHome"><circle cx="14" cy="14" r="11" /></clipPath></defs>
             </svg>
             <div>
-              <div style={{ fontSize: 26, fontWeight: 700, color: '#e2e8f0', marginBottom: 6 }}>
+              <div style={{ fontSize: 26, fontWeight: 700, color: T.text, marginBottom: 6 }}>
                 {(() => {
                   const h = new Date().getHours()
                   const saudacao = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'
                   return `${saudacao}, ${nomeUsuario}.`
                 })()}
               </div>
-              <div style={{ fontSize: 15, color: '#8892a4' }}>Como posso ajudar você hoje?</div>
+              <div style={{ fontSize: 15, color: T.textMuted }}>Como posso ajudar você hoje?</div>
             </div>
           </div>
 
@@ -1775,9 +1777,9 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               { icon: '💡', texto: 'Me atualize sobre nossas últimas conversas' },
             ].map(s => (
               <button key={s.texto} onClick={() => { setInput(s.texto); setTimeout(() => inputRef.current?.focus(), 50) }}
-                style={{ padding: '10px 16px', borderRadius: 10, background: '#1a1d27', border: '0.5px solid #2d3148', color: '#8892a4', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'all .15s', textAlign: 'left' as any }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+                style={{ padding: '10px 16px', borderRadius: 10, ...glass(0.35, 20), border: `0.5px solid ${T.border}`, color: T.textMuted, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'all .15s', textAlign: 'left' as any }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55`; (e.currentTarget as HTMLElement).style.color = T.text }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = T.border; (e.currentTarget as HTMLElement).style.color = T.textMuted }}
               >
                 <span>{s.icon}</span><span>{s.texto}</span>
               </button>
@@ -1786,79 +1788,79 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
           {/* Input centralizado */}
           <div style={{ width: '100%', maxWidth: 680 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 14, padding: '10px 10px 10px 14px' }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', ...glass(0.5, 20), border: `1px solid ${T.border}`, borderRadius: 14, padding: '10px 10px 10px 14px' }}>
               <button onClick={() => fileContextoRef.current?.click()} disabled={uploadandoArquivo}
                 title="Enviar arquivo para o Atlas analisar"
-                style={{ flexShrink: 0, width: 34, height: 34, borderRadius: 8, background: 'none', border: 'none', color: uploadandoArquivo ? '#4f8ef7' : '#8892a4', cursor: uploadandoArquivo ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, transition: 'color .15s' }}
-                onMouseEnter={e => { if (!uploadandoArquivo) (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = uploadandoArquivo ? '#4f8ef7' : '#8892a4' }}
+                style={{ flexShrink: 0, width: 34, height: 34, borderRadius: 8, background: 'none', border: 'none', color: uploadandoArquivo ? T.accentBlue : T.textMuted, cursor: uploadandoArquivo ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, transition: 'color .15s' }}
+                onMouseEnter={e => { if (!uploadandoArquivo) (e.currentTarget as HTMLElement).style.color = T.text }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = uploadandoArquivo ? T.accentBlue : T.textMuted }}
               >
                 {uploadandoArquivo ? '⏳' : '📎'}
               </button>
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey}
                 placeholder="Mensagem para o Atlas..."
                 rows={1}
-                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#e2e8f0', fontSize: 14, fontFamily: 'inherit', resize: 'none', lineHeight: 1.5, maxHeight: 120, overflowY: 'auto', padding: '6px 0' }}
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: T.text, fontSize: 14, fontFamily: 'inherit', resize: 'none', lineHeight: 1.5, maxHeight: 120, overflowY: 'auto', padding: '6px 0' }}
               />
               <button onClick={send} disabled={uploadandoArquivo || (!input.trim() && !arquivoContexto)}
-                style={{ padding: '9px 18px', borderRadius: 9, background: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? '#2d3148' : '#4f8ef7', color: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? '#8892a4' : '#fff', border: 'none', fontWeight: 600, fontSize: 13, cursor: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s' }}
+                style={{ padding: '9px 18px', borderRadius: 9, background: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? T.border : T.accentBlue, color: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? T.textMuted : '#fff', border: 'none', fontWeight: 600, fontSize: 13, cursor: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s' }}
               >
                 Enviar
               </button>
             </div>
             {arquivoContexto && (
-              <div style={{ marginTop: 8, padding: '6px 12px', background: '#1a1d27', border: '1px solid #7c3aed33', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ marginTop: 8, padding: '6px 12px', ...glass(0.35, 20), border: `1px solid ${T.accentPurple}33`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontSize: 12, color: '#a78bfa' }}>📎 {arquivoContexto.nome}</span>
-                <button onClick={() => setArquivoContexto(null)} style={{ background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                <button onClick={() => setArquivoContexto(null)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 12 }}>✕</button>
               </div>
             )}
-            <p style={{ textAlign: 'center' as any, fontSize: 11, color: '#2d3148', marginTop: 10 }}>
+            <p style={{ textAlign: 'center' as any, fontSize: 11, color: T.textDim, marginTop: 10 }}>
               Enter para enviar · Shift+Enter para nova linha · 📎 para enviar arquivo
             </p>
           </div>
         </div>
       ) : !telaProjetos && painelConfig ? (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 10%', background: '#0f1117', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', paddingLeft: 10, borderLeft: '2px solid #4f8ef7', margin: 0 }}>Configurações do Atlas</h2>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 10%', background: T.bg, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: T.text, paddingLeft: 10, borderLeft: `2px solid ${T.accentBlue}`, margin: 0 }}>Configurações do Atlas</h2>
 
           {/* Modo de resposta */}
-          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Modo de resposta</div>
-            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Define como o Atlas estrutura as respostas por padrão.</div>
+          <div style={{ ...glass(0.35, 20), border: `0.5px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: neoShadow }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: T.text, marginBottom: 4 }}>Modo de resposta</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10, lineHeight: 1.5 }}>Define como o Atlas estrutura as respostas por padrão.</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {['Resumido', 'Padrão', 'Analítico', 'Detalhado'].map(m => (
-                <button key={m} onClick={() => setModo(m)} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 500, cursor: 'pointer', border: '0.5px solid', background: modo === m ? '#4f8ef722' : 'none', borderColor: modo === m ? '#4f8ef7' : '#2d3148', color: modo === m ? '#4f8ef7' : '#8892a4', transition: 'all .12s' }}>{m}</button>
+                <button key={m} onClick={() => setModo(m)} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 500, cursor: 'pointer', border: '0.5px solid', background: modo === m ? `${T.accentBlue}22` : 'none', borderColor: modo === m ? T.accentBlue : T.border, color: modo === m ? T.accentBlue : T.textMuted, transition: 'all .12s' }}>{m}</button>
               ))}
             </div>
           </div>
 
 
           {/* Instruções customizadas */}
-          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Instruções personalizadas</div>
-            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>O Atlas seguirá essas instruções em todas as conversas.</div>
+          <div style={{ ...glass(0.35, 20), border: `0.5px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: neoShadow }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: T.text, marginBottom: 4 }}>Instruções personalizadas</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10, lineHeight: 1.5 }}>O Atlas seguirá essas instruções em todas as conversas.</div>
             <textarea
               value={instrucoes}
               onChange={e => setInstrucoes(e.target.value)}
               rows={3}
               placeholder='Ex: "Sempre mencione a fonte quando usar dados externos. Prefiro respostas diretas."'
-              style={{ width: '100%', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, color: '#e2e8f0', fontSize: 12, padding: '8px 10px', resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.5, boxSizing: 'border-box' as any }}
+              style={{ width: '100%', background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 12, padding: '8px 10px', resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.5, boxSizing: 'border-box' as any }}
             />
           </div>
 
           {/* Memória explícita */}
-          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Memória do Atlas</div>
-            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Fatos que o Atlas sempre lembrará sobre você e a operação.</div>
+          <div style={{ ...glass(0.35, 20), border: `0.5px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: neoShadow }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: T.text, marginBottom: 4 }}>Memória do Atlas</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10, lineHeight: 1.5 }}>Fatos que o Atlas sempre lembrará sobre você e a operação.</div>
 
             {/* Memórias automáticas */}
             {memorias.filter(m => m.startsWith('[auto]')).length > 0 && (
               <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 10, color: '#4f8ef7', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Aprendidas automaticamente</div>
+                <div style={{ fontSize: 10, color: T.accentBlue, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Aprendidas automaticamente</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {memorias.filter(m => m.startsWith('[auto]')).map((mem, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 6, padding: '5px 10px' }}>
-                      <span style={{ fontSize: 11, color: '#8892a4', flex: 1 }}>{mem.replace('[auto] ', '')}</span>
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 6, padding: '5px 10px' }}>
+                      <span style={{ fontSize: 11, color: T.textMuted, flex: 1 }}>{mem.replace('[auto] ', '')}</span>
                       <button
                         onClick={() => {
                           const conteudo = mem.replace('[auto] ', '')
@@ -1882,9 +1884,9 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                             })
                             .catch(() => {})
                         }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2d3148', fontSize: 12, padding: '0 0 0 8px', transition: 'color .12s', flexShrink: 0 }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#ef4444'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#2d3148'}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.border, fontSize: 12, padding: '0 0 0 8px', transition: 'color .12s', flexShrink: 0 }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = T.accentRed}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = T.border}
                       >✕</button>
                     </div>
                   ))}
@@ -1895,15 +1897,15 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             {/* Memórias manuais */}
             {memorias.filter(m => !m.startsWith('[auto]')).length > 0 && (
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 10, color: '#8892a4', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Adicionadas por você</div>
+                <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Adicionadas por você</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {memorias.filter(m => !m.startsWith('[auto]')).map((mem, idx) => (
-                    <span key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#4f8ef711', border: '0.5px solid #4f8ef733', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: '#4f8ef7' }}>
+                    <span key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${T.accentBlue}11`, border: `0.5px solid ${T.accentBlue}33`, borderRadius: 6, padding: '3px 8px', fontSize: 11, color: T.accentBlue }}>
                       {mem}
                       <button onClick={() => removerMemoria(memorias.indexOf(mem))}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4f8ef755', fontSize: 11, lineHeight: 1, padding: 0, transition: 'color .12s' }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#ef4444'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#4f8ef755'}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: `${T.accentBlue}55`, fontSize: 11, lineHeight: 1, padding: 0, transition: 'color .12s' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = T.accentRed}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = `${T.accentBlue}55`}
                       >✕</button>
                     </span>
                   ))}
@@ -1917,46 +1919,46 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 onChange={e => setNovaMemoria(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') adicionarMemoria() }}
                 placeholder='Ex: "Meta de SLA: 95%"'
-                style={{ flex: 1, background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 6, color: '#e2e8f0', fontSize: 12, padding: '5px 8px', outline: 'none', fontFamily: 'inherit' }}
+                style={{ flex: 1, background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 6, color: T.text, fontSize: 12, padding: '5px 8px', outline: 'none', fontFamily: 'inherit' }}
               />
               <button onClick={adicionarMemoria}
-                style={{ padding: '5px 12px', borderRadius: 6, background: '#4f8ef711', border: '0.5px solid #4f8ef733', color: '#4f8ef7', fontSize: 12, cursor: 'pointer', fontWeight: 500, transition: 'all .12s' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef722' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef711' }}
+                style={{ padding: '5px 12px', borderRadius: 6, background: `${T.accentBlue}11`, border: `0.5px solid ${T.accentBlue}33`, color: T.accentBlue, fontSize: 12, cursor: 'pointer', fontWeight: 500, transition: 'all .12s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = `${T.accentBlue}22` }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = `${T.accentBlue}11` }}
               >+ Adicionar</button>
             </div>
           </div>    
 
           {/* Contador de tokens */}
-          <div ref={usoSessaoRef} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>Uso da sessão atual</div>
-            <div style={{ fontSize: 11, color: '#8892a4', marginBottom: 10, lineHeight: 1.5 }}>Estimativa de tokens usados nesta conversa.</div>
+          <div ref={usoSessaoRef} style={{ ...glass(0.35, 20), border: `0.5px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: neoShadow }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: T.text, marginBottom: 4 }}>Uso da sessão atual</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10, lineHeight: 1.5 }}>Estimativa de tokens usados nesta conversa.</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 11, color: '#8892a4' }}>Tokens</span>
-              <div style={{ flex: 1, height: 4, background: '#2d3148', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', borderRadius: 2, background: tokenCount > 8000 ? '#ef4444' : tokenCount > 5000 ? '#f0b429' : '#4f8ef7', width: `${Math.min((tokenCount / 10000) * 100, 100)}%`, transition: 'width .3s' }} />
+              <span style={{ fontSize: 11, color: T.textMuted }}>Tokens</span>
+              <div style={{ flex: 1, height: 4, background: T.border, borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 2, background: tokenCount > 8000 ? T.accentRed : tokenCount > 5000 ? T.gold : T.accentBlue, width: `${Math.min((tokenCount / 10000) * 100, 100)}%`, transition: 'width .3s' }} />
               </div>
-              <span style={{ fontSize: 11, fontWeight: 500, color: '#e2e8f0', minWidth: 90, textAlign: 'right' }}>~{tokenCount.toLocaleString('pt-BR')} / 10.000</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: T.text, minWidth: 90, textAlign: 'right' }}>~{tokenCount.toLocaleString('pt-BR')} / 10.000</span>
             </div>
           </div>
 
 
           {/* Code Interpreter */}
-          <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
+          <div style={{ ...glass(0.35, 20), border: `0.5px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: neoShadow }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', marginBottom: 2 }}>🐍 Code Interpreter</div>
-                <div style={{ fontSize: 11, color: '#8892a4', lineHeight: 1.5 }}>Permite que o Atlas execute código Python para análises, cálculos e geração de gráficos.</div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: T.text, marginBottom: 2 }}>🐍 Code Interpreter</div>
+                <div style={{ fontSize: 11, color: T.textMuted, lineHeight: 1.5 }}>Permite que o Atlas execute código Python para análises, cálculos e geração de gráficos.</div>
               </div>
               <button onClick={() => setCodeInterpreter(v => !v)}
                 style={{ flexShrink: 0, width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', transition: 'background .2s',
-                  background: codeInterpreter ? '#4f8ef7' : '#2d3148', position: 'relative' as any }}>
+                  background: codeInterpreter ? T.accentBlue : T.border, position: 'relative' as any }}>
                 <div style={{ position: 'absolute' as any, top: 3, left: codeInterpreter ? 20 : 4, width: 16, height: 16, borderRadius: 8, background: '#fff', transition: 'left .2s' }} />
               </button>
             </div>
           </div>
 
-          <button onClick={salvarConfig} style={{ padding: '9px 20px', borderRadius: 8, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}>
+          <button onClick={salvarConfig} style={{ padding: '9px 20px', borderRadius: 8, background: T.accentBlue, border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}>
             Salvar configurações
           </button>
         </div>
@@ -1974,13 +1976,13 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             style={{
               position: 'absolute', bottom: 90, right: 24, zIndex: 10,
               width: 34, height: 34, borderRadius: '50%',
-              background: '#1a1d27', border: '1px solid #2d3148',
-              color: '#8892a4', cursor: 'pointer',
+              ...glass(0.8, 20), border: `1px solid ${T.border}`,
+              color: T.textMuted, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 2px 8px #0004', transition: 'color .12s, border-color .12s'
+              boxShadow: neoShadow, transition: 'color .12s, border-color .12s'
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#e2e8f0'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef7' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#8892a4'; (e.currentTarget as HTMLElement).style.borderColor = '#2d3148' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = T.text; (e.currentTarget as HTMLElement).style.borderColor = T.accentBlue }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = T.textMuted; (e.currentTarget as HTMLElement).style.borderColor = T.border }}
           >
             <IconScrollDown />
           </button>
@@ -2265,19 +2267,19 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
           @keyframes fadedot { 0%,100%{opacity:0.3} 50%{opacity:1} }
         `}</style>
 
-        <div style={{ padding: '16px 10%', borderTop: '1px solid #2d3148', background: '#0f1117' }}>
+        <div style={{ padding: '16px 10%', borderTop: `1px solid ${T.border}`, background: T.bg }}>
 
           {/* Banner upload para geração de relatório */}
           {uploadInfo && (
-            <div style={{ marginBottom: 10, padding: '10px 16px', background: '#1a1d27', border: '1px solid #4f8ef733', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <span style={{ fontSize: 13, color: '#8892a4' }}>
-                📎 Envie o arquivo Excel de <strong style={{ color: '#e2e8f0' }}>{uploadInfo.modulo}</strong> ({uploadInfo.mes_ref})
+            <div style={{ marginBottom: 10, padding: '10px 16px', ...glass(0.5, 20), border: `1px solid ${T.accentBlue}33`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ fontSize: 13, color: T.textMuted }}>
+                📎 Envie o arquivo Excel de <strong style={{ color: T.text }}>{uploadInfo.modulo}</strong> ({uploadInfo.mes_ref})
               </span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => fileInputRef.current?.click()} style={{ padding: '5px 14px', borderRadius: 6, background: '#4f8ef7', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <button onClick={() => fileInputRef.current?.click()} style={{ padding: '5px 14px', borderRadius: 6, background: T.accentBlue, color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                   Selecionar arquivo
                 </button>
-                <button onClick={() => { setUploadInfo(null); setArquivoPendente(null) }} style={{ padding: '5px 10px', borderRadius: 6, background: 'none', color: '#8892a4', border: '1px solid #2d3148', fontSize: 12, cursor: 'pointer' }}>
+                <button onClick={() => { setUploadInfo(null); setArquivoPendente(null) }} style={{ padding: '5px 10px', borderRadius: 6, background: 'none', color: T.textMuted, border: `1px solid ${T.border}`, fontSize: 12, cursor: 'pointer' }}>
                   Cancelar
                 </button>
               </div>
@@ -2286,9 +2288,9 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
           {/* Preview arquivo de contexto */}
           {arquivoContexto && (
-            <div style={{ marginBottom: 8, padding: '6px 12px', background: '#1a1d27', border: '1px solid #7c3aed33', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ marginBottom: 8, padding: '6px 12px', ...glass(0.35, 20), border: `1px solid ${T.accentPurple}33`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ fontSize: 12, color: '#a78bfa' }}>📎 {arquivoContexto.nome}</span>
-              <button onClick={() => setArquivoContexto(null)} style={{ background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', fontSize: 12 }}>✕</button>
+              <button onClick={() => setArquivoContexto(null)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 12 }}>✕</button>
             </div>
           )}
 
@@ -2307,7 +2309,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             }}
           />
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 12, padding: '8px 8px 8px 12px' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', ...glass(0.5, 20), border: `1px solid ${T.border}`, borderRadius: 12, padding: '8px 8px 8px 12px' }}>
             <button
               onClick={() => fileContextoRef.current?.click()}
               disabled={loading || uploadandoArquivo || !!uploadInfo}
@@ -2315,13 +2317,13 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               style={{
                 flexShrink: 0, width: 32, height: 32, borderRadius: 8,
                 background: 'none', border: 'none',
-                color: uploadandoArquivo ? '#4f8ef7' : '#8892a4',
+                color: uploadandoArquivo ? T.accentBlue : T.textMuted,
                 cursor: loading || uploadandoArquivo || !!uploadInfo ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 16, opacity: uploadInfo ? 0.3 : 1, transition: 'color .15s'
               }}
-              onMouseEnter={e => { if (!loading && !uploadandoArquivo && !uploadInfo) (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = uploadandoArquivo ? '#4f8ef7' : '#8892a4' }}
+              onMouseEnter={e => { if (!loading && !uploadandoArquivo && !uploadInfo) (e.currentTarget as HTMLElement).style.color = T.text }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = uploadandoArquivo ? T.accentBlue : T.textMuted }}
             >
               {uploadandoArquivo ? '⏳' : '📎'}
             </button>
@@ -2338,7 +2340,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 'Mensagem para o Atlas...'
               }
               rows={1}
-              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#e2e8f0', fontSize: 14, fontFamily: 'inherit', resize: 'none', lineHeight: 1.5, maxHeight: 120, overflowY: 'auto', padding: '4px 0' }}
+              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: T.text, fontSize: 14, fontFamily: 'inherit', resize: 'none', lineHeight: 1.5, maxHeight: 120, overflowY: 'auto', padding: '4px 0' }}
             />
 
             {/* Botão Parar / Enviar */}
@@ -2347,8 +2349,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 onClick={stopGeneration}
                 style={{
                   padding: '7px 14px', borderRadius: 8,
-                  background: '#ef444422', color: '#ef4444',
-                  border: '1px solid #ef444444',
+                  background: `${T.accentRed}22`, color: T.accentRed,
+                  border: `1px solid ${T.accentRed}44`,
                   fontWeight: 600, fontSize: 13,
                   cursor: 'pointer', flexShrink: 0,
                   display: 'flex', alignItems: 'center', gap: 5,
@@ -2363,8 +2365,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 disabled={uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto)}
                 style={{
                   padding: '8px 16px', borderRadius: 8,
-                  background: uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? '#2d3148' : '#4f8ef7',
-                  color: uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? '#8892a4' : '#fff',
+                  background: uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? T.border : T.accentBlue,
+                  color: uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? T.textMuted : '#fff',
                   border: 'none', fontWeight: 600, fontSize: 13,
                   cursor: uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? 'not-allowed' : 'pointer',
                   flexShrink: 0, transition: 'all .15s'
@@ -2374,7 +2376,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               </button>
             )}
           </div>
-          <p style={{ textAlign: 'center', fontSize: 11, color: '#2d3148', marginTop: 8 }}>
+          <p style={{ textAlign: 'center', fontSize: 11, color: T.textDim, marginTop: 8 }}>
             Enter para enviar · Shift+Enter para nova linha · Esc para parar geração · 📎 para enviar arquivo
           </p>
         </div>
@@ -2402,36 +2404,36 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
       {modalNovoProjeto && (
         <div style={{ position: 'fixed', inset: 0, background: '#000a', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => setModalNovoProjeto(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 14, padding: '24px', width: 360, boxShadow: '0 8px 40px #0008', display: 'flex', flexDirection: 'column' as any, gap: 14 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>Novo projeto</div>
+          <div onClick={e => e.stopPropagation()} style={{ ...glass(0.98, 30), border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '24px', width: 360, boxShadow: neoShadow, display: 'flex', flexDirection: 'column' as any, gap: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: T.text }}>Novo projeto</div>
             <div style={{ display: 'flex', flexDirection: 'column' as any, gap: 6 }}>
-              <label style={{ fontSize: 11, color: '#8892a4', fontWeight: 500 }}>NOME</label>
+              <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 500 }}>NOME</label>
               <input
                 autoFocus
                 value={novoProjNome}
                 onChange={e => setNovoProjNome(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') criarProjeto() }}
                 placeholder="Ex: Integração Kensys WMS"
-                style={{ background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: '#e2e8f0', outline: 'none' }}
+                style={{ background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 7, padding: '8px 12px', fontSize: 13, color: T.text, outline: 'none' }}
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' as any, gap: 6 }}>
-              <label style={{ fontSize: 11, color: '#8892a4', fontWeight: 500 }}>CONTEXTO <span style={{ color: '#8892a455' }}>(opcional)</span></label>
+              <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 500 }}>CONTEXTO <span style={{ color: `${T.textMuted}55` }}>(opcional)</span></label>
               <textarea
                 value={novoProjDesc}
                 onChange={e => setNovoProjDesc(e.target.value)}
                 placeholder="Descreva o objetivo ou contexto deste projeto para o Atlas..."
                 rows={3}
-                style={{ background: '#0f1117', border: '0.5px solid #2d3148', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: '#e2e8f0', outline: 'none', resize: 'none' as any, fontFamily: 'inherit' }}
+                style={{ background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 7, padding: '8px 12px', fontSize: 13, color: T.text, outline: 'none', resize: 'none' as any, fontFamily: 'inherit' }}
               />
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setModalNovoProjeto(false)}
-                style={{ padding: '7px 16px', borderRadius: 7, background: 'none', border: '0.5px solid #2d3148', color: '#8892a4', fontSize: 13, cursor: 'pointer' }}>
+                style={{ padding: '7px 16px', borderRadius: 7, background: 'none', border: `0.5px solid ${T.border}`, color: T.textMuted, fontSize: 13, cursor: 'pointer' }}>
                 Cancelar
               </button>
               <button onClick={criarProjeto} disabled={salvandoProjeto || !novoProjNome.trim()}
-                style={{ padding: '7px 16px', borderRadius: 7, background: '#4f8ef7', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: novoProjNome.trim() ? 'pointer' : 'not-allowed', opacity: novoProjNome.trim() ? 1 : 0.5 }}>
+                style={{ padding: '7px 16px', borderRadius: 7, background: T.accentBlue, border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: novoProjNome.trim() ? 'pointer' : 'not-allowed', opacity: novoProjNome.trim() ? 1 : 0.5 }}>
                 {salvandoProjeto ? 'Criando...' : 'Criar projeto'}
               </button>
             </div>
@@ -2443,33 +2445,33 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
       {modalMoverConversa && (
         <div style={{ position: 'fixed', inset: 0, background: '#000a', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => setModalMoverConversa(null)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 14, padding: '20px', width: 320, boxShadow: '0 8px 40px #0008', display: 'flex', flexDirection: 'column' as any, gap: 10 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0' }}>Mover para projeto</div>
+          <div onClick={e => e.stopPropagation()} style={{ ...glass(0.98, 30), border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '20px', width: 320, boxShadow: neoShadow, display: 'flex', flexDirection: 'column' as any, gap: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>Mover para projeto</div>
             {projetos.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#8892a4', padding: '8px 0' }}>Nenhum projeto criado ainda.</div>
+              <div style={{ fontSize: 12, color: T.textMuted, padding: '8px 0' }}>Nenhum projeto criado ainda.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column' as any, gap: 4 }}>
                 {projetos.map(p => (
                   <button key={p.id} onClick={() => moverConversaParaProjeto(modalMoverConversa, p.id)}
-                    style={{ padding: '8px 12px', borderRadius: 7, background: 'none', border: '0.5px solid #2d3148', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', textAlign: 'left' as any, transition: 'background .12s, border-color .12s' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2d3148'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.borderColor = '#2d3148' }}
+                    style={{ padding: '8px 12px', borderRadius: 7, background: 'none', border: `0.5px solid ${T.border}`, color: T.text, fontSize: 13, cursor: 'pointer', textAlign: 'left' as any, transition: 'background .12s, border-color .12s' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = T.border; (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55` }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.borderColor = T.border }}
                   >
                     <div style={{ fontWeight: 500 }}>{p.nome}</div>
-                    {p.descricao && <div style={{ fontSize: 11, color: '#8892a4', marginTop: 2 }}>{p.descricao}</div>}
+                    {p.descricao && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{p.descricao}</div>}
                   </button>
                 ))}
                 <button onClick={() => moverConversaParaProjeto(modalMoverConversa, null)}
-                  style={{ padding: '7px 12px', borderRadius: 7, background: 'none', border: '0.5px dashed #2d3148', color: '#8892a4', fontSize: 12, cursor: 'pointer', textAlign: 'left' as any, marginTop: 2 }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#e2e8f0'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#8892a4'}
+                  style={{ padding: '7px 12px', borderRadius: 7, background: 'none', border: `0.5px dashed ${T.border}`, color: T.textMuted, fontSize: 12, cursor: 'pointer', textAlign: 'left' as any, marginTop: 2 }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = T.text}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = T.textMuted}
                 >
                   Remover de projeto
                 </button>
               </div>
             )}
             <button onClick={() => setModalMoverConversa(null)}
-              style={{ padding: '6px', borderRadius: 7, background: 'none', border: 'none', color: '#8892a455', fontSize: 12, cursor: 'pointer', alignSelf: 'center' as any }}>
+              style={{ padding: '6px', borderRadius: 7, background: 'none', border: 'none', color: `${T.textMuted}55`, fontSize: 12, cursor: 'pointer', alignSelf: 'center' as any }}>
               Cancelar
             </button>
           </div>
@@ -2747,14 +2749,14 @@ function PainelArtifact({
   return (
     <div style={{
       width: 480, minWidth: 380, maxWidth: 560,
-      borderLeft: '1px solid #2d3148',
-      background: '#13161f',
+      borderLeft: `1px solid ${T.border}`,
+      background: 'rgba(6,8,14,0.97)',
       display: 'flex', flexDirection: 'column',
       animation: 'slideInRight .2s ease-out'
     }}>
 
       {/* Header */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #2d3148', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         {isDoc
           ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={typeColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="1" width="10" height="14" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg>
           : isHtml
@@ -2762,24 +2764,24 @@ function PainelArtifact({
           : <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={typeColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 2C4.5 2 2 5 2 8s2.5 6 6 6 6-3 6-6-2.5-6-6-6z"/></svg>
         }
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{artifact.title}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{artifact.title}</div>
           <div style={{ fontSize: 10, color: typeColor, marginTop: 1 }}>{typeLabel}</div>
         </div>
-        <button onClick={onFechar} style={{ width: 26, height: 26, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, transition: 'color .12s, background .12s', flexShrink: 0 }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1a1d27'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#8892a4' }}
+        <button onClick={onFechar} style={{ width: 26, height: 26, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, transition: 'color .12s, background .12s', flexShrink: 0 }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(14,22,45,0.6)'; (e.currentTarget as HTMLElement).style.color = T.text }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = T.textMuted }}
         >✕</button>
       </div>
 
       {/* Abas Preview / Código — só para html e react */}
       {isCode && (
-        <div style={{ display: 'flex', borderBottom: '1px solid #2d3148', flexShrink: 0 }}>
+        <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
           {(['preview', 'codigo'] as const).map(a => (
             <button key={a} onClick={() => setAba(a)} style={{
               flex: 1, padding: '8px 0', fontSize: 11, fontWeight: 500, cursor: 'pointer',
-              background: aba === a ? '#1a1d27' : 'none', border: 'none',
+              background: aba === a ? 'rgba(14,22,45,0.6)' : 'none', border: 'none',
               borderBottom: aba === a ? `2px solid ${typeColor}` : '2px solid transparent',
-              color: aba === a ? '#e2e8f0' : '#8892a4', transition: 'all .15s'
+              color: aba === a ? T.text : T.textMuted, transition: 'all .15s'
             }}>
               {a === 'preview' ? '▶ Preview' : '{ } Código'}
             </button>
@@ -2790,23 +2792,23 @@ function PainelArtifact({
       {/* Conteúdo */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {isDoc ? (
-          <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px', color: '#e2e8f0', fontSize: 13.5, lineHeight: 1.8 }}>
+          <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px', color: T.text, fontSize: 13.5, lineHeight: 1.8 }}>
             <ReactMarkdown components={{
-              h1: ({ children }) => <h1 style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0', margin: '0 0 12px 0', paddingBottom: 8, borderBottom: '1px solid #2d3148' }}>{children}</h1>,
-              h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', margin: '20px 0 8px 0' }}>{children}</h2>,
+              h1: ({ children }) => <h1 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: '0 0 12px 0', paddingBottom: 8, borderBottom: `1px solid ${T.border}` }}>{children}</h1>,
+              h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 600, color: T.text, margin: '20px 0 8px 0' }}>{children}</h2>,
               h3: ({ children }) => <h3 style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa', margin: '16px 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{children}</h3>,
-              p: ({ children }) => <p style={{ margin: '0 0 10px 0', color: '#c8d0de' }}>{children}</p>,
-              strong: ({ children }) => <strong style={{ color: '#e2e8f0', fontWeight: 600 }}>{children}</strong>,
+              p: ({ children }) => <p style={{ margin: '0 0 10px 0', color: T.textMuted }}>{children}</p>,
+              strong: ({ children }) => <strong style={{ color: T.text, fontWeight: 600 }}>{children}</strong>,
               ul: ({ children }) => <ul style={{ margin: '4px 0 10px 0', paddingLeft: 18 }}>{children}</ul>,
               ol: ({ children }) => <ol style={{ margin: '4px 0 10px 0', paddingLeft: 18 }}>{children}</ol>,
-              li: ({ children }) => <li style={{ marginBottom: 5, color: '#c8d0de' }}>{children}</li>,
-              hr: () => <hr style={{ border: 'none', borderTop: '1px solid #2d3148', margin: '16px 0' }} />,
+              li: ({ children }) => <li style={{ marginBottom: 5, color: T.textMuted }}>{children}</li>,
+              hr: () => <hr style={{ border: 'none', borderTop: `1px solid ${T.border}`, margin: '16px 0' }} />,
               table: ({ children }) => <div style={{ overflowX: 'auto', margin: '10px 0' }}><table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>{children}</table></div>,
-              thead: ({ children }) => <thead style={{ background: '#1a1d27' }}>{children}</thead>,
-              th: ({ children }) => <th style={{ padding: '6px 12px', textAlign: 'left', color: '#8892a4', fontWeight: 500, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #2d3148' }}>{children}</th>,
-              td: ({ children }) => <td style={{ padding: '6px 12px', color: '#c8d0de', borderBottom: '0.5px solid #2d3148' }}>{children}</td>,
-              code: ({ children }: any) => <code style={{ fontFamily: 'monospace', background: '#0f1117', padding: '1px 5px', borderRadius: 3, fontSize: 12, color: '#a78bfa' }}>{children}</code>,
-              blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid #4f8ef7', margin: '10px 0', padding: '4px 14px', color: '#8892a4', fontStyle: 'italic' }}>{children}</blockquote>
+              thead: ({ children }) => <thead style={{ background: 'rgba(14,22,45,0.6)' }}>{children}</thead>,
+              th: ({ children }) => <th style={{ padding: '6px 12px', textAlign: 'left', color: T.textMuted, fontWeight: 500, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${T.border}` }}>{children}</th>,
+              td: ({ children }) => <td style={{ padding: '6px 12px', color: T.textMuted, borderBottom: `0.5px solid ${T.border}` }}>{children}</td>,
+              code: ({ children }: any) => <code style={{ fontFamily: 'monospace', background: T.bg, padding: '1px 5px', borderRadius: 3, fontSize: 12, color: '#a78bfa' }}>{children}</code>,
+              blockquote: ({ children }) => <blockquote style={{ borderLeft: `3px solid ${T.accentBlue}`, margin: '10px 0', padding: '4px 14px', color: T.textMuted, fontStyle: 'italic' }}>{children}</blockquote>
             }}>{artifact.content}</ReactMarkdown>
           </div>
         ) : aba === 'preview' ? (
@@ -2832,17 +2834,17 @@ function PainelArtifact({
       </div>
 
       {/* Footer */}
-      <div style={{ padding: '12px 16px', borderTop: '1px solid #2d3148', display: 'flex', gap: 8, flexShrink: 0 }}>
+      <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', gap: 8, flexShrink: 0 }}>
         <button onClick={onCopiar} style={{
           flex: 1, padding: '8px 0', borderRadius: 8,
-          background: copiado ? '#10b98122' : '#1a1d27',
-          border: `1px solid ${copiado ? '#10b981' : '#2d3148'}`,
-          color: copiado ? '#10b981' : '#8892a4',
+          background: copiado ? `${T.accentGreen}22` : 'rgba(14,22,45,0.6)',
+          border: `1px solid ${copiado ? T.accentGreen : T.border}`,
+          color: copiado ? T.accentGreen : T.textMuted,
           fontSize: 12, fontWeight: 500, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s'
         }}
-          onMouseEnter={e => { if (!copiado) { (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'; (e.currentTarget as HTMLElement).style.color = '#e2e8f0' } }}
-          onMouseLeave={e => { if (!copiado) { (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'; (e.currentTarget as HTMLElement).style.color = '#8892a4' } }}
+          onMouseEnter={e => { if (!copiado) { (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55`; (e.currentTarget as HTMLElement).style.color = T.text } }}
+          onMouseLeave={e => { if (!copiado) { (e.currentTarget as HTMLElement).style.borderColor = T.border; (e.currentTarget as HTMLElement).style.color = T.textMuted } }}
         >
           {copiado
             ? <><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3 3 7-7"/></svg> Copiado</>
@@ -2853,12 +2855,12 @@ function PainelArtifact({
           <div style={{ flex: 1, display: 'flex', gap: 6 }}>
             <button onClick={onBaixar} style={{
               flex: 1, padding: '8px 0', borderRadius: 8,
-              background: '#4f8ef722', border: '1px solid #4f8ef755', color: '#4f8ef7',
+              background: `${T.accentBlue}22`, border: `1px solid ${T.accentBlue}55`, color: T.accentBlue,
               fontSize: 12, fontWeight: 600, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s'
             }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef733'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef7' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#4f8ef722'; (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = `${T.accentBlue}33`; (e.currentTarget as HTMLElement).style.borderColor = T.accentBlue }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = `${T.accentBlue}22`; (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55` }}
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/>
@@ -2867,12 +2869,12 @@ function PainelArtifact({
             </button>
             <button onClick={() => baixarPdf(artifact)} style={{
               flex: 1, padding: '8px 0', borderRadius: 8,
-              background: '#ef444422', border: '1px solid #ef444455', color: '#ef4444',
+              background: `${T.accentRed}22`, border: `1px solid ${T.accentRed}55`, color: T.accentRed,
               fontSize: 12, fontWeight: 600, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .15s'
             }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#ef444433'; (e.currentTarget as HTMLElement).style.borderColor = '#ef4444' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#ef444422'; (e.currentTarget as HTMLElement).style.borderColor = '#ef444455' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = `${T.accentRed}33`; (e.currentTarget as HTMLElement).style.borderColor = T.accentRed }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = `${T.accentRed}22`; (e.currentTarget as HTMLElement).style.borderColor = `${T.accentRed}55` }}
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M8 3v8M5 8l3 3 3-3"/><path d="M3 13h10"/>
@@ -2895,42 +2897,42 @@ function ReasoningBlock({ reasoning, streaming }: { reasoning: string; streaming
   }, [streaming])
 
   return (
-    <div style={{ marginBottom: 10, border: '0.5px solid #2d3148', borderRadius: 8, overflow: 'hidden' }}>
+    <div style={{ marginBottom: 10, border: `0.5px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
       <button
         onClick={() => setAberto(v => !v)}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 6,
-          padding: '6px 10px', background: '#13161f', border: 'none',
+          padding: '6px 10px', background: 'rgba(6,8,14,0.97)', border: 'none',
           cursor: 'pointer', textAlign: 'left', transition: 'background .12s'
         }}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a1d27'}
-        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#13161f'}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(14,22,45,0.6)'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(6,8,14,0.97)'}
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#8892a4" strokeWidth="1.5" strokeLinecap="round">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke={T.textMuted} strokeWidth="1.5" strokeLinecap="round">
           <circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/>
         </svg>
-        <span style={{ fontSize: 11, color: '#8892a4', flex: 1 }}>
+        <span style={{ fontSize: 11, color: T.textMuted, flex: 1 }}>
           {streaming ? 'Raciocinando...' : 'Ver raciocínio'}
         </span>
         {streaming && (
           <span style={{ display: 'flex', gap: 2 }}>
             {[0,1,2].map(k => (
-              <span key={k} style={{ width: 3, height: 3, borderRadius: '50%', background: '#8892a4', display: 'inline-block', animation: `fadedot 1.2s ease-in-out infinite ${k * 0.2}s` }} />
+              <span key={k} style={{ width: 3, height: 3, borderRadius: '50%', background: T.textMuted, display: 'inline-block', animation: `fadedot 1.2s ease-in-out infinite ${k * 0.2}s` }} />
             ))}
           </span>
         )}
         <svg
-          width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#8892a4" strokeWidth="1.5" strokeLinecap="round"
+          width="10" height="10" viewBox="0 0 10 10" fill="none" stroke={T.textMuted} strokeWidth="1.5" strokeLinecap="round"
           style={{ transform: aberto ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .2s', flexShrink: 0 }}
         >
           <path d="M2 3l3 3 3-3"/>
         </svg>
       </button>
       {aberto && (
-        <div style={{ padding: '8px 12px', background: '#0a0c14', borderTop: '0.5px solid #2d3148' }}>
-          <p style={{ fontSize: 12, color: '#8892a455', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+        <div style={{ padding: '8px 12px', background: T.bg, borderTop: `0.5px solid ${T.border}` }}>
+          <p style={{ fontSize: 12, color: `${T.textMuted}55`, lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
             {reasoning}
-            {streaming && <span style={{ display: 'inline-block', width: 2, height: 12, background: '#8892a4', marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s infinite' }} />}
+            {streaming && <span style={{ display: 'inline-block', width: 2, height: 12, background: T.textMuted, marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s infinite' }} />}
           </p>
         </div>
       )}

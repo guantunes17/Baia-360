@@ -1,14 +1,16 @@
 import { useEffect, useState, useRef } from 'react'
+import { T } from '@/lib/theme'
+import { glass, neoShadow } from '@/lib/glass'
 import { API } from '../config'
 
 const token = () => localStorage.getItem('token') || ''
 const headers = () => ({ Authorization: `Bearer ${token()}` })
 
 interface Documento {
-  file_id: string
-  nome: string
-  tamanho: number
-  status: string
+  file_id:   string
+  nome:      string
+  tamanho:   number
+  status:    string
   criado_em: number
 }
 
@@ -31,13 +33,13 @@ function estimarCusto(docs: Documento[]) {
 }
 
 export function BaseConhecimento() {
-  const [docs, setDocs] = useState<Documento[]>([])
-  const [vsId, setVsId] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [docs,       setDocs]       = useState<Documento[]>([])
+  const [vsId,       setVsId]       = useState('')
+  const [loading,    setLoading]    = useState(true)
   const [uploadando, setUploadando] = useState(false)
   const [deletandoId, setDeletandoId] = useState<string | null>(null)
-  const [erro, setErro] = useState('')
-  const [sucesso, setSucesso] = useState('')
+  const [erro,       setErro]       = useState('')
+  const [sucesso,    setSucesso]    = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const carregar = async () => {
@@ -108,89 +110,84 @@ export function BaseConhecimento() {
   return (
     <div style={{ padding: '32px 40px', maxWidth: 960, margin: '0 auto' }}>
 
-      {/* Cabeçalho */}
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: '#e2e8f0', marginBottom: 4 }}>
-          🧠 Base de Conhecimento do Atlas
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: T.text, marginBottom: 4 }}>
+          Base de Conhecimento do Atlas
         </h1>
-        <p style={{ fontSize: 13, color: '#8892a4' }}>
+        <p style={{ fontSize: 13, color: T.textMuted }}>
           Documentos indexados que o Atlas consulta automaticamente para responder com precisão.
         </p>
         {vsId && (
-          <p style={{ fontSize: 11, color: '#3a3a50', marginTop: 4, fontFamily: 'monospace' }}>
+          <p style={{ fontSize: 11, color: T.textDim, marginTop: 4, fontFamily: 'monospace' }}>
             Vector Store: {vsId}
           </p>
         )}
       </div>
 
-      {/* Métricas */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
         {[
-          { label: 'Documentos', valor: loading ? '—' : docs.length.toString() },
-          { label: 'Armazenamento', valor: loading ? '—' : formatarTamanho(totalBytes) },
+          { label: 'Documentos',         valor: loading ? '—' : docs.length.toString() },
+          { label: 'Armazenamento',      valor: loading ? '—' : formatarTamanho(totalBytes) },
           { label: 'Custo estimado/mês', valor: loading ? '—' : estimarCusto(docs) },
         ].map(m => (
-          <div key={m.label} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: '14px 16px' }}>
-            <p style={{ fontSize: 11, color: '#8892a4', marginBottom: 4 }}>{m.label}</p>
-            <p style={{ fontSize: 22, fontWeight: 500, color: '#e2e8f0' }}>{m.valor}</p>
+          <div key={m.label} style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 10, padding: '14px 16px' }}>
+            <p style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>{m.label}</p>
+            <p style={{ fontSize: 22, fontWeight: 500, color: T.text }}>{m.valor}</p>
           </div>
         ))}
       </div>
 
-      {/* Alertas */}
       {erro && (
-        <div style={{ background: '#ef444411', border: '0.5px solid #ef444433', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#ef4444' }}>
+        <div style={{ background: `${T.accentRed}11`, border: `1px solid ${T.accentRed}33`, borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: T.accentRed }}>
           ⚠️ {erro}
         </div>
       )}
       {sucesso && (
-        <div style={{ background: '#10b98111', border: '0.5px solid #10b98133', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#10b981' }}>
+        <div style={{ background: `${T.accentGreen}11`, border: `1px solid ${T.accentGreen}33`, borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: T.accentGreen }}>
           ✅ {sucesso}
         </div>
       )}
 
-      {/* Área de upload */}
       <div
-        style={{ border: '1px dashed #2d3148', borderRadius: 10, padding: '24px', textAlign: 'center', marginBottom: 20, background: '#13161f', cursor: 'pointer', transition: 'border-color .15s' }}
+        style={{ border: `1px dashed ${T.border}`, borderRadius: 10, padding: 24, textAlign: 'center', marginBottom: 20, background: T.bg, cursor: 'pointer', transition: 'border-color .15s' }}
         onClick={() => fileRef.current?.click()}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#4f8ef755'}
-        onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#2d3148'}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55`}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = T.border}
       >
         <input ref={fileRef} type="file" style={{ display: 'none' }}
           accept=".pdf,.docx,.doc,.txt,.md,.pptx,.ppt,.xlsx,.csv"
           onChange={handleUpload}
         />
         {uploadando ? (
-          <p style={{ fontSize: 13, color: '#4f8ef7' }}>⏳ Enviando e indexando documento...</p>
+          <p style={{ fontSize: 13, color: T.accentBlue }}>⏳ Enviando e indexando documento...</p>
         ) : (
           <>
             <p style={{ fontSize: 24, marginBottom: 8 }}>📄</p>
-            <p style={{ fontSize: 13, color: '#8892a4', marginBottom: 4 }}>
+            <p style={{ fontSize: 13, color: T.textMuted, marginBottom: 4 }}>
               Clique para adicionar documento
             </p>
-            <p style={{ fontSize: 11, color: '#3a3a50' }}>
+            <p style={{ fontSize: 11, color: T.textDim }}>
               PDF, Word, TXT, Markdown, PowerPoint, Excel
             </p>
           </>
         )}
       </div>
 
-      {/* Tabela de documentos */}
-      <div style={{ border: '0.5px solid #2d3148', borderRadius: 10, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 90px 80px', padding: '8px 16px', background: '#13161f', borderBottom: '0.5px solid #2d3148' }}>
+      <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 90px 80px', padding: '8px 16px', background: T.bg, borderBottom: `1px solid ${T.border}` }}>
           {['Nome', 'Tipo', 'Adicionado', 'Tamanho', 'Ação'].map(h => (
-            <span key={h} style={{ fontSize: 11, color: '#8892a4', fontWeight: 500 }}>{h}</span>
+            <span key={h} style={{ fontSize: 11, color: T.textMuted, fontWeight: 500 }}>{h}</span>
           ))}
         </div>
 
         {loading ? (
-          <div style={{ padding: '24px', textAlign: 'center', color: '#8892a4', fontSize: 13 }}>
+          <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
             Carregando documentos...
           </div>
         ) : docs.length === 0 ? (
-          <div style={{ padding: '32px', textAlign: 'center' }}>
-            <p style={{ fontSize: 13, color: '#8892a4', marginBottom: 6 }}>Nenhum documento indexado ainda.</p>
-            <p style={{ fontSize: 12, color: '#3a3a50' }}>
+          <div style={{ padding: 32, textAlign: 'center' }}>
+            <p style={{ fontSize: 13, color: T.textMuted, marginBottom: 6 }}>Nenhum documento indexado ainda.</p>
+            <p style={{ fontSize: 12, color: T.textDim }}>
               Adicione contratos, POPs, ITOs, regulações da Anvisa e outros documentos para o Atlas consultar automaticamente.
             </p>
           </div>
@@ -201,25 +198,25 @@ export function BaseConhecimento() {
               <div key={doc.file_id} style={{
                 display: 'grid', gridTemplateColumns: '1fr 80px 120px 90px 80px',
                 padding: '10px 16px', alignItems: 'center',
-                borderBottom: i < docs.length - 1 ? '0.5px solid #2d3148' : 'none',
-                background: deletandoId === doc.file_id ? '#ef444408' : 'transparent',
+                borderBottom: i < docs.length - 1 ? `1px solid ${T.border}` : 'none',
+                background: deletandoId === doc.file_id ? `${T.accentRed}08` : 'transparent',
                 transition: 'background .15s'
               }}>
                 <div style={{ overflow: 'hidden' }}>
-                  <p style={{ fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <p style={{ fontSize: 13, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {doc.nome}
                   </p>
-                  <p style={{ fontSize: 10, color: doc.status === 'completed' ? '#10b981' : '#f0b429', marginTop: 1 }}>
+                  <p style={{ fontSize: 10, color: doc.status === 'completed' ? T.accentGreen : T.gold, marginTop: 1 }}>
                     {doc.status === 'completed' ? '● Indexado' : '● Indexando...'}
                   </p>
                 </div>
-                <span style={{ fontSize: 12, color: '#8892a4' }}>{ext}</span>
-                <span style={{ fontSize: 12, color: '#8892a4' }}>{formatarData(doc.criado_em)}</span>
-                <span style={{ fontSize: 12, color: '#8892a4' }}>{formatarTamanho(doc.tamanho)}</span>
+                <span style={{ fontSize: 12, color: T.textMuted }}>{ext}</span>
+                <span style={{ fontSize: 12, color: T.textMuted }}>{formatarData(doc.criado_em)}</span>
+                <span style={{ fontSize: 12, color: T.textMuted }}>{formatarTamanho(doc.tamanho)}</span>
                 <button
                   onClick={() => handleDeletar(doc)}
                   disabled={deletandoId === doc.file_id}
-                  style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: deletandoId === doc.file_id ? 0.5 : 1 }}
+                  style={{ fontSize: 12, color: T.accentRed, background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: deletandoId === doc.file_id ? 0.5 : 1 }}
                 >
                   {deletandoId === doc.file_id ? 'Removendo...' : 'Remover'}
                 </button>
@@ -229,9 +226,8 @@ export function BaseConhecimento() {
         )}
       </div>
 
-      {/* Nota informativa */}
-      <div style={{ marginTop: 16, padding: '10px 14px', background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 8 }}>
-        <p style={{ fontSize: 12, color: '#8892a4', lineHeight: 1.6 }}>
+      <div style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 8, marginTop: 16, padding: '10px 14px' }}>
+        <p style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6 }}>
           💡 O Atlas consulta automaticamente esta base ao responder perguntas. Documentos com status "Indexando..." ficam disponíveis em alguns segundos após o upload. O custo de armazenamento é de $0,10/GB/dia — para documentos de texto, o custo mensal é praticamente zero.
         </p>
       </div>

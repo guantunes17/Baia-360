@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { ModuloLayout, inputStyle, labelStyle, hintStyle } from '@/components/ModuloLayout'
 import { DicaExtracao } from '@/components/DicaExtracao'
+import { T } from '@/lib/theme'
+import { glass, neoShadow } from '@/lib/glass'
+import { ClipboardList, Database, CheckCircle, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 import { API } from '../config'
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -19,24 +18,24 @@ interface DbInfo {
 }
 
 export function Estoque() {
-  const [dbInfo, setDbInfo]         = useState<DbInfo | null>(null)
-  const [loadingDb, setLoadingDb]   = useState(true)
+  const [dbInfo, setDbInfo]       = useState<DbInfo | null>(null)
+  const [loadingDb, setLoadingDb] = useState(true)
 
-  const [arquivoCarga, setArquivoCarga]   = useState<File | null>(null)
-  const [loadingCarga, setLoadingCarga]   = useState(false)
-  const [logsCarga, setLogsCarga]         = useState<string[]>([])
+  const [arquivoCarga, setArquivoCarga] = useState<File | null>(null)
+  const [loadingCarga, setLoadingCarga] = useState(false)
+  const [logsCarga, setLogsCarga]       = useState<string[]>([])
 
-  const [arquivoMov, setArquivoMov]     = useState<File | null>(null)
-  const [loadingMov, setLoadingMov]     = useState(false)
-  const [logsMov, setLogsMov]           = useState<string[]>([])
+  const [arquivoMov, setArquivoMov] = useState<File | null>(null)
+  const [loadingMov, setLoadingMov] = useState(false)
+  const [logsMov, setLogsMov]       = useState<string[]>([])
 
-  const [arquivoPico, setArquivoPico]   = useState<File | null>(null)
-  const [diasOcioso, setDiasOcioso]     = useState('120')
-  const [mesRef, setMesRef]             = useState('')
-  const [status, setStatus]             = useState<Status>('idle')
-  const [logs, setLogs]                 = useState<string[]>([])
-  const [erro, setErro]                 = useState('')
-  const [jobId, setJobId]               = useState('')
+  const [arquivoPico, setArquivoPico] = useState<File | null>(null)
+  const [diasOcioso, setDiasOcioso]   = useState('120')
+  const [mesRef, setMesRef]           = useState('')
+  const [status, setStatus]           = useState<Status>('idle')
+  const [logs, setLogs]               = useState<string[]>([])
+  const [erro, setErro]               = useState('')
+  const [jobId, setJobId]             = useState('')
 
   const inputCargaRef = useRef<HTMLInputElement>(null)
   const inputMovRef   = useRef<HTMLInputElement>(null)
@@ -157,224 +156,169 @@ export function Estoque() {
     if (inputPicoRef.current) inputPicoRef.current.value = ''
   }
 
-  return (
-    <div className="p-8 max-w-3xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>📋 Estoque</h1>
-        <p className="text-xs mt-2" style={{ color: '#8892a4', letterSpacing: '0.02em' }}>
-          Volume ocupado · Produtos ociosos por cliente · Volume ocioso por cliente.
-        </p>
+  const dbOk = dbInfo && dbInfo.total_skus > 0
+
+  const miniLog = (lines: string[]) => lines.length > 0 ? (
+    <div style={{
+      marginTop: 6, padding: '8px 10px', borderRadius: 6,
+      background: 'rgba(8,11,20,0.7)', maxHeight: 80, overflowY: 'auto',
+    }}>
+      {lines.map((l, i) => (
+        <p key={i} style={{ fontSize: 11, fontFamily: 'monospace', color: T.accentBlue, margin: '1px 0' }}>{l}</p>
+      ))}
+    </div>
+  ) : null
+
+  const btnStyle = (col: string, disabled: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '6px 12px', borderRadius: 6,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    background: `${col}18`, border: `1px solid ${col}33`,
+    color: col, fontSize: 12, fontWeight: 500, opacity: disabled ? 0.6 : 1,
+  })
+
+  const dbCard = (
+    <div style={{
+      ...glass(0.35, 20),
+      boxShadow: neoShadow,
+      borderRadius: 14,
+      borderColor: `${T.accentAmber}20`,
+      marginBottom: 20,
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '14px 20px',
+        borderBottom: `1px solid ${T.border}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Database size={14} color={T.accentAmber} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Banco de Dados Interno de Estoque</span>
+        </div>
+        {loadingDb
+          ? <Loader2 size={13} color={T.textMuted} />
+          : dbOk
+            ? <span style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: T.accentGreen }}>
+                <CheckCircle size={12} /> {dbInfo!.total_skus.toLocaleString('pt-BR')} SKUs · {dbInfo!.clientes.length} clientes
+              </span>
+            : <span style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: T.accentRed }}>
+                <AlertCircle size={12} /> DB vazio — faça a Carga Inicial primeiro
+              </span>
+        }
       </div>
+      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* Status do DB */}
-      <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-        <CardHeader>
-          <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>
-            🗄️ Banco de Dados Interno de Estoque
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loadingDb ? (
-            <p className="text-sm" style={{ color: '#8892a4' }}>Carregando...</p>
-          ) : dbInfo && dbInfo.total_skus > 0 ? (
-            <div className="flex flex-wrap gap-2 items-center mb-4">
-              <Badge variant="outline" style={{ borderColor: '#10b981', color: '#10b981' }}>
-                ✅ {dbInfo.total_skus.toLocaleString('pt-BR')} SKUs
-              </Badge>
-              <Badge variant="outline" style={{ borderColor: '#4f8ef7', color: '#4f8ef7' }}>
-                {dbInfo.clientes.length} clientes
-              </Badge>
-              {dbInfo.ultima && (
-                <Badge variant="outline" style={{ borderColor: '#2d3148', color: '#8892a4' }}>
-                  Última atualização: {dbInfo.ultima}
-                </Badge>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm mb-4" style={{ color: '#ef4444' }}>
-              ⚠️ Banco de dados vazio — faça a Carga Inicial primeiro.
-            </p>
-          )}
-
-          {/* Carga Inicial */}
-          <div className="space-y-2 mb-4">
-            <Label style={{ color: '#8892a4' }}>Carga Inicial (.xlsx — abas por cliente)</Label>
-            <div className="flex gap-2">
-              <input
-                ref={inputCargaRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={e => setArquivoCarga(e.target.files?.[0] || null)}
-                className="flex-1 text-sm rounded-md border px-3 py-2 cursor-pointer"
-                style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-              />
-              <Button
-                onClick={cargaInicial}
-                disabled={!arquivoCarga || loadingCarga}
-                style={{ background: '#4f8ef7', color: 'white' }}
-              >
-                {loadingCarga ? '⏳' : '📥 Carregar'}
-              </Button>
-            </div>
-            {logsCarga.length > 0 && (
-              <div className="rounded p-2 text-xs font-mono max-h-24 overflow-y-auto"
-                style={{ background: '#0f1117', color: '#4f8ef7' }}>
-                {logsCarga.map((l, i) => <p key={i}>{l}</p>)}
-              </div>
-            )}
-            <DicaExtracao linhas={[
-              '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
-              '⚙️ Ticar a opção Kardex 2, filtrar pelo período de referência.',
-              'ℹ️ Extrair 1 relatório por depositante e consolidar em um único arquivo com uma aba por depositante.',
-            ]} />
-          </div>
-
-          {/* Atualizar com Movimentação */}
-          <div className="space-y-2">
-            <Label style={{ color: '#8892a4' }}>Atualizar com Movimentação (.xlsx)</Label>
-            <div className="flex gap-2">
-              <input
-                ref={inputMovRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={e => setArquivoMov(e.target.files?.[0] || null)}
-                className="flex-1 text-sm rounded-md border px-3 py-2 cursor-pointer"
-                style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-              />
-              <Button
-                onClick={atualizarMov}
-                disabled={!arquivoMov || loadingMov}
-                style={{ background: '#f59e0b', color: 'white' }}
-              >
-                {loadingMov ? '⏳' : '🔄 Atualizar'}
-              </Button>
-            </div>
-            {logsMov.length > 0 && (
-              <div className="rounded p-2 text-xs font-mono max-h-24 overflow-y-auto"
-                style={{ background: '#0f1117', color: '#4f8ef7' }}>
-                {logsMov.map((l, i) => <p key={i}>{l}</p>)}
-              </div>
-            )}
-            <DicaExtracao linhas={[
-              '📋 No ESL: Estoque → Movimentação → Exportar período (.xlsx)',
-              'ℹ️ Use o mesmo período do mês de referência do relatório.',
-            ]} />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Gerar Relatório */}
-      <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-        <CardHeader>
-          <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>
-            Gerar Relatório
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label style={{ color: '#8892a4' }}>Arquivo de Pico de Estoque (.xlsx)</Label>
+        {/* Carga Inicial */}
+        <div>
+          <label style={labelStyle}>Carga Inicial (.xlsx — abas por cliente)</label>
+          <div style={{ display: 'flex', gap: 8 }}>
             <input
-              ref={inputPicoRef}
+              ref={inputCargaRef}
               type="file"
               accept=".xlsx,.xls"
-              onChange={e => setArquivoPico(e.target.files?.[0] || null)}
-              className="w-full text-sm rounded-md border px-3 py-2 cursor-pointer"
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
+              onChange={e => setArquivoCarga(e.target.files?.[0] || null)}
+              style={{ ...inputStyle, cursor: 'pointer', flex: 1 }}
             />
-            {arquivoPico && (
-              <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivoPico.name}</p>
-            )}
+            <button
+              onClick={cargaInicial}
+              disabled={!arquivoCarga || loadingCarga}
+              style={btnStyle(T.accentBlue, !arquivoCarga || loadingCarga)}
+            >
+              {loadingCarga ? <Loader2 size={12} /> : '📥'} Carregar
+            </button>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label style={{ color: '#8892a4' }}>Dias ocioso</Label>
-              <Input
-                type="number"
-                value={diasOcioso}
-                onChange={e => setDiasOcioso(e.target.value)}
-                min="1"
-                style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label style={{ color: '#8892a4' }}>Mês de Referência</Label>
-              <Input
-                value={mesRef}
-                onChange={e => setMesRef(e.target.value)}
-                placeholder="ex: 02-2026"
-                style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-              />
-            </div>
-          </div>
-
+          {miniLog(logsCarga)}
           <DicaExtracao linhas={[
-            '📋 No ESL: Estoque → Relatórios → Pico de Estoque',
-            '⚙️ Ticar a opção Analítico Dia, filtrar pelo período de referência.',
-            'ℹ️ O arquivo deve ser consolidado com o pico de cada depositante em uma aba.',
+            '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
+            '⚙️ Ticar a opção Kardex 2, filtrar pelo período de referência.',
+            'ℹ️ Extrair 1 relatório por depositante e consolidar em um único arquivo com uma aba por depositante.',
           ]} />
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Botões */}
-      <div className="flex gap-3 mb-6">
-        <Button
-          onClick={gerarRelatorio}
-          disabled={!arquivoPico || status === 'processando' || (dbInfo?.total_skus === 0)}
-          style={{ background: '#f59e0b', color: 'white' }}
-        >
-          {status === 'processando' ? '⏳ Processando...' : '▶ Gerar Relatório'}
-        </Button>
+        {/* Atualizar com Movimentação */}
+        <div>
+          <label style={labelStyle}>Atualizar com Movimentação (.xlsx)</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              ref={inputMovRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={e => setArquivoMov(e.target.files?.[0] || null)}
+              style={{ ...inputStyle, cursor: 'pointer', flex: 1 }}
+            />
+            <button
+              onClick={atualizarMov}
+              disabled={!arquivoMov || loadingMov}
+              style={btnStyle(T.accentAmber, !arquivoMov || loadingMov)}
+            >
+              {loadingMov ? <Loader2 size={12} /> : <RefreshCw size={12} />} Atualizar
+            </button>
+          </div>
+          {miniLog(logsMov)}
+          <DicaExtracao linhas={[
+            '📋 No ESL: Estoque → Movimentação → Exportar período (.xlsx)',
+            'ℹ️ Use o mesmo período do mês de referência do relatório.',
+          ]} />
+        </div>
+      </div>
+    </div>
+  )
 
-        {status !== 'idle' && (
-          <Button
-            variant="outline"
-            onClick={resetar}
-            style={{ borderColor: '#2d3148', color: '#8892a4', background: 'transparent' }}
-          >
-            Limpar
-          </Button>
-        )}
-
-        {status === 'concluido' && (
-          <Button onClick={baixar} style={{ background: '#10b981', color: 'white' }}>
-            ⬇ Baixar Relatório
-          </Button>
-        )}
+  return (
+    <ModuloLayout
+      titulo="Estoque"
+      subtitulo="Volume ocupado · Produtos ociosos por cliente · Volume ocioso por cliente."
+      cor="#f59e0b"
+      icon={ClipboardList}
+      status={status}
+      logs={logs}
+      erro={erro}
+      podeProcessar={!!arquivoPico && dbOk !== false}
+      onProcessar={gerarRelatorio}
+      onResetar={resetar}
+      onBaixar={baixar}
+      configTitulo="Gerar Relatório"
+      extras={dbCard}
+    >
+      <div>
+        <label style={labelStyle}>Arquivo de Pico de Estoque (.xlsx)</label>
+        <input
+          ref={inputPicoRef}
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={e => setArquivoPico(e.target.files?.[0] || null)}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+        />
+        {arquivoPico && <p style={{ fontSize: 11, color: T.accentBlue, marginTop: 4 }}>✓ {arquivoPico.name}</p>}
+        <DicaExtracao linhas={[
+          '📋 No ESL: Estoque → Relatórios → Pico de Estoque',
+          '⚙️ Ticar a opção Analítico Dia, filtrar pelo período de referência.',
+          'ℹ️ O arquivo deve ser consolidado com o pico de cada depositante em uma aba.',
+        ]} />
       </div>
 
-      {logs.length > 0 && (
-        <Card className="border" style={{ background: '#0f1117', borderColor: '#2d3148' }}>
-          <CardContent className="p-4">
-            <p className="text-xs font-semibold mb-2" style={{ color: '#8892a4' }}>
-              LOG DE PROCESSAMENTO
-            </p>
-            <div className="space-y-0 max-h-64 overflow-y-auto">
-              {logs.map((linha, i) => (
-                <p key={i} className="text-xs font-mono" style={{ color: '#4f8ef7' }}>{linha}</p>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {erro && (
-        <Card className="border mt-4" style={{ background: '#1a1d27', borderColor: '#ef4444' }}>
-          <CardContent className="p-4">
-            <p className="text-sm" style={{ color: '#ef4444' }}>❌ {erro}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {status === 'concluido' && (
-        <Card className="border mt-4" style={{ background: '#1a1d27', borderColor: '#10b981' }}>
-          <CardContent className="p-4">
-            <p className="text-sm" style={{ color: '#10b981' }}>
-              ✅ Relatório gerado com sucesso! Clique em "Baixar Relatório" para fazer o download.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div>
+          <label style={labelStyle}>Dias ocioso</label>
+          <input
+            type="number"
+            value={diasOcioso}
+            onChange={e => setDiasOcioso(e.target.value)}
+            min="1"
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Mês de Referência</label>
+          <input
+            value={mesRef}
+            onChange={e => setMesRef(e.target.value)}
+            placeholder="ex: 02-2026"
+            style={inputStyle}
+          />
+          <p style={hintStyle}>Formato: MM-AAAA</p>
+        </div>
+      </div>
+    </ModuloLayout>
   )
 }

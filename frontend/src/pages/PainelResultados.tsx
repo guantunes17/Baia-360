@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import { T } from '@/lib/theme'
+import { glass, neoShadow } from '@/lib/glass'
 import { API } from '../config'
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -37,7 +39,6 @@ function formatarValor(chave: string, valor: any): string {
 
 function formatarMes(mes: string): string {
   if (!mes) return '—'
-  // Converte YYYY-MM ou MM-YYYY para MM/AAAA
   if (mes.match(/^\d{4}-\d{2}$/)) {
     const [ano, m] = mes.split('-')
     return `${m}/${ano}`
@@ -58,27 +59,27 @@ function calcularDelta(valA: any, valB: any): { pct: number; label: string } | n
 }
 
 interface ModuloKPI {
-  modulo: string
-  mes_ref: string
+  modulo:    string
+  mes_ref:   string
   gerado_em: string
-  kpis: Record<string, any>
+  kpis:      Record<string, any>
 }
 
 function CardModulo({ dados, comparar }: { dados: ModuloKPI; comparar?: ModuloKPI }) {
-  const cor = CORES_MODULO[dados.modulo] || '#4f8ef7'
+  const cor    = CORES_MODULO[dados.modulo] || T.accentBlue
   const labels = KPI_LABELS[dados.modulo] || {}
 
   return (
     <div style={{
-      background: '#1a1d27',
-      border: `1px solid ${cor}44`,
+      ...glass(0.35, 20),
+      boxShadow: neoShadow,
       borderRadius: 10,
+      borderColor: `${cor}44`,
       padding: '14px 16px',
       display: 'flex',
       flexDirection: 'column',
       gap: 0
     }}>
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: cor }}>{dados.modulo}</span>
         {comparar ? (
@@ -86,23 +87,22 @@ function CardModulo({ dados, comparar }: { dados: ModuloKPI; comparar?: ModuloKP
             <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: `${cor}22`, color: cor }}>
               {formatarMes(dados.mes_ref)}
             </span>
-            <span style={{ fontSize: 10, color: '#8892a4' }}>vs</span>
-            <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: '#10b98122', color: '#10b981' }}>
+            <span style={{ fontSize: 10, color: T.textMuted }}>vs</span>
+            <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: `${T.accentGreen}22`, color: T.accentGreen }}>
               {formatarMes(comparar.mes_ref)}
             </span>
           </div>
         ) : (
-          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: '#2d3148', color: '#8892a4' }}>
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(14,22,45,0.6)', color: T.textMuted }}>
             {formatarMes(dados.mes_ref)}
           </span>
         )}
       </div>
 
-      {/* KPIs */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
         {Object.entries(dados.kpis).map(([chave, valor]) => {
-          const label = labels[chave] || chave
-          const delta = comparar ? calcularDelta(valor, comparar.kpis[chave]) : null
+          const label    = labels[chave] || chave
+          const delta    = comparar ? calcularDelta(valor, comparar.kpis[chave]) : null
           const isNumeric = !isNaN(Number(valor)) && valor !== null
 
           return (
@@ -111,26 +111,24 @@ function CardModulo({ dados, comparar }: { dados: ModuloKPI; comparar?: ModuloKP
               justifyContent: 'space-between',
               alignItems: 'center',
               padding: '6px 0',
-              borderBottom: '1px solid #2d314855'
+              borderBottom: `1px solid ${T.border}`
             }}>
-              <span style={{ fontSize: 12, color: '#8892a4' }}>{label}</span>
+              <span style={{ fontSize: 12, color: T.textMuted }}>{label}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {comparar && isNumeric && (
-                  <span style={{ fontSize: 11, color: '#8892a4', textDecoration: 'line-through' }}>
+                  <span style={{ fontSize: 11, color: T.textMuted, textDecoration: 'line-through' }}>
                     {formatarValor(chave, comparar.kpis[chave])}
                   </span>
                 )}
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>
                   {formatarValor(chave, valor)}
                 </span>
                 {delta && (
                   <span style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    padding: '1px 6px',
-                    borderRadius: 99,
-                    background: delta.pct >= 0 ? '#10b98122' : '#ef444422',
-                    color: delta.pct >= 0 ? '#10b981' : '#ef4444'
+                    fontSize: 10, fontWeight: 600,
+                    padding: '1px 6px', borderRadius: 99,
+                    background: `${delta.pct >= 0 ? T.accentGreen : T.accentRed}22`,
+                    color:      delta.pct >= 0 ? T.accentGreen : T.accentRed
                   }}>
                     {delta.label}
                   </span>
@@ -141,8 +139,7 @@ function CardModulo({ dados, comparar }: { dados: ModuloKPI; comparar?: ModuloKP
         })}
       </div>
 
-      {/* Gerado em */}
-      <p style={{ fontSize: 10, color: '#2d3148', marginTop: 8 }}>
+      <p style={{ fontSize: 10, color: T.textDim, marginTop: 8 }}>
         Gerado em {new Date(dados.gerado_em.endsWith('Z') ? dados.gerado_em : dados.gerado_em + 'Z')
           .toLocaleDateString('pt-BR')}
       </p>
@@ -151,11 +148,11 @@ function CardModulo({ dados, comparar }: { dados: ModuloKPI; comparar?: ModuloKP
 }
 
 function CardVazio({ modulo }: { modulo: string }) {
-  const cor = CORES_MODULO[modulo] || '#4f8ef7'
+  const cor = CORES_MODULO[modulo] || T.accentBlue
   return (
     <div style={{
-      background: '#1a1d27',
-      border: '1px solid #2d3148',
+      ...glass(0.35, 20),
+      boxShadow: neoShadow,
       borderRadius: 10,
       padding: '14px 16px',
       display: 'flex',
@@ -166,7 +163,7 @@ function CardVazio({ modulo }: { modulo: string }) {
       minHeight: 100
     }}>
       <span style={{ fontSize: 13, fontWeight: 600, color: cor, alignSelf: 'flex-start' }}>{modulo}</span>
-      <p style={{ fontSize: 12, color: '#8892a455', textAlign: 'center', marginTop: 8 }}>
+      <p style={{ fontSize: 12, color: `${T.textMuted}55`, textAlign: 'center', marginTop: 8 }}>
         Sem dados para este mês
       </p>
     </div>
@@ -174,18 +171,17 @@ function CardVazio({ modulo }: { modulo: string }) {
 }
 
 export function PainelResultados() {
-  const [meses, setMeses]               = useState<string[]>([])
-  const [mesSelecionado, setMesSel]     = useState('')
-  const [dadosMes, setDadosMes]         = useState<ModuloKPI[]>([])
-  const [modoComparar, setModoComparar] = useState(false)
-  const [mesComparar, setMesComparar]   = useState('')
-  const [dadosComparar, setDadosComparar] = useState<ModuloKPI[]>([])
-  const [loading, setLoading]           = useState(false)
-  const [loadingComp, setLoadingComp]   = useState(false)
+  const [meses,           setMeses]           = useState<string[]>([])
+  const [mesSelecionado,  setMesSel]          = useState('')
+  const [dadosMes,        setDadosMes]        = useState<ModuloKPI[]>([])
+  const [modoComparar,    setModoComparar]    = useState(false)
+  const [mesComparar,     setMesComparar]     = useState('')
+  const [dadosComparar,   setDadosComparar]   = useState<ModuloKPI[]>([])
+  const [loading,         setLoading]         = useState(false)
+  const [loadingComp,     setLoadingComp]     = useState(false)
 
   const TODOS_MODULOS = Object.keys(CORES_MODULO)
 
-  // Carrega lista de meses disponíveis
   useEffect(() => {
     axios.get(`${API}/api/dashboard/meses`, { headers: headers() })
       .then(r => {
@@ -195,7 +191,6 @@ export function PainelResultados() {
       .catch(() => {})
   }, [])
 
-  // Carrega KPIs do mês selecionado
   useEffect(() => {
     if (!mesSelecionado) return
     setLoading(true)
@@ -205,7 +200,6 @@ export function PainelResultados() {
       .finally(() => setLoading(false))
   }, [mesSelecionado])
 
-  // Carrega KPIs do mês de comparação
   useEffect(() => {
     if (!mesComparar) { setDadosComparar([]); return }
     setLoadingComp(true)
@@ -222,31 +216,31 @@ export function PainelResultados() {
     ? TODOS_MODULOS.filter(m => getDados(m, dadosMes) || getDados(m, dadosComparar))
     : TODOS_MODULOS.filter(m => getDados(m, dadosMes))
 
-  return (
-    <div className="p-8 max-w-5xl">
+  const selStyle: React.CSSProperties = {
+    borderRadius: 7, fontSize: 12, padding: '5px 10px',
+    cursor: 'pointer', outline: 'none', fontFamily: 'inherit',
+  }
 
-      {/* Cabeçalho */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>📈 Painel de Resultados</h1>
-        <p className="text-xs mt-2" style={{ color: '#8892a4', letterSpacing: '0.02em' }}>
+  return (
+    <div style={{ padding: '32px 40px', maxWidth: 900 }}>
+
+      <div style={{ marginBottom: 32 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: T.text, margin: 0 }}>Painel de Resultados</h1>
+        <p style={{ fontSize: 12, color: T.textMuted, marginTop: 4, letterSpacing: '0.02em' }}>
           KPIs operacionais por módulo · Filtro e comparação por mês de referência
         </p>
       </div>
 
-      {/* Barra de filtros */}
       <div style={{
+        ...glass(0.35, 20), boxShadow: neoShadow,
         display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-        background: '#1a1d27', border: '1px solid #2d3148', borderRadius: 10,
-        padding: '12px 16px', marginBottom: 24
+        borderRadius: 10, padding: '12px 16px', marginBottom: 24
       }}>
-        <span style={{ fontSize: 12, color: '#8892a4', flexShrink: 0 }}>Mês de referência:</span>
+        <span style={{ fontSize: 12, color: T.textMuted, flexShrink: 0 }}>Mês de referência:</span>
         <select
           value={mesSelecionado}
           onChange={e => setMesSel(e.target.value)}
-          style={{
-            background: '#0f1117', border: '1px solid #4f8ef7', borderRadius: 7,
-            color: '#4f8ef7', fontSize: 12, padding: '5px 10px', cursor: 'pointer'
-          }}
+          style={{ ...selStyle, background: T.bg, border: `1px solid ${T.accentBlue}`, color: T.accentBlue }}
         >
           {meses.length === 0 && <option value="">Nenhum mês disponível</option>}
           {meses.map(m => (
@@ -256,14 +250,11 @@ export function PainelResultados() {
 
         {modoComparar && (
           <>
-            <span style={{ fontSize: 12, color: '#8892a4' }}>vs</span>
+            <span style={{ fontSize: 12, color: T.textMuted }}>vs</span>
             <select
               value={mesComparar}
               onChange={e => setMesComparar(e.target.value)}
-              style={{
-                background: '#0f1117', border: '1px solid #10b981', borderRadius: 7,
-                color: '#10b981', fontSize: 12, padding: '5px 10px', cursor: 'pointer'
-              }}
+              style={{ ...selStyle, background: T.bg, border: `1px solid ${T.accentGreen}`, color: T.accentGreen }}
             >
               <option value="">Selecione um mês</option>
               {meses.filter(m => m !== mesSelecionado).map(m => (
@@ -277,9 +268,9 @@ export function PainelResultados() {
           onClick={() => { setModoComparar(!modoComparar); setMesComparar(''); setDadosComparar([]) }}
           style={{
             marginLeft: 'auto', fontSize: 12, fontWeight: 600,
-            color: modoComparar ? '#10b981' : '#8892a4',
-            background: modoComparar ? '#10b98118' : 'transparent',
-            border: `1px solid ${modoComparar ? '#10b98144' : '#2d3148'}`,
+            color:       modoComparar ? T.accentGreen : T.textMuted,
+            background:  modoComparar ? `${T.accentGreen}18` : 'transparent',
+            border:      `1px solid ${modoComparar ? T.accentGreen + '44' : T.border}`,
             borderRadius: 7, padding: '5px 14px', cursor: 'pointer'
           }}
         >
@@ -287,32 +278,25 @@ export function PainelResultados() {
         </button>
       </div>
 
-      {/* Estado de carregamento */}
       {loading && (
-        <p style={{ fontSize: 13, color: '#8892a4' }}>Carregando...</p>
+        <p style={{ fontSize: 13, color: T.textMuted }}>Carregando...</p>
       )}
 
-      {/* Sem dados */}
       {!loading && meses.length === 0 && (
         <div style={{
+          ...glass(0.35, 20), boxShadow: neoShadow,
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          padding: '48px 16px', gap: 12, textAlign: 'center',
-          background: '#1a1d27', borderRadius: 12, border: '1px solid #2d3148'
+          padding: '48px 16px', gap: 12, textAlign: 'center', borderRadius: 12
         }}>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0' }}>Nenhum relatório gerado ainda</p>
-          <p style={{ fontSize: 12, color: '#8892a4', maxWidth: 280, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 14, fontWeight: 500, color: T.text }}>Nenhum relatório gerado ainda</p>
+          <p style={{ fontSize: 12, color: T.textMuted, maxWidth: 280, lineHeight: 1.6 }}>
             Gere relatórios na Central de Relatórios para visualizar os KPIs aqui.
           </p>
         </div>
       )}
 
-      {/* Grid de módulos */}
       {!loading && modulosComDados.length > 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: 12
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
           {modulosComDados.map(modulo => {
             const dadosA = getDados(modulo, dadosMes)
             const dadosB = modoComparar ? getDados(modulo, dadosComparar) : undefined
@@ -320,23 +304,16 @@ export function PainelResultados() {
             if (!dadosA && dadosB) return <CardVazio key={modulo} modulo={modulo} />
             if (!dadosA) return null
 
-            return (
-              <CardModulo
-                key={modulo}
-                dados={dadosA}
-                comparar={dadosB}
-              />
-            )
+            return <CardModulo key={modulo} dados={dadosA} comparar={dadosB} />
           })}
         </div>
       )}
 
-      {/* Modo comparativo sem mês B selecionado */}
       {modoComparar && !mesComparar && !loadingComp && dadosMes.length > 0 && (
         <div style={{
           marginTop: 16, padding: '12px 16px',
-          background: '#f59e0b11', border: '1px solid #f59e0b33',
-          borderRadius: 8, fontSize: 12, color: '#f59e0b'
+          background: `${T.accentAmber}11`, border: `1px solid ${T.accentAmber}33`,
+          borderRadius: 8, fontSize: 12, color: T.accentAmber
         }}>
           ℹ️ Selecione o segundo mês para ativar a comparação e ver os deltas.
         </div>

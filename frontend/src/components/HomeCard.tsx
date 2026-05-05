@@ -1,6 +1,20 @@
-import { Badge } from '@/components/ui/badge'
+import React from 'react'
+import { T } from '@/lib/theme'
+import { glass, neoShadow } from '@/lib/glass'
+import {
+  Package, Truck, Warehouse, ClipboardList, Users, Activity,
+  PackageOpen, Receipt, BarChart3,
+} from 'lucide-react'
+
+type LucideIcon = React.ComponentType<{ size?: number; color?: string }>
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  Package, Truck, Warehouse, ClipboardList, Users, Activity,
+  PackageOpen, Receipt, BarChart3,
+}
 
 interface Props {
+  lucideIcon?: string
   icone: string
   titulo: string
   descricao: string
@@ -9,44 +23,93 @@ interface Props {
   onAcessar: () => void
 }
 
-export function HomeCard({ icone, titulo, descricao, cor, ultimaExtracao, onAcessar }: Props) {
+function addRipple(e: React.MouseEvent<HTMLDivElement>) {
+  const el = e.currentTarget
+  const rect = el.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+  const size = Math.max(rect.width, rect.height) * 2
+  const ripple = document.createElement('span')
+  ripple.style.cssText = `
+    position: absolute; width: ${size}px; height: ${size}px;
+    left: ${x - size / 2}px; top: ${y - size / 2}px;
+    background: ${T.gold}; opacity: 0.15; border-radius: 50%;
+    pointer-events: none; transform: scale(0);
+    animation: ripple-expand 500ms ease-out forwards; z-index: 0;
+  `
+  el.style.position = 'relative'
+  el.style.overflow = 'hidden'
+  el.appendChild(ripple)
+  setTimeout(() => ripple.remove(), 600)
+}
+
+export function HomeCard({ lucideIcon, icone, titulo, descricao, cor, ultimaExtracao, onAcessar }: Props) {
+  const Icon = lucideIcon ? ICON_MAP[lucideIcon] : null
+
   return (
     <div
-      className="rounded-lg border cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg"
-      style={{ background: '#1a1d27', borderColor: '#2d3148' }}
-      onClick={onAcessar}
+      onClick={e => { addRipple(e); onAcessar() }}
+      style={{
+        ...glass(0.35, 20),
+        boxShadow: neoShadow,
+        borderRadius: 14,
+        borderColor: `${cor}25`,
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+        overflow: 'hidden',
+      }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLElement
+        el.style.borderColor = `${cor}55`
+        el.style.boxShadow = `${neoShadow}, 0 0 24px ${cor}14`
+        el.style.transform = 'translateY(-2px)'
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLElement
+        el.style.borderColor = `${cor}25`
+        el.style.boxShadow = neoShadow
+        el.style.transform = 'translateY(0)'
+      }}
     >
-      {/* Barra colorida no topo */}
-      <div className="h-1 rounded-t-lg" style={{ background: cor }} />
+      {/* Accent top bar */}
+      <div style={{ height: 3, background: `linear-gradient(90deg, ${cor}88, ${cor}, ${cor}44)` }} />
 
-      <div className="p-5">
-        {/* Ícone e título */}
-        <div className="flex flex-col items-center text-center gap-2 mb-4">
-          <span className="text-4xl">{icone}</span>
-          <h3 className="font-bold text-sm leading-tight" style={{ color: '#e2e8f0' }}>
+      <div style={{ padding: '20px 18px' }}>
+        {/* Icon and title */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10, marginBottom: 16 }}>
+          {Icon ? (
+            <div style={{
+              width: 48, height: 48, borderRadius: 12,
+              background: `${cor}14`,
+              border: `1px solid ${cor}28`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: `0 0 14px ${cor}14`,
+            }}>
+              <Icon size={22} color={cor} />
+            </div>
+          ) : (
+            <span style={{ fontSize: 32 }}>{icone}</span>
+          )}
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: T.text, margin: 0, lineHeight: 1.3 }}>
             {titulo}
           </h3>
-          <p className="text-xs" style={{ color: '#8892a4' }}>
-            {descricao}
-          </p>
+          <p style={{ fontSize: 11, color: T.textMuted, margin: 0 }}>{descricao}</p>
         </div>
 
-        {/* Separador */}
-        <div className="h-px my-3" style={{ background: '#2d3148' }} />
+        {/* Separator */}
+        <div style={{ height: 1, background: T.border, margin: '12px 0' }} />
 
         {/* Última extração */}
-        <div className="flex justify-between items-center text-xs">
-          <span style={{ color: '#8892a4' }}>Última extração</span>
-          <Badge
-            variant="outline"
-            className="text-xs"
-            style={{
-              borderColor: ultimaExtracao && ultimaExtracao !== '—' ? cor : '#2d3148',
-              color: ultimaExtracao && ultimaExtracao !== '—' ? cor : '#8892a4',
-            }}
-          >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: T.textMuted }}>Última extração</span>
+          <span style={{
+            fontSize: 11, padding: '2px 8px', borderRadius: 5,
+            background: ultimaExtracao && ultimaExtracao !== '—' ? `${cor}14` : 'transparent',
+            border: `0.5px solid ${ultimaExtracao && ultimaExtracao !== '—' ? `${cor}40` : T.border}`,
+            color: ultimaExtracao && ultimaExtracao !== '—' ? cor : T.textMuted,
+          }}>
             {ultimaExtracao || '—'}
-          </Badge>
+          </span>
         </div>
       </div>
     </div>

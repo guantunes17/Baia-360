@@ -1,10 +1,9 @@
 import { useState, useRef } from 'react'
 import axios from 'axios'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ModuloLayout, inputStyle, labelStyle, hintStyle } from '@/components/ModuloLayout'
 import { DicaExtracao } from '@/components/DicaExtracao'
+import { T } from '@/lib/theme'
+import { Package } from 'lucide-react'
 import { API } from '../config'
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -82,117 +81,45 @@ export function Pedidos() {
   }
 
   return (
-    <div className="p-8 max-w-3xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>
-          📦 Pedidos e Recebimentos
-        </h1>
-        <p className="text-xs mt-2" style={{ color: '#8892a4', letterSpacing: '0.02em' }}>
-          Análise de SLAs.
-        </p>
+    <ModuloLayout
+      titulo="Pedidos e Recebimentos"
+      subtitulo="Análise de SLAs."
+      cor="#4f8ef7"
+      icon={Package}
+      status={status}
+      logs={logs}
+      erro={erro}
+      podeProcessar={!!arquivo && !!mesRef.trim()}
+      onProcessar={processar}
+      onResetar={resetar}
+      onBaixar={baixar}
+    >
+      <div>
+        <label style={labelStyle}>Arquivo de Pedidos (.xlsx)</label>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={e => setArquivo(e.target.files?.[0] || null)}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+        />
+        <DicaExtracao linhas={[
+          'ℹ️ No ESL: Estoque → Movimentação → Ordem de Saída',
+          '📋 Exportar a planilha completa filtrada pelo mês de referência.',
+        ]} />
+        {arquivo && <p style={{ fontSize: 11, color: T.accentBlue, marginTop: 4 }}>✓ {arquivo.name}</p>}
       </div>
 
-      <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-        <CardHeader>
-          <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>
-            Configuração
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-<div className="space-y-2">
-  <Label style={{ color: '#8892a4' }}>Arquivo de Pedidos (.xlsx)</Label>
-  <input
-    ref={inputRef}
-    type="file"
-    accept=".xlsx,.xls"
-    onChange={e => setArquivo(e.target.files?.[0] || null)}
-    className="w-full text-sm rounded-md border px-3 py-2 cursor-pointer"
-    style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-  />
-  <DicaExtracao linhas={[
-    'ℹ️ No ESL: Estoque → Movimentação → Ordem de Saída',
-    '📋 Exportar a planilha completa filtrada pelo mês de referência.',
-  ]} />
-  {arquivo && (
-    <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivo.name}</p>
-  )}
-</div>
-
-<div className="space-y-2">
-  <Label style={{ color: '#8892a4' }}>Mês de Referência</Label>
-  <Input
-    value={mesRef}
-    onChange={e => setMesRef(e.target.value)}
-    placeholder="ex: 03-2026"
-    style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-  />
-  <p className="text-xs" style={{ color: '#8892a4' }}>
-    ℹ️ Formato: MM-AAAA (ex: 03-2026)
-  </p>
-</div>
-        </CardContent>
-      </Card>
-
-      <div className="flex gap-3 mb-6">
-        <Button
-          onClick={processar}
-          disabled={!arquivo || !mesRef.trim() || status === 'processando'}
-          style={{ background: '#4f8ef7', color: 'white' }}
-        >
-          {status === 'processando' ? '⏳ Processando...' : '▶ Gerar Relatório'}
-        </Button>
-
-        {status !== 'idle' && (
-          <Button
-            variant="outline"
-            onClick={resetar}
-            style={{ borderColor: '#2d3148', color: '#8892a4', background: 'transparent' }}
-          >
-            Limpar
-          </Button>
-        )}
-
-        {status === 'concluido' && (
-          <Button onClick={baixar} style={{ background: '#10b981', color: 'white' }}>
-            ⬇ Baixar Relatório
-          </Button>
-        )}
+      <div>
+        <label style={labelStyle}>Mês de Referência</label>
+        <input
+          value={mesRef}
+          onChange={e => setMesRef(e.target.value)}
+          placeholder="ex: 03-2026"
+          style={inputStyle}
+        />
+        <p style={hintStyle}>Formato: MM-AAAA (ex: 03-2026)</p>
       </div>
-
-      {logs.length > 0 && (
-        <Card className="border" style={{ background: '#0f1117', borderColor: '#2d3148' }}>
-          <CardContent className="p-4">
-            <p className="text-xs font-semibold mb-2" style={{ color: '#8892a4' }}>
-              LOG DE PROCESSAMENTO
-            </p>
-            <div className="space-y-0 max-h-64 overflow-y-auto">
-              {logs.map((linha, i) => (
-                <p key={i} className="text-xs font-mono" style={{ color: '#4f8ef7' }}>
-                  {linha}
-                </p>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {erro && (
-        <Card className="border mt-4" style={{ background: '#1a1d27', borderColor: '#ef4444' }}>
-          <CardContent className="p-4">
-            <p className="text-sm" style={{ color: '#ef4444' }}>❌ {erro}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {status === 'concluido' && (
-        <Card className="border mt-4" style={{ background: '#1a1d27', borderColor: '#10b981' }}>
-          <CardContent className="p-4">
-            <p className="text-sm" style={{ color: '#10b981' }}>
-              ✅ Relatório gerado com sucesso! Clique em "Baixar Relatório" para fazer o download.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+    </ModuloLayout>
   )
 }

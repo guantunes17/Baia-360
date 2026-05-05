@@ -1,7 +1,10 @@
+import { T } from './theme'
+
 export const MODULOS = [
   {
     key: 'pedidos',
     icone: '📦',
+    lucideIcon: 'Package',
     titulo: 'Pedidos e Recebimentos',
     descricao: 'Análise de SLA · D+0 · D+1 · Excedidos',
     cor: '#4f8ef7',
@@ -10,6 +13,7 @@ export const MODULOS = [
   {
     key: 'fretes',
     icone: '🚚',
+    lucideIcon: 'Truck',
     titulo: 'Fretes',
     descricao: 'Embarques · RESCOM · Portadores · Insumos',
     cor: '#7c3aed',
@@ -18,6 +22,7 @@ export const MODULOS = [
   {
     key: 'armazenagem',
     icone: '🏭',
+    lucideIcon: 'Warehouse',
     titulo: 'Armazenagem',
     descricao: 'Faturamento mensal por cliente',
     cor: '#10b981',
@@ -26,6 +31,7 @@ export const MODULOS = [
   {
     key: 'estoque',
     icone: '📋',
+    lucideIcon: 'ClipboardList',
     titulo: 'Estoque',
     descricao: 'Volume ocupado · Ociosidade por cliente',
     cor: '#f59e0b',
@@ -34,6 +40,7 @@ export const MODULOS = [
   {
     key: 'produtividade',
     icone: '👥',
+    lucideIcon: 'Users',
     titulo: 'Produtividade de Equipe',
     descricao: 'Utilização · Ociosidade · Ranking por etapa',
     cor: '#06b6d4',
@@ -42,6 +49,7 @@ export const MODULOS = [
   {
     key: 'cap_operacional',
     icone: '⚙️',
+    lucideIcon: 'Activity',
     titulo: 'Capacidade Operacional',
     descricao: 'OS por depositante · SKUs · Extração do ESL',
     cor: '#e11d48',
@@ -50,6 +58,7 @@ export const MODULOS = [
   {
     key: 'recebimentos',
     icone: '📥',
+    lucideIcon: 'PackageOpen',
     titulo: 'Recebimentos e Devoluções',
     descricao: 'Entradas · Devoluções · Retiradas por depositante',
     cor: '#0891b2',
@@ -58,6 +67,7 @@ export const MODULOS = [
   {
     key: 'fat_dist',
     icone: '🚛',
+    lucideIcon: 'Receipt',
     titulo: 'Faturamento Distribuição',
     descricao: 'Geral · EPH · Pint Pharma · Funcional',
     cor: '#ea580c',
@@ -66,6 +76,7 @@ export const MODULOS = [
   {
     key: 'fat_arm',
     icone: '🏭',
+    lucideIcon: 'BarChart3',
     titulo: 'Faturamento Armazenagem',
     descricao: 'Pico m³ por cliente · SKUs na data do pico',
     cor: '#7c3aed',
@@ -73,9 +84,9 @@ export const MODULOS = [
   },
 ]
 
-export const COR_BG       = '#0f1117'
-export const COR_SIDEBAR  = '#13161f'
-export const COR_CARD     = '#1a1d27'
-export const COR_BORDA    = '#2d3148'
-export const COR_TEXTO    = '#e2e8f0'
-export const COR_SUBTEXTO = '#8892a4'
+export const COR_BG       = T.bg
+export const COR_SIDEBAR  = T.surface1
+export const COR_CARD     = T.surface2
+export const COR_BORDA    = T.border
+export const COR_TEXTO    = T.text
+export const COR_SUBTEXTO = T.textMuted

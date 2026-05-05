@@ -1,22 +1,20 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-
+import { T } from '@/lib/theme'
+import { glass, neoShadow, neoShadowInset } from '@/lib/glass'
 import { API } from '@/config'
+
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
 
 interface Usuario {
-  id: number
-  nome: string
-  email: string
+  id:     number
+  nome:   string
+  email:  string
   perfil: string
 }
 
 interface Props {
-  usuario: Usuario
+  usuario:     Usuario
   onAtualizar: (u: Usuario) => void
 }
 
@@ -26,16 +24,29 @@ function getIniciais(nome: string) {
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
 }
 
-export function Perfil({ usuario, onAtualizar }: Props) {
-  const [nome, setNome]             = useState(usuario.nome)
-  const [senhaAtual, setSenhaAtual] = useState('')
-  const [novaSenha, setNovaSenha]   = useState('')
-  const [confirmar, setConfirmar]   = useState('')
-  const [salvando, setSalvando]     = useState(false)
-  const [sucesso, setSucesso]       = useState('')
-  const [erro, setErro]             = useState('')
+const inp: React.CSSProperties = {
+  width: '100%', padding: '8px 12px',
+  background: 'rgba(8,11,20,0.7)',
+  border: `1px solid ${T.border}`,
+  borderRadius: 8, color: T.text, fontSize: 13,
+  outline: 'none', boxShadow: neoShadowInset,
+  boxSizing: 'border-box', fontFamily: 'inherit',
+}
+const lbl: React.CSSProperties = {
+  display: 'block', fontSize: 10, color: T.textMuted,
+  marginBottom: 6, fontWeight: 500,
+  textTransform: 'uppercase', letterSpacing: '0.08em',
+}
 
-  // ── Outlook ─────────────────────────────────────────────────────────────────
+export function Perfil({ usuario, onAtualizar }: Props) {
+  const [nome,       setNome]       = useState(usuario.nome)
+  const [senhaAtual, setSenhaAtual] = useState('')
+  const [novaSenha,  setNovaSenha]  = useState('')
+  const [confirmar,  setConfirmar]  = useState('')
+  const [salvando,   setSalvando]   = useState(false)
+  const [sucesso,    setSucesso]    = useState('')
+  const [erro,       setErro]       = useState('')
+
   const [outlookStatus, setOutlookStatus] = useState<{
     conectado: boolean
     email_outlook?: string
@@ -44,7 +55,6 @@ export function Perfil({ usuario, onAtualizar }: Props) {
   const [conectandoOutlook, setConectandoOutlook] = useState(false)
 
   useEffect(() => {
-    // Verifica status da conexão Outlook ao montar
     fetch(`${API}/api/oauth/outlook/status`, { headers: headers() })
       .then(r => r.json())
       .then(d => setOutlookStatus(d))
@@ -56,9 +66,7 @@ export function Perfil({ usuario, onAtualizar }: Props) {
     try {
       const res = await fetch(`${API}/api/oauth/outlook/login`, { headers: headers() })
       const { auth_url } = await res.json()
-      // Abre popup de autenticação Microsoft
       const popup = window.open(auth_url, 'outlook_auth', 'width=520,height=640,scrollbars=yes')
-      // Escuta o postMessage do callback quando o popup fechar
       const handler = (event: MessageEvent) => {
         if (event.data?.type === 'OUTLOOK_CONNECTED') {
           window.removeEventListener('message', handler)
@@ -68,7 +76,6 @@ export function Perfil({ usuario, onAtualizar }: Props) {
         }
       }
       window.addEventListener('message', handler)
-      // Fallback: se o popup fechar sem postMessage, verifica status
       const intervalo = setInterval(() => {
         if (popup?.closed) {
           clearInterval(intervalo)
@@ -113,104 +120,95 @@ export function Perfil({ usuario, onAtualizar }: Props) {
     }
   }
 
-  return (
-    <div className="p-8 max-w-xl">
+  const cardStyle = (accentColor: string = T.accentBlue): React.CSSProperties => ({
+    ...glass(0.35, 20),
+    boxShadow: neoShadow,
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden' as const,
+    borderColor: `${accentColor}20`,
+  })
 
-      {/* Header com avatar */}
+  return (
+    <div style={{ padding: '32px 40px', maxWidth: 560 }}>
+
+      {/* Header avatar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
         <div style={{
           width: 64, height: 64, borderRadius: '50%',
-          background: '#4f8ef722', border: '2px solid #4f8ef744',
+          background: `${T.accentBlue}22`, border: `2px solid ${T.accentBlue}44`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 22, fontWeight: 700, color: '#4f8ef7', flexShrink: 0
+          fontSize: 22, fontWeight: 700, color: T.accentBlue, flexShrink: 0
         }}>
           {iniciais}
         </div>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#e2e8f0', marginBottom: 6 }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 6 }}>
             {usuario.nome}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{
               fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 20,
-              background: isAdmin ? '#4f8ef722' : '#8892a422',
-              color:      isAdmin ? '#4f8ef7'   : '#8892a4',
-              border:     `0.5px solid ${isAdmin ? '#4f8ef744' : '#8892a444'}`
+              background: isAdmin ? `${T.accentBlue}22` : `${T.textMuted}22`,
+              color:      isAdmin ? T.accentBlue : T.textMuted,
+              border:     `1px solid ${isAdmin ? T.accentBlue + '44' : T.textMuted + '44'}`
             }}>
               {isAdmin ? 'Administrador' : 'Usuário'}
             </span>
-            <span style={{ fontSize: 11, color: '#8892a4' }}>{usuario.email}</span>
+            <span style={{ fontSize: 11, color: T.textMuted }}>{usuario.email}</span>
           </div>
         </div>
       </div>
 
       {/* Dados pessoais */}
-      <Card className="mb-4 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #4f8ef7' }}>
-            Dados pessoais
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <Label style={{ color: '#8892a4', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Nome</Label>
-            <Input
-              value={nome}
-              onChange={e => setNome(e.target.value)}
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-            />
+      <div style={cardStyle()}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${T.border}` }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.text, paddingLeft: 10, borderLeft: `2px solid ${T.accentBlue}` }}>Dados pessoais</span>
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={lbl}>Nome</label>
+            <input value={nome} onChange={e => setNome(e.target.value)} style={inp} />
           </div>
-          <div className="space-y-1">
-            <Label style={{ color: '#8892a4', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email</Label>
-            <Input
-              value={usuario.email}
-              disabled
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#8892a4' }}
-            />
-            <p className="text-xs" style={{ color: '#8892a455' }}>O email não pode ser alterado.</p>
+          <div>
+            <label style={lbl}>Email</label>
+            <input value={usuario.email} disabled style={{ ...inp, color: T.textMuted }} />
+            <p style={{ fontSize: 11, color: `${T.textMuted}55`, marginTop: 4 }}>O email não pode ser alterado.</p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Trocar senha */}
-      <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #4f8ef7' }}>
-            Trocar senha
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <Label style={{ color: '#8892a4', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Senha atual</Label>
-            <Input type="password" value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} placeholder="••••••••"
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }} />
+      <div style={cardStyle()}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${T.border}` }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.text, paddingLeft: 10, borderLeft: `2px solid ${T.accentBlue}` }}>Trocar senha</span>
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={lbl}>Senha atual</label>
+            <input type="password" value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} placeholder="••••••••" style={inp} />
           </div>
-          <div className="space-y-1">
-            <Label style={{ color: '#8892a4', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Nova senha</Label>
-            <Input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="••••••••"
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }} />
+          <div>
+            <label style={lbl}>Nova senha</label>
+            <input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="••••••••" style={inp} />
           </div>
-          <div className="space-y-1">
-            <Label style={{ color: '#8892a4', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Confirmar nova senha</Label>
-            <Input type="password" value={confirmar} onChange={e => setConfirmar(e.target.value)} placeholder="••••••••"
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }} />
+          <div>
+            <label style={lbl}>Confirmar nova senha</label>
+            <input type="password" value={confirmar} onChange={e => setConfirmar(e.target.value)} placeholder="••••••••" style={inp} />
           </div>
-          <p style={{ fontSize: 11, color: '#8892a455' }}>Deixe em branco para não alterar a senha.</p>
-        </CardContent>
-      </Card>
+          <p style={{ fontSize: 11, color: `${T.textMuted}55` }}>Deixe em branco para não alterar a senha.</p>
+        </div>
+      </div>
 
       {/* Integrações */}
-      <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold" style={{ color: '#e2e8f0', paddingLeft: '10px', borderLeft: '2px solid #7c3aed' }}>
-            Integrações
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div style={cardStyle(T.accentPurple)}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${T.border}` }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.text, paddingLeft: 10, borderLeft: `2px solid ${T.accentPurple}` }}>Integrações</span>
+        </div>
+        <div style={{ padding: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              {/* Ícone Outlook */}
-              <div style={{ width: 36, height: 36, borderRadius: 8, background: '#0078d422', border: '0.5px solid #0078d444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: '#0078d422', border: '1px solid #0078d444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <rect x="2" y="4" width="13" height="16" rx="2" fill="#0078d4"/>
                   <rect x="9" y="8" width="13" height="12" rx="2" fill="#0096d6"/>
@@ -220,17 +218,17 @@ export function Perfil({ usuario, onAtualizar }: Props) {
                 </svg>
               </div>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#e2e8f0' }}>Microsoft 365</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: T.text }}>Microsoft 365</div>
                 {outlookStatus === null && (
-                  <div style={{ fontSize: 11, color: '#8892a4' }}>Verificando...</div>
+                  <div style={{ fontSize: 11, color: T.textMuted }}>Verificando...</div>
                 )}
                 {outlookStatus?.conectado && (
-                  <div style={{ fontSize: 11, color: '#10b981' }}>
+                  <div style={{ fontSize: 11, color: T.accentGreen }}>
                     Conectado — {outlookStatus.email_outlook || ''}
                   </div>
                 )}
                 {outlookStatus && !outlookStatus.conectado && (
-                  <div style={{ fontSize: 11, color: '#8892a4' }}>Não conectado</div>
+                  <div style={{ fontSize: 11, color: T.textMuted }}>Não conectado</div>
                 )}
               </div>
             </div>
@@ -238,9 +236,9 @@ export function Perfil({ usuario, onAtualizar }: Props) {
               {outlookStatus?.conectado ? (
                 <button
                   onClick={desconectarOutlook}
-                  style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, color: '#ef4444', background: '#ef444411', border: '0.5px solid #ef444433', cursor: 'pointer' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#ef444422')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '#ef444411')}
+                  style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, color: T.accentRed, background: `${T.accentRed}11`, border: `1px solid ${T.accentRed}33`, cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = `${T.accentRed}22`)}
+                  onMouseLeave={e => (e.currentTarget.style.background = `${T.accentRed}11`)}
                 >
                   Desconectar
                 </button>
@@ -248,7 +246,7 @@ export function Perfil({ usuario, onAtualizar }: Props) {
                 <button
                   onClick={conectarOutlook}
                   disabled={conectandoOutlook || outlookStatus === null}
-                  style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, color: '#0078d4', background: '#0078d411', border: '0.5px solid #0078d433', cursor: conectandoOutlook ? 'not-allowed' : 'pointer', opacity: conectandoOutlook ? 0.6 : 1 }}
+                  style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, color: '#0078d4', background: '#0078d411', border: '1px solid #0078d433', cursor: conectandoOutlook ? 'not-allowed' : 'pointer', opacity: conectandoOutlook ? 0.6 : 1 }}
                   onMouseEnter={e => { if (!conectandoOutlook) (e.currentTarget.style.background = '#0078d422') }}
                   onMouseLeave={e => { if (!conectandoOutlook) (e.currentTarget.style.background = '#0078d411') }}
                 >
@@ -257,18 +255,22 @@ export function Perfil({ usuario, onAtualizar }: Props) {
               )}
             </div>
           </div>
-          <p style={{ fontSize: 11, color: '#8892a455', marginTop: 4 }}>
+          <p style={{ fontSize: 11, color: `${T.textMuted}55`, marginTop: 4 }}>
             Necessário para o Atlas acessar sua agenda, e-mails e o Microsoft Teams.
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {erro    && <p className="text-sm mb-4" style={{ color: '#ef4444' }}>{erro}</p>}
-      {sucesso && <p className="text-sm mb-4" style={{ color: '#10b981' }}>{sucesso}</p>}
+      {erro    && <p style={{ fontSize: 13, color: T.accentRed,   marginBottom: 16 }}>{erro}</p>}
+      {sucesso && <p style={{ fontSize: 13, color: T.accentGreen, marginBottom: 16 }}>{sucesso}</p>}
 
-      <Button onClick={salvar} disabled={salvando} style={{ background: '#4f8ef7', color: 'white' }}>
+      <button
+        onClick={salvar}
+        disabled={salvando}
+        style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: salvando ? 'not-allowed' : 'pointer', opacity: salvando ? 0.7 : 1 }}
+      >
         {salvando ? 'Salvando...' : 'Salvar alterações'}
-      </Button>
+      </button>
     </div>
   )
 }

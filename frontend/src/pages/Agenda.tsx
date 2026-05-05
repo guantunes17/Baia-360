@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
+import { T } from '@/lib/theme'
+import { glass, neoShadow, neoShadowInset } from '@/lib/glass'
 import { API } from '@/config'
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -48,8 +50,7 @@ interface EditarEvento {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-               'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+const MESES     = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const DIAS_SEMANA = ['DOM','SEG','TER','QUA','QUI','SEX','SÁB']
 
 function pad(n: number) { return String(n).padStart(2, '0') }
@@ -92,29 +93,30 @@ function extrairHora(isoStr: string): string {
 // ── Estilos compartilhados ────────────────────────────────────────────────────
 
 const labelStyle: React.CSSProperties = {
-  fontSize: 10, color: '#8892a4', display: 'block',
+  fontSize: 10, color: T.textMuted, display: 'block',
   marginBottom: 4, letterSpacing: '0.06em', textTransform: 'uppercase'
 }
 const inputStyle: React.CSSProperties = {
-  width: '100%', background: '#0f1117', border: '0.5px solid #2d3148',
-  borderRadius: 8, color: '#e2e8f0', padding: '8px 10px', fontSize: 13,
-  outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box'
+  width: '100%', background: 'rgba(8,11,20,0.7)', border: `1px solid ${T.border}`,
+  borderRadius: 8, color: T.text, padding: '8px 10px', fontSize: 13,
+  outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+  boxShadow: neoShadowInset,
 }
 const btnCancelStyle: React.CSSProperties = {
-  background: 'transparent', border: '0.5px solid #2d3148', borderRadius: 8,
-  color: '#8892a4', padding: '7px 16px', fontSize: 13, cursor: 'pointer'
+  background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8,
+  color: T.textMuted, padding: '7px 16px', fontSize: 13, cursor: 'pointer'
 }
 const btnSaveStyle: React.CSSProperties = {
-  background: '#4f8ef7', border: 'none', borderRadius: 8,
+  background: T.accentBlue, border: 'none', borderRadius: 8,
   color: 'white', padding: '7px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 500
 }
 const btnDangerStyle: React.CSSProperties = {
-  background: '#ef444415', border: '0.5px solid #ef444433', borderRadius: 8,
-  color: '#ef4444', padding: '7px 16px', fontSize: 13, cursor: 'pointer'
+  background: `${T.accentRed}15`, border: `1px solid ${T.accentRed}33`, borderRadius: 8,
+  color: T.accentRed, padding: '7px 16px', fontSize: 13, cursor: 'pointer'
 }
 const navBtnStyle: React.CSSProperties = {
-  background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 8,
-  color: '#8892a4', width: 28, height: 28, display: 'flex', alignItems: 'center',
+  background: 'rgba(14,22,45,0.5)', border: `1px solid ${T.border}`, borderRadius: 8,
+  color: T.textMuted, width: 28, height: 28, display: 'flex', alignItems: 'center',
   justifyContent: 'center', cursor: 'pointer', fontSize: 16
 }
 
@@ -145,9 +147,9 @@ function ModalNovoEvento({
   }
 
   return (
-    <div onClick={onFechar} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 12, padding: 24, width: 360, maxWidth: '90vw' }}>
-        <div style={{ fontSize: 15, fontWeight: 500, color: '#e2e8f0', marginBottom: 18 }}>Novo evento</div>
+    <div onClick={onFechar} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+      <div onClick={e => e.stopPropagation()} style={{ ...glass(0.97, 30), boxShadow: neoShadow, borderRadius: 12, padding: 24, width: 360, maxWidth: '90vw' }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: T.text, marginBottom: 18 }}>Novo evento</div>
 
         <div style={{ marginBottom: 10 }}>
           <label style={labelStyle}>Título</label>
@@ -176,7 +178,7 @@ function ModalNovoEvento({
           <textarea value={form.descricao} onChange={campo('descricao')} placeholder="Pauta, link de acesso..." style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} />
         </div>
 
-        {erroForm && <p style={{ fontSize: 12, color: '#ef4444', marginBottom: 10 }}>{erroForm}</p>}
+        {erroForm && <p style={{ fontSize: 12, color: T.accentRed, marginBottom: 10 }}>{erroForm}</p>}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onFechar} style={btnCancelStyle}>Cancelar</button>
@@ -203,46 +205,42 @@ function ModalDetalheEvento({
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   return (
-    <div onClick={onFechar} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 12, padding: 24, width: 400, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto' }}>
+    <div onClick={onFechar} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+      <div onClick={e => e.stopPropagation()} style={{ ...glass(0.97, 30), boxShadow: neoShadow, borderRadius: 12, padding: 24, width: 400, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto' }}>
 
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#e2e8f0', lineHeight: 1.3 }}>{ev.titulo}</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: T.text, lineHeight: 1.3 }}>{ev.titulo}</div>
             {ev.organizador && (
-              <div style={{ fontSize: 12, color: '#8892a4', marginTop: 4 }}>Organizado por {ev.organizador}</div>
+              <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>Organizado por {ev.organizador}</div>
             )}
           </div>
-          <button onClick={onFechar} style={{ background: 'none', border: 'none', color: '#8892a4', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 2, flexShrink: 0 }}>✕</button>
+          <button onClick={onFechar} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 2, flexShrink: 0 }}>✕</button>
         </div>
 
-        <div style={{ height: '0.5px', background: '#2d3148', marginBottom: 16 }} />
+        <div style={{ height: 1, background: T.border, marginBottom: 16 }} />
 
-        {/* Horário */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
           <span style={{ fontSize: 15, marginTop: 1 }}>🕐</span>
           <div>
             {ev.dia_inteiro ? (
-              <div style={{ fontSize: 13, color: '#e2e8f0' }}>Dia inteiro — {extrairData(ev.inicio)}</div>
+              <div style={{ fontSize: 13, color: T.text }}>Dia inteiro — {extrairData(ev.inicio)}</div>
             ) : (
               <>
-                <div style={{ fontSize: 13, color: '#e2e8f0' }}>{formatarDataHora(ev.inicio)}</div>
-                <div style={{ fontSize: 12, color: '#8892a4', marginTop: 2 }}>até {formatarHoraBRT(ev.fim)}</div>
+                <div style={{ fontSize: 13, color: T.text }}>{formatarDataHora(ev.inicio)}</div>
+                <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>até {formatarHoraBRT(ev.fim)}</div>
               </>
             )}
           </div>
         </div>
 
-        {/* Local */}
         {ev.local && (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
             <span style={{ fontSize: 15, marginTop: 1 }}>📍</span>
-            <div style={{ fontSize: 13, color: '#e2e8f0' }}>{ev.local}</div>
+            <div style={{ fontSize: 13, color: T.text }}>{ev.local}</div>
           </div>
         )}
 
-        {/* Link reunião Teams */}
         {ev.link_reuniao && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <span style={{ fontSize: 15 }}>🎥</span>
@@ -250,7 +248,7 @@ function ModalDetalheEvento({
               href={ev.link_reuniao}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ fontSize: 13, color: '#4f8ef7', textDecoration: 'none', fontWeight: 500 }}
+              style={{ fontSize: 13, color: T.accentBlue, textDecoration: 'none', fontWeight: 500 }}
               onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.textDecoration = 'underline'}
               onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.textDecoration = 'none'}
             >
@@ -259,7 +257,6 @@ function ModalDetalheEvento({
           </div>
         )}
 
-        {/* Link web Outlook */}
         {ev.link_web && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <span style={{ fontSize: 15 }}>🔗</span>
@@ -267,37 +264,35 @@ function ModalDetalheEvento({
               href={ev.link_web}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ fontSize: 13, color: '#8892a4', textDecoration: 'none' }}
-              onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = '#e2e8f0'}
-              onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = '#8892a4'}
+              style={{ fontSize: 13, color: T.textMuted, textDecoration: 'none' }}
+              onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = T.text}
+              onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = T.textMuted}
             >
               Abrir no Outlook Web
             </a>
           </div>
         )}
 
-        {/* Descrição */}
         {ev.resumo && (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 10, color: '#8892a4', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Descrição</div>
-            <div style={{ fontSize: 13, color: '#8892a4', background: '#0f1117', borderRadius: 8, padding: '10px 12px', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+            <div style={{ fontSize: 10, color: T.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Descrição</div>
+            <div style={{ fontSize: 13, color: T.textMuted, background: 'rgba(8,11,20,0.7)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
               {ev.resumo}
             </div>
           </div>
         )}
 
-        {/* Ações */}
         {!confirmDelete ? (
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
             <button onClick={() => setConfirmDelete(true)} style={btnDangerStyle}>Deletar</button>
             <button onClick={onEditar} style={btnCancelStyle}>Editar</button>
           </div>
         ) : (
-          <div style={{ background: '#ef444411', border: '0.5px solid #ef444433', borderRadius: 8, padding: '12px 14px', marginTop: 8 }}>
-            <div style={{ fontSize: 13, color: '#e2e8f0', marginBottom: 10 }}>Tem certeza? Este evento será removido do Outlook.</div>
+          <div style={{ background: `${T.accentRed}11`, border: `1px solid ${T.accentRed}33`, borderRadius: 8, padding: '12px 14px', marginTop: 8 }}>
+            <div style={{ fontSize: 13, color: T.text, marginBottom: 10 }}>Tem certeza? Este evento será removido do Outlook.</div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setConfirmDelete(false)} style={btnCancelStyle}>Cancelar</button>
-              <button onClick={onDeletar} disabled={deletando} style={{ ...btnDangerStyle, background: '#ef4444', color: '#fff', border: 'none' }}>
+              <button onClick={onDeletar} disabled={deletando} style={{ ...btnDangerStyle, background: T.accentRed, color: '#fff', border: 'none' }}>
                 {deletando ? 'Deletando...' : 'Confirmar deleção'}
               </button>
             </div>
@@ -339,9 +334,9 @@ function ModalEditarEvento({
   }
 
   return (
-    <div onClick={onFechar} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 12, padding: 24, width: 360, maxWidth: '90vw' }}>
-        <div style={{ fontSize: 15, fontWeight: 500, color: '#e2e8f0', marginBottom: 18 }}>Editar evento</div>
+    <div onClick={onFechar} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110 }}>
+      <div onClick={e => e.stopPropagation()} style={{ ...glass(0.97, 30), boxShadow: neoShadow, borderRadius: 12, padding: 24, width: 360, maxWidth: '90vw' }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: T.text, marginBottom: 18 }}>Editar evento</div>
 
         <div style={{ marginBottom: 10 }}>
           <label style={labelStyle}>Título</label>
@@ -370,7 +365,7 @@ function ModalEditarEvento({
           <textarea value={form.descricao} onChange={campo('descricao')} style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} />
         </div>
 
-        {erroForm && <p style={{ fontSize: 12, color: '#ef4444', marginBottom: 10 }}>{erroForm}</p>}
+        {erroForm && <p style={{ fontSize: 12, color: T.accentRed, marginBottom: 10 }}>{erroForm}</p>}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onFechar} style={btnCancelStyle}>Cancelar</button>
@@ -397,37 +392,37 @@ function DiaCell({
   carregando: boolean
   onDoubleClickEvento: (ev: Evento) => void
 }) {
-  const COR: Record<string, string> = { blue: '#4f8ef7', green: '#10b981', purple: '#a78bfa' }
-  const BG:  Record<string, string> = { blue: '#4f8ef722', green: '#10b98122', purple: '#7c3aed22' }
+  const COR: Record<string, string> = { blue: T.accentBlue, green: T.accentGreen, purple: '#a78bfa' }
+  const BG:  Record<string, string> = { blue: `${T.accentBlue}22`, green: `${T.accentGreen}22`, purple: `${T.accentPurple}22` }
+
+  const bgBase = selecionado ? `${T.accentBlue}11` : hoje ? 'rgba(14,22,45,0.9)' : outro ? 'rgba(6,8,16,0.4)' : 'rgba(10,14,24,0.65)'
 
   return (
     <div
       onClick={onClick}
       style={{
-        background: selecionado ? '#4f8ef711' : hoje ? '#1a1d27' : outro ? '#0c0e15' : '#13161f',
+        background: bgBase,
         minHeight:  90,
         padding:    8,
         cursor:     outro ? 'default' : 'pointer',
         opacity:    outro ? 0.4 : 1,
-        outline:    selecionado ? '1px solid #4f8ef744' : 'none',
+        outline:    selecionado ? `1px solid ${T.accentBlue}44` : 'none',
         transition: 'background 0.1s',
         position:   'relative'
       }}
-      onMouseEnter={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = selecionado ? '#4f8ef718' : '#1a1d27' }}
-      onMouseLeave={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = selecionado ? '#4f8ef711' : hoje ? '#1a1d27' : '#13161f' }}
+      onMouseEnter={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = selecionado ? `${T.accentBlue}18` : 'rgba(14,22,45,0.8)' }}
+      onMouseLeave={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = bgBase }}
     >
-      {/* Número do dia */}
       <div style={{
         width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 12, marginBottom: 4, borderRadius: '50%',
-        background: hoje ? '#4f8ef7' : 'transparent',
-        color:      hoje ? 'white' : '#8892a4',
+        background: hoje ? T.accentBlue : 'transparent',
+        color:      hoje ? 'white' : T.textMuted,
         fontWeight: hoje ? 500 : 400
       }}>
         {num}
       </div>
 
-      {/* Pílulas de evento */}
       {!carregando && eventos.slice(0, 2).map((ev, i) => (
         <div
           key={i}
@@ -458,7 +453,7 @@ function DiaCell({
         </div>
       ))}
       {!carregando && eventos.length > 2 && (
-        <div style={{ fontSize: 10, color: '#8892a4', padding: '1px 5px' }}>+{eventos.length-2} mais</div>
+        <div style={{ fontSize: 10, color: T.textMuted, padding: '1px 5px' }}>+{eventos.length-2} mais</div>
       )}
     </div>
   )
@@ -468,19 +463,19 @@ function DiaCell({
 
 export function Agenda() {
   const hoje = new Date()
-  const [mesCurrent, setMesCurrent]         = useState(new Date(hoje.getFullYear(), hoje.getMonth(), 1))
-  const [diaSelecionado, setDiaSelecionado] = useState(toDateStr(hoje))
-  const [eventos, setEventos]               = useState<EventoLocal[]>([])
-  const [conectado, setConectado]           = useState<boolean | null>(null)
-  const [carregando, setCarregando]         = useState(false)
-  const [modalNovo, setModalNovo]           = useState(false)
-  const [salvandoEvento, setSalvandoEvento] = useState(false)
-  const [toastMsg, setToastMsg]             = useState<string | null>(null)
-  const [erroMsg, setErroMsg]               = useState<string | null>(null)
-  const [eventoDetalhe, setEventoDetalhe]   = useState<Evento | null>(null)
-  const [eventoEditar, setEventoEditar]     = useState<Evento | null>(null)
-  const [deletando, setDeletando]           = useState(false)
-  const [salvandoEdicao, setSalvandoEdicao] = useState(false)
+  const [mesCurrent,      setMesCurrent]      = useState(new Date(hoje.getFullYear(), hoje.getMonth(), 1))
+  const [diaSelecionado,  setDiaSelecionado]  = useState(toDateStr(hoje))
+  const [eventos,         setEventos]         = useState<EventoLocal[]>([])
+  const [conectado,       setConectado]       = useState<boolean | null>(null)
+  const [carregando,      setCarregando]      = useState(false)
+  const [modalNovo,       setModalNovo]       = useState(false)
+  const [salvandoEvento,  setSalvandoEvento]  = useState(false)
+  const [toastMsg,        setToastMsg]        = useState<string | null>(null)
+  const [erroMsg,         setErroMsg]         = useState<string | null>(null)
+  const [eventoDetalhe,   setEventoDetalhe]   = useState<Evento | null>(null)
+  const [eventoEditar,    setEventoEditar]    = useState<Evento | null>(null)
+  const [deletando,       setDeletando]       = useState(false)
+  const [salvandoEdicao,  setSalvandoEdicao]  = useState(false)
 
   const toast = (msg: string) => { setToastMsg(msg); setTimeout(() => setToastMsg(null), 4000) }
 
@@ -633,16 +628,14 @@ export function Agenda() {
   const [sdAno, sdMes, sdDia] = diaSelecionado.split('-')
 
   return (
-    <div style={{ padding: '24px 32px', background: '#0f1117', minHeight: '100%', color: '#e2e8f0', fontFamily: 'inherit' }}>
+    <div style={{ padding: '24px 32px', background: T.bg, minHeight: '100%', color: T.text, fontFamily: 'inherit' }}>
 
-      {/* Toast */}
       {toastMsg && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, background: '#1a1d27', border: '0.5px solid #10b98166', borderLeft: '3px solid #10b981', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#e2e8f0', zIndex: 200, minWidth: 280 }}>
+        <div style={{ position: 'fixed', bottom: 24, right: 24, ...glass(0.97, 20), borderLeft: `3px solid ${T.accentGreen}`, borderColor: `${T.accentGreen}44`, boxShadow: neoShadow, borderRadius: 10, padding: '12px 16px', fontSize: 13, color: T.text, zIndex: 200, minWidth: 280 }}>
           {toastMsg}
         </div>
       )}
 
-      {/* Modais */}
       {modalNovo && (
         <ModalNovoEvento
           dataInicial={diaSelecionado}
@@ -674,7 +667,7 @@ export function Agenda() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 18, fontWeight: 500, color: '#e2e8f0' }}>
+          <span style={{ fontSize: 18, fontWeight: 500, color: T.text }}>
             {MESES[mesCurrent.getMonth()]} {mesCurrent.getFullYear()}
           </span>
           <div style={{ display: 'flex', gap: 4 }}>
@@ -682,24 +675,23 @@ export function Agenda() {
             <button onClick={() => setMesCurrent(new Date(hoje.getFullYear(), hoje.getMonth(), 1))} style={{ ...navBtnStyle, padding: '0 12px', fontSize: 11 }}>Hoje</button>
             <button onClick={() => setMesCurrent(new Date(mesCurrent.getFullYear(), mesCurrent.getMonth()+1, 1))} style={navBtnStyle}>&#8250;</button>
           </div>
-          {carregando && <span style={{ fontSize: 11, color: '#8892a4' }}>Atualizando...</span>}
+          {carregando && <span style={{ fontSize: 11, color: T.textMuted }}>Atualizando...</span>}
         </div>
-        <button onClick={() => setModalNovo(true)} style={{ background: '#4f8ef7', border: 'none', borderRadius: 8, color: 'white', padding: '0 16px', height: 32, fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button onClick={() => setModalNovo(true)} style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '0 16px', height: 32, fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Novo evento
         </button>
       </div>
 
-      {/* Status Outlook */}
       {conectado === false && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 8, marginBottom: 16, fontSize: 12 }}>
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f0b429', flexShrink: 0 }} />
-          <span style={{ color: '#8892a4' }}>Outlook não conectado — eventos do calendário não serão exibidos.</span>
-          <span style={{ color: '#4f8ef7', marginLeft: 'auto', cursor: 'pointer' }}>Como conectar?</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', ...glass(0.5, 16), borderRadius: 8, marginBottom: 16, fontSize: 12 }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: T.gold, flexShrink: 0 }} />
+          <span style={{ color: T.textMuted }}>Outlook não conectado — eventos do calendário não serão exibidos.</span>
+          <span style={{ color: T.accentBlue, marginLeft: 'auto', cursor: 'pointer' }}>Como conectar?</span>
         </div>
       )}
 
       {erroMsg && (
-        <div style={{ padding: '8px 14px', background: '#ef444411', border: '0.5px solid #ef444433', borderRadius: 8, marginBottom: 16, fontSize: 12, color: '#ef4444' }}>
+        <div style={{ padding: '8px 14px', background: `${T.accentRed}11`, border: `1px solid ${T.accentRed}33`, borderRadius: 8, marginBottom: 16, fontSize: 12, color: T.accentRed }}>
           {erroMsg}
         </div>
       )}
@@ -707,45 +699,45 @@ export function Agenda() {
       {/* Grid do calendário */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 1 }}>
         {DIAS_SEMANA.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 11, color: '#8892a4', padding: '6px 0', fontWeight: 500, letterSpacing: '0.04em' }}>{d}</div>
+          <div key={d} style={{ textAlign: 'center', fontSize: 11, color: T.textMuted, padding: '6px 0', fontWeight: 500, letterSpacing: '0.04em' }}>{d}</div>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, background: '#2d3148', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, background: T.border, borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
         {renderGrid()}
       </div>
 
       {/* Painel do dia selecionado */}
-      <div style={{ background: '#1a1d27', border: '0.5px solid #2d3148', borderRadius: 10, padding: 16 }}>
+      <div style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 10, padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 500, color: '#e2e8f0' }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: T.text }}>
             Eventos — {sdDia}/{sdMes}/{sdAno}
           </span>
-          <button onClick={() => setModalNovo(true)} style={{ fontSize: 11, color: '#4f8ef7', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+          <button onClick={() => setModalNovo(true)} style={{ fontSize: 11, color: T.accentBlue, background: 'transparent', border: 'none', cursor: 'pointer' }}>
             + Adicionar evento
           </button>
         </div>
 
         {eventosDia.length === 0 ? (
-          <div style={{ fontSize: 13, color: '#8892a4', padding: '4px 0' }}>
+          <div style={{ fontSize: 13, color: T.textMuted, padding: '4px 0' }}>
             {conectado ? 'Nenhum evento neste dia.' : 'Conecte o Outlook para ver seus eventos.'}
           </div>
         ) : (
           eventosDia.map((ev, i) => {
-            const COR_MAP: Record<string, string> = { blue: '#4f8ef7', green: '#10b981', purple: '#a78bfa' }
+            const COR_MAP: Record<string, string> = { blue: T.accentBlue, green: T.accentGreen, purple: '#a78bfa' }
             const cor = COR_MAP[ev.color]
             return (
               <div
                 key={i}
                 onClick={() => setEventoDetalhe(ev.raw)}
-                style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 8px', borderBottom: i < eventosDia.length-1 ? '0.5px solid #2d3148' : 'none', cursor: 'pointer', borderRadius: 6, transition: 'background 0.1s' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#0f1117'}
+                style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 8px', borderBottom: i < eventosDia.length-1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', borderRadius: 6, transition: 'background 0.1s' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(8,11,20,0.6)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
               >
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: cor, flexShrink: 0 }} />
-                <div style={{ fontSize: 11, color: '#8892a4', minWidth: 44 }}>{ev.time || 'Dia todo'}</div>
+                <div style={{ fontSize: 11, color: T.textMuted, minWidth: 44 }}>{ev.time || 'Dia todo'}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: '#e2e8f0' }}>{ev.title}</div>
-                  {ev.loc && <div style={{ fontSize: 11, color: '#8892a4', marginTop: 2 }}>{ev.loc}</div>}
+                  <div style={{ fontSize: 13, color: T.text }}>{ev.title}</div>
+                  {ev.loc && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{ev.loc}</div>}
                 </div>
                 {ev.hasLink && (
                   <a
@@ -753,14 +745,14 @@ export function Agenda() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 10, color: '#4f8ef7', background: '#4f8ef715', border: '0.5px solid #4f8ef733', borderRadius: 4, padding: '3px 8px', flexShrink: 0, textDecoration: 'none', fontWeight: 500 }}
-                    onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = '#4f8ef730'}
-                    onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = '#4f8ef715'}
+                    style={{ fontSize: 10, color: T.accentBlue, background: `${T.accentBlue}15`, border: `1px solid ${T.accentBlue}33`, borderRadius: 4, padding: '3px 8px', flexShrink: 0, textDecoration: 'none', fontWeight: 500 }}
+                    onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = `${T.accentBlue}30`}
+                    onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = `${T.accentBlue}15`}
                   >
                     ▶ Entrar
                   </a>
                 )}
-                <div style={{ color: '#2d3148', fontSize: 12, flexShrink: 0 }}>›</div>
+                <div style={{ color: T.textDim, fontSize: 12, flexShrink: 0 }}>›</div>
               </div>
             )
           })

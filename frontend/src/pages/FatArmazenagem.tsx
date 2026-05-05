@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ModuloLayout, inputStyle, labelStyle, hintStyle } from '@/components/ModuloLayout'
 import { DicaExtracao } from '@/components/DicaExtracao'
+import { T } from '@/lib/theme'
+import { glass, neoShadow } from '@/lib/glass'
+import { BarChart3, Database, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { API } from '../config'
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -156,245 +156,189 @@ export function FatArmazenagem() {
     window.open(`${API}/api/modulos/download/${jobId}?token=${localStorage.getItem('token')}`, '_blank')
   }
 
-  const famOk  = dbStatus && dbStatus.familias.total_skus > 0
-  const cfgOk  = dbStatus && dbStatus.config.total_clientes > 0
+  const famOk = dbStatus && dbStatus.familias.total_skus > 0
+  const cfgOk = dbStatus && dbStatus.config.total_clientes > 0
+
+  const dbCard = (
+    <div style={{
+      ...glass(0.35, 20),
+      boxShadow: neoShadow,
+      borderRadius: 14,
+      borderColor: `${T.accentPurple}20`,
+      marginBottom: 20,
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '14px 20px',
+        borderBottom: `1px solid ${T.border}`,
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <Database size={14} color={T.accentPurple} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Banco de Dados</span>
+      </div>
+      <div style={{ padding: 20 }}>
+        <p style={{ fontSize: 11, color: T.textMuted, marginBottom: 16 }}>
+          Carregue os dois bancos antes de gerar o relatório. Ficam salvos no servidor — não é necessário recarregar a cada uso.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+
+          {/* DB Famílias */}
+          <div style={{
+            ...glass(0.25, 12),
+            borderColor: famOk ? `${T.accentGreen}44` : `${T.accentRed}33`,
+            borderRadius: 10, padding: 14,
+            display: 'flex', flexDirection: 'column', gap: 10,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {famOk
+                ? <CheckCircle size={13} color={T.accentGreen} />
+                : <AlertCircle size={13} color={T.accentRed} />
+              }
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>DB de Famílias</span>
+            </div>
+            {dbStatus ? (
+              famOk ? (
+                <p style={{ fontSize: 11, color: T.accentGreen }}>
+                  {dbStatus.familias.total_skus} SKUs · {dbStatus.familias.total_clientes} clientes
+                  {dbStatus.familias.ultima ? ` · ${dbStatus.familias.ultima}` : ''}
+                </p>
+              ) : (
+                <p style={{ fontSize: 11, color: T.accentRed }}>DB vazio — carregue o arquivo</p>
+              )
+            ) : (
+              <p style={{ fontSize: 11, color: T.textMuted }}>Carregando...</p>
+            )}
+            <input ref={inputFamRef} type="file" accept=".xlsx,.xls" onChange={uploadFamilias} style={{ display: 'none' }} />
+            <button
+              disabled={carregandoFam}
+              onClick={() => inputFamRef.current?.click()}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 6, cursor: carregandoFam ? 'not-allowed' : 'pointer',
+                background: `${T.accentPurple}20`, border: `1px solid ${T.accentPurple}40`,
+                color: T.accentPurple, fontSize: 12, fontWeight: 500,
+                opacity: carregandoFam ? 0.6 : 1,
+              }}
+            >
+              {carregandoFam ? <><Loader2 size={12} /> Carregando...</> : '📥 Carregar / Atualizar Famílias'}
+            </button>
+            {erroFam && <p style={{ fontSize: 11, color: T.accentRed }}>❌ {erroFam}</p>}
+            <DicaExtracao linhas={[
+              '📋 Exportação do cadastro de produtos do ESL (abas por cliente)',
+              'ℹ️ Também aceita planilha de correções de família',
+            ]} />
+          </div>
+
+          {/* DB Configuração */}
+          <div style={{
+            ...glass(0.25, 12),
+            borderColor: cfgOk ? `${T.accentGreen}44` : `${T.accentRed}33`,
+            borderRadius: 10, padding: 14,
+            display: 'flex', flexDirection: 'column', gap: 10,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {cfgOk
+                ? <CheckCircle size={13} color={T.accentGreen} />
+                : <AlertCircle size={13} color={T.accentRed} />
+              }
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Configuração (Preços)</span>
+            </div>
+            {dbStatus ? (
+              cfgOk ? (
+                <p style={{ fontSize: 11, color: T.accentGreen }}>
+                  {dbStatus.config.total_clientes} clientes com preço
+                  {dbStatus.config.ultima ? ` · ${dbStatus.config.ultima}` : ''}
+                </p>
+              ) : (
+                <p style={{ fontSize: 11, color: T.accentRed }}>DB vazio — carregue o arquivo</p>
+              )
+            ) : (
+              <p style={{ fontSize: 11, color: T.textMuted }}>Carregando...</p>
+            )}
+            <input ref={inputCfgRef} type="file" accept=".xlsx,.xls" onChange={uploadConfig} style={{ display: 'none' }} />
+            <button
+              disabled={carregandoCfg}
+              onClick={() => inputCfgRef.current?.click()}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 6, cursor: carregandoCfg ? 'not-allowed' : 'pointer',
+                background: `${T.accentGreen}14`, border: `1px solid ${T.accentGreen}33`,
+                color: T.accentGreen, fontSize: 12, fontWeight: 500,
+                opacity: carregandoCfg ? 0.6 : 1,
+              }}
+            >
+              {carregandoCfg ? <><Loader2 size={12} /> Carregando...</> : '📥 Carregar Configuração'}
+            </button>
+            {erroCfg && <p style={{ fontSize: 11, color: T.accentRed }}>❌ {erroCfg}</p>}
+            <DicaExtracao linhas={[
+              '📋 Planilha com abas "Grupo-Familia" e "Valor de armaz."',
+              'ℹ️ Define agrupamentos e preço/m³ por cliente',
+            ]} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
-    <div className="p-8 max-w-3xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold" style={{ color: '#e2e8f0' }}>
-          🏭 Faturamento Armazenagem
-        </h1>
-        <p className="text-xs mt-2" style={{ color: '#8892a4', letterSpacing: '0.02em' }}>
-          Pico m³ por cliente · SKUs na data do pico
-        </p>
+    <ModuloLayout
+      titulo="Faturamento Armazenagem"
+      subtitulo="Pico m³ por cliente · SKUs na data do pico"
+      cor="#7c3aed"
+      icon={BarChart3}
+      status={status}
+      logs={logs}
+      erro={erro}
+      podeProcessar={!!arquivoMov && !!arquivoVol && !!mesRef.trim()}
+      onProcessar={processar}
+      onResetar={resetar}
+      onBaixar={baixar}
+      extras={dbCard}
+    >
+      <div>
+        <label style={labelStyle}>Arquivo de Movimentação (.xlsx)</label>
+        <input
+          ref={inputMovRef}
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={e => setArquivoMov(e.target.files?.[0] || null)}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+        />
+        {arquivoMov && <p style={{ fontSize: 11, color: T.accentBlue, marginTop: 4 }}>✓ {arquivoMov.name}</p>}
+        <DicaExtracao linhas={[
+          '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
+          '⚙️ Ticar a opção Kardex 2, filtrar pelo período de referência.',
+          'ℹ️ Consolidar com 1 aba por depositante.',
+        ]} />
       </div>
 
-      {/* ── Banco de Dados ── */}
-      <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-        <CardHeader>
-          <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>
-            Banco de Dados
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-xs" style={{ color: '#8892a4' }}>
-            Carregue os dois bancos de dados antes de gerar o relatório. Eles ficam salvos no servidor — não é necessário recarregar a cada uso.
-          </p>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {/* DB Famílias */}
-            <div className="rounded-md border p-4 space-y-3" style={{ borderColor: famOk ? '#10b981' : '#ef4444', background: '#0f1117' }}>
-              <div>
-                <p className="text-sm font-semibold" style={{ color: '#e2e8f0' }}>📦 DB de Famílias</p>
-                {dbStatus ? (
-                  famOk ? (
-                    <p className="text-xs mt-1" style={{ color: '#10b981' }}>
-                      ✅ {dbStatus.familias.total_skus} SKUs · {dbStatus.familias.total_clientes} clientes
-                      {dbStatus.familias.ultima ? ` · ${dbStatus.familias.ultima}` : ''}
-                    </p>
-                  ) : (
-                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>⚠️ DB vazio — carregue o arquivo</p>
-                  )
-                ) : (
-                  <p className="text-xs mt-1" style={{ color: '#8892a4' }}>Carregando...</p>
-                )}
-              </div>
-              <div>
-                <input
-                  ref={inputFamRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={uploadFamilias}
-                  className="hidden"
-                  id="input-familias"
-                />
-                <Button
-                  size="sm"
-                  disabled={carregandoFam}
-                  onClick={() => inputFamRef.current?.click()}
-                  style={{ background: '#4c1d95', color: 'white', fontSize: '0.75rem' }}
-                >
-                  {carregandoFam ? '⏳ Carregando...' : '📥 Carregar / Atualizar Famílias'}
-                </Button>
-                {erroFam && (
-                  <p className="text-xs mt-1" style={{ color: '#ef4444' }}>❌ {erroFam}</p>
-                )}
-              </div>
-              <DicaExtracao linhas={[
-                '📋 Exportação do cadastro de produtos do ESL (abas por cliente)',
-                'ℹ️ Também aceita planilha de correções de família (formato com coluna "Família Sugerida")',
-              ]} />
-            </div>
-
-            {/* DB Configuração */}
-            <div className="rounded-md border p-4 space-y-3" style={{ borderColor: cfgOk ? '#10b981' : '#ef4444', background: '#0f1117' }}>
-              <div>
-                <p className="text-sm font-semibold" style={{ color: '#e2e8f0' }}>💰 Configuração (Preços)</p>
-                {dbStatus ? (
-                  cfgOk ? (
-                    <p className="text-xs mt-1" style={{ color: '#10b981' }}>
-                      ✅ {dbStatus.config.total_clientes} clientes com preço
-                      {dbStatus.config.ultima ? ` · ${dbStatus.config.ultima}` : ''}
-                    </p>
-                  ) : (
-                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>⚠️ DB vazio — carregue o arquivo</p>
-                  )
-                ) : (
-                  <p className="text-xs mt-1" style={{ color: '#8892a4' }}>Carregando...</p>
-                )}
-              </div>
-              <div>
-                <input
-                  ref={inputCfgRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={uploadConfig}
-                  className="hidden"
-                  id="input-config"
-                />
-                <Button
-                  size="sm"
-                  disabled={carregandoCfg}
-                  onClick={() => inputCfgRef.current?.click()}
-                  style={{ background: '#065f46', color: 'white', fontSize: '0.75rem' }}
-                >
-                  {carregandoCfg ? '⏳ Carregando...' : '📥 Carregar Configuração'}
-                </Button>
-                {erroCfg && (
-                  <p className="text-xs mt-1" style={{ color: '#ef4444' }}>❌ {erroCfg}</p>
-                )}
-              </div>
-              <DicaExtracao linhas={[
-                '📋 Planilha com abas "Grupo-Familia" e "Valor de armaz."',
-                'ℹ️ Define agrupamentos e preço/m³ por cliente',
-              ]} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Configuração do relatório ── */}
-      <Card className="mb-6 border" style={{ background: '#1a1d27', borderColor: '#2d3148' }}>
-        <CardHeader>
-          <CardTitle className="text-base" style={{ color: '#e2e8f0' }}>
-            Configuração
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label style={{ color: '#8892a4' }}>Arquivo de Movimentação (.xlsx)</Label>
-            <input
-              ref={inputMovRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={e => setArquivoMov(e.target.files?.[0] || null)}
-              className="w-full text-sm rounded-md border px-3 py-2 cursor-pointer"
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-            />
-            {arquivoMov && (
-              <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivoMov.name}</p>
-            )}
-            <DicaExtracao linhas={[
-              '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
-              '⚙️ Ticar a opção Kardex 2, filtrar pelo período de referência.',
-              'ℹ️ Mesmo arquivo usado para atualizar o DB do módulo de Estoque — consolidar com 1 aba por depositante.'
-            ]} />
-          </div>
-
-          <div className="space-y-2">
-            <Label style={{ color: '#8892a4' }}>Arquivo de Volumes (.xlsx)</Label>
-            <input
-              ref={inputVolRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={e => setArquivoVol(e.target.files?.[0] || null)}
-              className="w-full text-sm rounded-md border px-3 py-2 cursor-pointer"
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-            />
-            {arquivoVol && (
-              <p className="text-xs" style={{ color: '#4f8ef7' }}>✓ {arquivoVol.name}</p>
-            )}
-            <DicaExtracao linhas={[
-              '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
-              '⚙️ Ticar a opção Kardex, filtrar pelo período de referência e família/grupo.',
-              'ℹ️ O arquivo deve ter uma aba por cliente/família com o volume m³ diário.'
-            ]} />
-          </div>
-
-          <div className="space-y-2">
-            <Label style={{ color: '#8892a4' }}>Mês de Referência</Label>
-            <Input
-              value={mesRef}
-              onChange={e => setMesRef(e.target.value)}
-              placeholder="ex: 02-2026"
-              style={{ background: '#0f1117', borderColor: '#2d3148', color: '#e2e8f0' }}
-            />
-            <p className="text-xs" style={{ color: '#8892a4' }}>
-              ℹ️ Formato: MM-AAAA (ex: 02-2026)
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex gap-3 mb-6">
-        <Button
-          onClick={processar}
-          disabled={!arquivoMov || !arquivoVol || !mesRef.trim() || status === 'processando'}
-          style={{ background: '#7c3aed', color: 'white' }}
-        >
-          {status === 'processando' ? '⏳ Processando...' : '▶ Gerar Relatório'}
-        </Button>
-
-        {status !== 'idle' && (
-          <Button
-            variant="outline"
-            onClick={resetar}
-            style={{ borderColor: '#2d3148', color: '#8892a4', background: 'transparent' }}
-          >
-            Limpar
-          </Button>
-        )}
-
-        {status === 'concluido' && (
-          <Button onClick={baixar} style={{ background: '#10b981', color: 'white' }}>
-            ⬇ Baixar Relatório
-          </Button>
-        )}
+      <div>
+        <label style={labelStyle}>Arquivo de Volumes (.xlsx)</label>
+        <input
+          ref={inputVolRef}
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={e => setArquivoVol(e.target.files?.[0] || null)}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+        />
+        {arquivoVol && <p style={{ fontSize: 11, color: T.accentBlue, marginTop: 4 }}>✓ {arquivoVol.name}</p>}
+        <DicaExtracao linhas={[
+          '📋 No ESL: Estoque → Relatórios → Movimentação de Estoque',
+          '⚙️ Ticar a opção Kardex, filtrar pelo período e família/grupo.',
+          'ℹ️ Uma aba por cliente/família com o volume m³ diário.',
+        ]} />
       </div>
 
-      {logs.length > 0 && (
-        <Card className="border" style={{ background: '#0f1117', borderColor: '#2d3148' }}>
-          <CardContent className="p-4">
-            <p className="text-xs font-semibold mb-2" style={{ color: '#8892a4' }}>
-              LOG DE PROCESSAMENTO
-            </p>
-            <div className="space-y-0 max-h-64 overflow-y-auto">
-              {logs.map((linha, i) => (
-                <p key={i} className="text-xs font-mono" style={{ color: '#4f8ef7' }}>{linha}</p>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {erro && (
-        <Card className="border mt-4" style={{ background: '#1a1d27', borderColor: '#ef4444' }}>
-          <CardContent className="p-4">
-            <p className="text-sm" style={{ color: '#ef4444' }}>❌ {erro}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {status === 'concluido' && (
-        <Card className="border mt-4" style={{ background: '#1a1d27', borderColor: '#10b981' }}>
-          <CardContent className="p-4">
-            <p className="text-sm" style={{ color: '#10b981' }}>
-              ✅ Relatório gerado! Clique em "Baixar Relatório" para fazer o download.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+      <div>
+        <label style={labelStyle}>Mês de Referência</label>
+        <input
+          value={mesRef}
+          onChange={e => setMesRef(e.target.value)}
+          placeholder="ex: 02-2026"
+          style={inputStyle}
+        />
+        <p style={hintStyle}>Formato: MM-AAAA (ex: 02-2026)</p>
+      </div>
+    </ModuloLayout>
   )
 }
