@@ -32,6 +32,7 @@ import { API } from '@/config'
 import { T } from '@/lib/theme'
 import { glass, neoShadow, neoShadowInset } from '@/lib/glass'
 import { useRipple } from '@/hooks/useRipple'
+import { addRipple } from '@/lib/ripple'
 import { AmbientBackground } from '@/components/AmbientBackground'
 import { Mail, Shield, Eye, EyeOff, User, Lock, Clock, Check, Circle, LogOut } from 'lucide-react'
 
@@ -518,7 +519,7 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <SidebarTrigger style={{ color: T.textMuted }} />
                 <button
-                  onClick={onVoltarHub}
+                  onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); onVoltarHub() }}
                   style={{
                     fontSize: 12, padding: '4px 12px', borderRadius: 6,
                     color: T.accentBlue, background: `${T.accentBlue}11`,
@@ -543,7 +544,7 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <button
-                  onClick={() => setPaginaAtiva('perfil')}
+                  onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); setPaginaAtiva('perfil') }}
                   style={{
                     ...glass(0.2, 10),
                     display: 'flex', alignItems: 'center', gap: 8,
@@ -568,7 +569,7 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
                   <span style={{ fontSize: 13, color: T.textMuted }}>{usuario.nome.split(' ')[0]}</span>
                 </button>
                 <button
-                  onClick={onLogout}
+                  onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); onLogout() }}
                   style={{
                     ...glass(0.2, 10),
                     display: 'flex', alignItems: 'center', gap: 6,
@@ -631,7 +632,7 @@ function PaginaSimples({ titulo, icone, usuario, onVoltar, onPerfil, children }:
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
-            onClick={onVoltar}
+            onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); onVoltar() }}
             style={{
               fontSize: 12, padding: '4px 12px', borderRadius: 6,
               color: T.accentBlue, background: `${T.accentBlue}11`,
@@ -652,7 +653,7 @@ function PaginaSimples({ titulo, icone, usuario, onVoltar, onPerfil, children }:
           <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{icone} {titulo}</span>
         </div>
         <button
-          onClick={onPerfil}
+          onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); onPerfil() }}
           style={{
             ...glass(0.2, 10),
             display: 'flex', alignItems: 'center', gap: 8,
@@ -772,75 +773,87 @@ const handleLogout = () => {
   if (tela === 'hub') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <Hub
-      usuario={usuario}
-      onEntrarRelatorios={() => setTela('relatorios')}
-      onEntrarAtlas={() => setTela('atlas')}
-      onEntrarPainelControle={() => setTela('painel_controle')}
-      onEntrarPainelResultados={() => setTela('painel_resultados')}
-      onEntrarAgenda={() => setTela('agenda')}
-      onEntrarUsuarios={() => { setTela('usuarios'); setPendentes(0) }}
-      onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
-      onEntrarPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}
-      pendentes={pendentes}
-      permissoes={permissoes}
-      onLogout={handleLogout}
-    />
+      <div key={tela} className="page-fade">
+        <Hub
+          usuario={usuario}
+          onEntrarRelatorios={() => setTela('relatorios')}
+          onEntrarAtlas={() => setTela('atlas')}
+          onEntrarPainelControle={() => setTela('painel_controle')}
+          onEntrarPainelResultados={() => setTela('painel_resultados')}
+          onEntrarAgenda={() => setTela('agenda')}
+          onEntrarUsuarios={() => { setTela('usuarios'); setPendentes(0) }}
+          onEntrarBaseConhecimento={() => setTela('base_conhecimento')}
+          onEntrarPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}
+          pendentes={pendentes}
+          permissoes={permissoes}
+          onLogout={handleLogout}
+        />
+      </div>
     </>
   )
 if (tela === 'painel_controle') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Painel de Controle" icone="📡" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
-        <PainelControle />
-      </PaginaSimples>
+      <div key={tela} className="page-fade">
+        <PaginaSimples titulo="Painel de Controle" icone="📡" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
+          <PainelControle />
+        </PaginaSimples>
+      </div>
     </>
   )
 
   if (tela === 'painel_resultados') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Painel de Resultados" icone="📈" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
-        <PainelResultados />
-      </PaginaSimples>
+      <div key={tela} className="page-fade">
+        <PaginaSimples titulo="Painel de Resultados" icone="📈" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
+          <PainelResultados />
+        </PaginaSimples>
+      </div>
     </>
   )
 
   if (tela === 'agenda') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Agenda" icone="📅" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
-        <Agenda />
-      </PaginaSimples>
+      <div key={tela} className="page-fade">
+        <PaginaSimples titulo="Agenda" icone="📅" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
+          <Agenda />
+        </PaginaSimples>
+      </div>
     </>
   )
 
   if (tela === 'usuarios') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Usuários" icone="👥" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
-        <Usuarios />
-      </PaginaSimples>
+      <div key={tela} className="page-fade">
+        <PaginaSimples titulo="Usuários" icone="👥" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
+          <Usuarios />
+        </PaginaSimples>
+      </div>
     </>
   )
 
   if (tela === 'base_conhecimento') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-      <PaginaSimples titulo="Base de Conhecimento" icone="🧠" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
-        <BaseConhecimento />
-      </PaginaSimples>
+      <div key={tela} className="page-fade">
+        <PaginaSimples titulo="Base de Conhecimento" icone="🧠" usuario={usuario} onVoltar={() => setTela('hub')} onPerfil={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}>
+          <BaseConhecimento />
+        </PaginaSimples>
+      </div>
     </>
   )
 
   if (tela === 'atlas') return (
   <>
   <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
-  <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
+  <div key={tela} className="page-fade" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
     <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', height: 48, borderBottom: '1px solid #2d3148', background: '#13161f', flexShrink: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={() => { const evt = new CustomEvent('atlas-toggle-sidebar'); window.dispatchEvent(evt) }} style={{ width: 32, height: 32, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-        <button onClick={() => setTela('hub')} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, color: '#7c3aed', background: '#7c3aed11', border: '1px solid #7c3aed33', cursor: 'pointer' }}>
+        <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); const evt = new CustomEvent('atlas-toggle-sidebar'); window.dispatchEvent(evt) }} style={{ width: 32, height: 32, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#8892a4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+        <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); setTela('hub') }} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, color: '#7c3aed', background: '#7c3aed11', border: '1px solid #7c3aed33', cursor: 'pointer', position: 'relative', overflow: 'hidden' }}>
           ← Baia 360
         </button>
         <span style={{ color: '#2d3148' }}>|</span>
@@ -848,9 +861,9 @@ if (tela === 'painel_controle') return (
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button
-          onClick={() => { setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}
+          onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); setPaginaInicialRelatorios('perfil'); setTela('relatorios') }}
           title="Meu perfil"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8, transition: 'background .12s' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8, transition: 'background .12s', position: 'relative', overflow: 'hidden' }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#1a1d27'}
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
         >
@@ -869,13 +882,15 @@ if (tela === 'painel_controle') return (
   </>
 )
 return (
-  <Dashboard
-    usuario={usuario}
-    onLogout={handleLogout}
-    onVoltarHub={() => { setPaginaInicialRelatorios('home'); setTela('hub') }}
-    onAtualizarUsuario={u => setUsuario(u)}
-    paginaInicial={paginaInicialRelatorios}
-    permissoes={permissoes}
-  />
+  <div key={tela} className="page-fade">
+    <Dashboard
+      usuario={usuario}
+      onLogout={handleLogout}
+      onVoltarHub={() => { setPaginaInicialRelatorios('home'); setTela('hub') }}
+      onAtualizarUsuario={u => setUsuario(u)}
+      paginaInicial={paginaInicialRelatorios}
+      permissoes={permissoes}
+    />
+  </div>
 )
 }

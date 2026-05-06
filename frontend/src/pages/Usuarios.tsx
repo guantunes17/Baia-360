@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import axios from 'axios'
 import { T } from '@/lib/theme'
 import { glass, neoShadow, neoShadowInset } from '@/lib/glass'
+import { addRipple } from '@/lib/ripple'
 import { API } from '../config'
 
 interface Usuario {
@@ -306,14 +307,14 @@ export function Usuarios() {
               {PERFIS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
             <button
-              onClick={() => aprovar(u)}
+              onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); aprovar(u) }}
               disabled={aprovandoId === u.id}
               style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${T.accentGreen}44`, background: `${T.accentGreen}18`, color: T.accentGreen, cursor: 'pointer', flexShrink: 0 }}
             >
               {aprovandoId === u.id ? '...' : 'Aprovar'}
             </button>
             <button
-              onClick={() => rejeitar(u)}
+              onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); rejeitar(u) }}
               style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${T.accentRed}44`, background: `${T.accentRed}18`, color: T.accentRed, cursor: 'pointer', flexShrink: 0 }}
             >
               Rejeitar
@@ -364,7 +365,7 @@ export function Usuarios() {
           <h1 style={{ fontSize: 22, fontWeight: 600, color: T.text, margin: 0 }}>Gestão de Usuários</h1>
           <p style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>{usuarios.length} usuário{usuarios.length !== 1 ? 's' : ''} cadastrado{usuarios.length !== 1 ? 's' : ''}</p>
         </div>
-        <button onClick={abrirCriar} style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+        <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); abrirCriar() }} style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}>
           + Novo Usuário
         </button>
       </div>
@@ -418,7 +419,7 @@ export function Usuarios() {
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
               <button onClick={() => setModalAberto(false)} style={btnCancel}>Cancelar</button>
-              <button onClick={salvar} disabled={salvando} style={{ ...btnPrimary, opacity: salvando ? 0.7 : 1 }}>{salvando ? 'Salvando...' : 'Salvar'}</button>
+              <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); salvar() }} disabled={salvando} style={{ ...btnPrimary, opacity: salvando ? 0.7 : 1 }}>{salvando ? 'Salvando...' : 'Salvar'}</button>
             </div>
           </div>
         </div>
@@ -432,7 +433,7 @@ export function Usuarios() {
             <div><label style={lbl}>Nova Senha</label><input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="Mínimo 8 caracteres" style={inp} /></div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
               <button onClick={() => setModalSenha(false)} style={btnCancel}>Cancelar</button>
-              <button onClick={salvarSenha} disabled={salvandoSenha || novaSenha.length < 8} style={{ ...btnPrimary, opacity: salvandoSenha || novaSenha.length < 8 ? 0.5 : 1 }}>{salvandoSenha ? 'Salvando...' : 'Redefinir'}</button>
+              <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); salvarSenha() }} disabled={salvandoSenha || novaSenha.length < 8} style={{ ...btnPrimary, opacity: salvandoSenha || novaSenha.length < 8 ? 0.5 : 1 }}>{salvandoSenha ? 'Salvando...' : 'Redefinir'}</button>
             </div>
           </div>
         </div>
@@ -448,7 +449,7 @@ export function Usuarios() {
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setModalDeletar(false)} style={btnCancel}>Cancelar</button>
-              <button onClick={deletar} style={{ ...btnPrimary, background: T.accentRed }}>Deletar</button>
+              <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); deletar() }} style={{ ...btnPrimary, background: T.accentRed }}>Deletar</button>
             </div>
           </div>
         </div>
@@ -501,7 +502,7 @@ export function Usuarios() {
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={() => setPainelPermissoes(null)} style={btnCancel}>Cancelar</button>
-              <button onClick={salvarPermissoes} disabled={salvandoPerm} style={{ ...btnPrimary, opacity: salvandoPerm ? 0.7 : 1 }}>{salvandoPerm ? 'Salvando...' : 'Salvar Permissões'}</button>
+              <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); salvarPermissoes() }} disabled={salvandoPerm} style={{ ...btnPrimary, opacity: salvandoPerm ? 0.7 : 1 }}>{salvandoPerm ? 'Salvando...' : 'Salvar Permissões'}</button>
             </div>
           </div>
         </div>

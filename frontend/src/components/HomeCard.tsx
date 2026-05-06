@@ -1,6 +1,7 @@
 import React from 'react'
 import { T } from '@/lib/theme'
 import { glass, neoShadow } from '@/lib/glass'
+import { addRipple } from '@/lib/ripple'
 import {
   Package, Truck, Warehouse, ClipboardList, Users, Activity,
   PackageOpen, Receipt, BarChart3,
@@ -23,25 +24,6 @@ interface Props {
   onAcessar: () => void
 }
 
-function addRipple(e: React.MouseEvent<HTMLDivElement>) {
-  const el = e.currentTarget
-  const rect = el.getBoundingClientRect()
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
-  const size = Math.max(rect.width, rect.height) * 2
-  const ripple = document.createElement('span')
-  ripple.style.cssText = `
-    position: absolute; width: ${size}px; height: ${size}px;
-    left: ${x - size / 2}px; top: ${y - size / 2}px;
-    background: ${T.gold}; opacity: 0.15; border-radius: 50%;
-    pointer-events: none; transform: scale(0);
-    animation: ripple-expand 500ms ease-out forwards; z-index: 0;
-  `
-  el.style.position = 'relative'
-  el.style.overflow = 'hidden'
-  el.appendChild(ripple)
-  setTimeout(() => ripple.remove(), 600)
-}
 
 export function HomeCard({ lucideIcon, icone, titulo, descricao, cor, ultimaExtracao, onAcessar }: Props) {
   const Icon = lucideIcon ? ICON_MAP[lucideIcon] : null

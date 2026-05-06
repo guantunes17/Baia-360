@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { T } from '@/lib/theme'
 import { glass, neoShadow, neoShadowInset } from '@/lib/glass'
+import { addRipple } from '@/lib/ripple'
 import { API } from '@/config'
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -235,7 +236,7 @@ export function Perfil({ usuario, onAtualizar }: Props) {
             <div>
               {outlookStatus?.conectado ? (
                 <button
-                  onClick={desconectarOutlook}
+                  onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); desconectarOutlook() }}
                   style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, color: T.accentRed, background: `${T.accentRed}11`, border: `1px solid ${T.accentRed}33`, cursor: 'pointer' }}
                   onMouseEnter={e => (e.currentTarget.style.background = `${T.accentRed}22`)}
                   onMouseLeave={e => (e.currentTarget.style.background = `${T.accentRed}11`)}
@@ -244,7 +245,7 @@ export function Perfil({ usuario, onAtualizar }: Props) {
                 </button>
               ) : (
                 <button
-                  onClick={conectarOutlook}
+                  onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); conectarOutlook() }}
                   disabled={conectandoOutlook || outlookStatus === null}
                   style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, color: '#0078d4', background: '#0078d411', border: '1px solid #0078d433', cursor: conectandoOutlook ? 'not-allowed' : 'pointer', opacity: conectandoOutlook ? 0.6 : 1 }}
                   onMouseEnter={e => { if (!conectandoOutlook) (e.currentTarget.style.background = '#0078d422') }}
@@ -265,9 +266,9 @@ export function Perfil({ usuario, onAtualizar }: Props) {
       {sucesso && <p style={{ fontSize: 13, color: T.accentGreen, marginBottom: 16 }}>{sucesso}</p>}
 
       <button
-        onClick={salvar}
+        onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); salvar() }}
         disabled={salvando}
-        style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: salvando ? 'not-allowed' : 'pointer', opacity: salvando ? 0.7 : 1 }}
+        style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: salvando ? 'not-allowed' : 'pointer', opacity: salvando ? 0.7 : 1, position: 'relative', overflow: 'hidden' }}
       >
         {salvando ? 'Salvando...' : 'Salvar alterações'}
       </button>

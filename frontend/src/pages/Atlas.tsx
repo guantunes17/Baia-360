@@ -7,9 +7,11 @@ import { Document, Paragraph, TextRun, HeadingLevel, Packer } from 'docx'
 import { saveAs } from 'file-saver'
 import jsPDF from 'jspdf'
 
+import React from 'react'
 import { API } from '@/config'
 import { T } from '@/lib/theme'
 import { glass, neoShadow } from '@/lib/glass'
+import { addRipple } from '@/lib/ripple'
 
 // TOOLS_DEF removido: definições de tools movidas para o backend (segurança).
 // MOCK_RESPONSES abaixo usa apenas os nomes das tools para dispatch local.
@@ -1388,8 +1390,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             </svg>
             <span style={{ fontSize: 14, fontWeight: 500, color: T.text }}>Atlas</span>
           </div>
-          <button onClick={criarNovaConversa} title="Nova conversa"
-            style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s' }}
+          <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, undefined, 0.2); criarNovaConversa() }} title="Nova conversa"
+            style={{ width: 28, height: 28, borderRadius: 6, background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .12s, color .12s', position: 'relative', overflow: 'hidden' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(14,22,45,0.6)'; (e.currentTarget as HTMLElement).style.color = T.text }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = T.textMuted }}
           >
@@ -1416,7 +1418,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             {/* Nav — Nova conversa + Projetos (só na visão geral) */}
             {!projetoAtivo && (
               <div style={{ padding: '8px 10px 4px', flexShrink: 0 }}>
-                <button onClick={criarNovaConversa} style={{ width: '100%', padding: '8px 14px', borderRadius: 8, background: `${T.accentBlue}11`, border: `1px solid ${T.accentBlue}33`, color: T.accentBlue, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: 4 }}>
+                <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); criarNovaConversa() }} style={{ width: '100%', padding: '8px 14px', borderRadius: 8, background: `${T.accentBlue}11`, border: `1px solid ${T.accentBlue}33`, color: T.accentBlue, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginBottom: 4, position: 'relative', overflow: 'hidden' }}>
                   <span style={{ fontSize: 15 }}>+</span> Nova conversa
                 </button>
                 <button
@@ -1776,7 +1778,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               { icon: '📋', texto: 'Gerar relatório de Fretes' },
               { icon: '💡', texto: 'Me atualize sobre nossas últimas conversas' },
             ].map(s => (
-              <button key={s.texto} onClick={() => { setInput(s.texto); setTimeout(() => inputRef.current?.focus(), 50) }}
+              <button key={s.texto} onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, T.accentBlue, 0.2); setInput(s.texto); setTimeout(() => inputRef.current?.focus(), 50) }}
                 style={{ padding: '10px 16px', borderRadius: 10, ...glass(0.35, 20), border: `0.5px solid ${T.border}`, color: T.textMuted, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'all .15s', textAlign: 'left' as any }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55`; (e.currentTarget as HTMLElement).style.color = T.text }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = T.border; (e.currentTarget as HTMLElement).style.color = T.textMuted }}
@@ -1802,8 +1804,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 rows={1}
                 style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: T.text, fontSize: 14, fontFamily: 'inherit', resize: 'none', lineHeight: 1.5, maxHeight: 120, overflowY: 'auto', padding: '6px 0' }}
               />
-              <button onClick={send} disabled={uploadandoArquivo || (!input.trim() && !arquivoContexto)}
-                style={{ padding: '9px 18px', borderRadius: 9, background: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? T.border : T.accentBlue, color: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? T.textMuted : '#fff', border: 'none', fontWeight: 600, fontSize: 13, cursor: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s' }}
+              <button onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); send() }} disabled={uploadandoArquivo || (!input.trim() && !arquivoContexto)}
+                style={{ padding: '9px 18px', borderRadius: 9, background: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? T.border : T.accentBlue, color: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? T.textMuted : '#fff', border: 'none', fontWeight: 600, fontSize: 13, cursor: uploadandoArquivo || (!input.trim() && !arquivoContexto) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', position: 'relative', overflow: 'hidden' }}
               >
                 Enviar
               </button>
@@ -2361,7 +2363,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               </button>
             ) : (
               <button
-                onClick={send}
+                onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); send() }}
                 disabled={uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto)}
                 style={{
                   padding: '8px 16px', borderRadius: 8,
@@ -2369,7 +2371,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   color: uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? T.textMuted : '#fff',
                   border: 'none', fontWeight: 600, fontSize: 13,
                   cursor: uploadandoArquivo || (!input.trim() && !arquivoPendente && !arquivoContexto) ? 'not-allowed' : 'pointer',
-                  flexShrink: 0, transition: 'all .15s'
+                  flexShrink: 0, transition: 'all .15s', position: 'relative', overflow: 'hidden'
                 }}
               >
                 Enviar

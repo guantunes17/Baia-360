@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { T } from '@/lib/theme'
 import { glass, neoShadow } from '@/lib/glass'
+import { addRipple } from '@/lib/ripple'
 import { API } from '../config'
 
 const token = () => localStorage.getItem('token') || ''
@@ -149,8 +150,8 @@ export function BaseConhecimento() {
       )}
 
       <div
-        style={{ border: `1px dashed ${T.border}`, borderRadius: 10, padding: 24, textAlign: 'center', marginBottom: 20, background: T.bg, cursor: 'pointer', transition: 'border-color .15s' }}
-        onClick={() => fileRef.current?.click()}
+        style={{ border: `1px dashed ${T.border}`, borderRadius: 10, padding: 24, textAlign: 'center', marginBottom: 20, background: T.bg, cursor: 'pointer', transition: 'border-color .15s', position: 'relative', overflow: 'hidden' }}
+        onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, undefined, 0.15); fileRef.current?.click() }}
         onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = `${T.accentBlue}55`}
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = T.border}
       >
@@ -214,9 +215,9 @@ export function BaseConhecimento() {
                 <span style={{ fontSize: 12, color: T.textMuted }}>{formatarData(doc.criado_em)}</span>
                 <span style={{ fontSize: 12, color: T.textMuted }}>{formatarTamanho(doc.tamanho)}</span>
                 <button
-                  onClick={() => handleDeletar(doc)}
+                  onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, T.accentRed, 0.2); handleDeletar(doc) }}
                   disabled={deletandoId === doc.file_id}
-                  style={{ fontSize: 12, color: T.accentRed, background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: deletandoId === doc.file_id ? 0.5 : 1 }}
+                  style={{ fontSize: 12, color: T.accentRed, background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: deletandoId === doc.file_id ? 0.5 : 1, position: 'relative', overflow: 'hidden' }}
                 >
                   {deletandoId === doc.file_id ? 'Removendo...' : 'Remover'}
                 </button>

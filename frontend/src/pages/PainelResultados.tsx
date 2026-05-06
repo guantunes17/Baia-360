@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { T } from '@/lib/theme'
 import { glass, neoShadow } from '@/lib/glass'
+import { addRipple } from '@/lib/ripple'
 import { API } from '../config'
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -265,7 +266,7 @@ export function PainelResultados() {
         )}
 
         <button
-          onClick={() => { setModoComparar(!modoComparar); setMesComparar(''); setDadosComparar([]) }}
+          onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); setModoComparar(!modoComparar); setMesComparar(''); setDadosComparar([]) }}
           style={{
             marginLeft: 'auto', fontSize: 12, fontWeight: 600,
             color:       modoComparar ? T.accentGreen : T.textMuted,

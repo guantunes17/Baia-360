@@ -1,6 +1,7 @@
 import React from 'react'
 import { T } from '@/lib/theme'
 import { glass, neoShadow, neoShadowInset } from '@/lib/glass'
+import { addRipple } from '@/lib/ripple'
 import { Play, RotateCcw, Download, Loader2, CheckCircle, XCircle } from 'lucide-react'
 
 type Status = 'idle' | 'processando' | 'concluido' | 'erro'
@@ -117,7 +118,7 @@ export function ModuloLayout({
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
         <button
-          onClick={onProcessar}
+          onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); onProcessar() }}
           disabled={!podeProcessar || status === 'processando'}
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
@@ -140,7 +141,7 @@ export function ModuloLayout({
 
         {status !== 'idle' && (
           <button
-            onClick={onResetar}
+            onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); onResetar() }}
             style={{
               ...glass(0.2, 10),
               display: 'flex', alignItems: 'center', gap: 6,
@@ -156,7 +157,7 @@ export function ModuloLayout({
 
         {status === 'concluido' && onBaixar && (
           <button
-            onClick={onBaixar}
+            onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>); onBaixar!() }}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 18px', borderRadius: 8, cursor: 'pointer',

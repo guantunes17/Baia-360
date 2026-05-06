@@ -144,13 +144,13 @@ main p { color: #64748b; }
 /* ── Animações globais Baia 360 ── */
 
 @keyframes baia-fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* Fade de entrada nas páginas */
 .page-fade {
-  animation: baia-fade-in 0.25s ease forwards;
+  animation: baia-fade-in 0.3s ease-out forwards;
 }
 
 /* Micro-interação: botões primários */

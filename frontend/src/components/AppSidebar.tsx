@@ -1,4 +1,5 @@
 import React from 'react'
+import { addRipple } from '@/lib/ripple'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
   SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
@@ -100,7 +101,7 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }
               <SidebarMenuItem key="home">
                 <SidebarMenuButton
                   isActive={paginaAtiva === 'home'}
-                  onClick={() => onNavegar('home')}
+                  onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, undefined, 0.12, 500); onNavegar('home') }}
                   className="cursor-pointer text-sm"
                   style={itemStyle(paginaAtiva === 'home')}
                   onMouseEnter={e => onEnter(e, paginaAtiva === 'home')}
@@ -133,7 +134,7 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }
                       <SidebarMenuItem key={m.key}>
                         <SidebarMenuButton
                           isActive={isActive}
-                          onClick={() => onNavegar(m.key)}
+                          onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, undefined, 0.12, 500); onNavegar(m.key) }}
                           className="cursor-pointer text-sm"
                           style={itemStyle(isActive)}
                           onMouseEnter={e => onEnter(e, isActive)}
@@ -169,7 +170,7 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }
                       <SidebarMenuItem key={m.key}>
                         <SidebarMenuButton
                           isActive={isActive}
-                          onClick={() => onNavegar(m.key)}
+                          onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, undefined, 0.12, 500); onNavegar(m.key) }}
                           className="cursor-pointer text-sm"
                           style={itemStyle(isActive)}
                           onMouseEnter={e => onEnter(e, isActive)}

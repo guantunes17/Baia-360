@@ -139,10 +139,22 @@
 @keyframes ripple-expand {
   from {
     transform: scale(0);
-    opacity: 0.15;
+    opacity: 0.35;
   }
   to {
     transform: scale(1);
     opacity: 0;
   }
+}
+
+/* ── Sidebar: override shadcn/Radix default active highlight ── */
+[data-sidebar="menu-button"][data-active="true"] {
+  background: rgba(240, 180, 41, 0.08) !important;
+  color: #E8ECF4 !important;
+}
+[data-sidebar="menu-button"]:not([data-active="true"]) {
+  background: transparent !important;
+}
+[data-sidebar="menu-button"]:hover:not([data-active="true"]) {
+  background: rgba(255, 255, 255, 0.03) !important;
 }
