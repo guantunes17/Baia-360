@@ -89,6 +89,8 @@ export function Hub({
         gap: 14,
         cursor: 'pointer',
         transition: 'all 0.2s',
+        position: 'relative',
+        overflow: 'hidden',
       }}
       onMouseEnter={e => {
         const el = e.currentTarget as HTMLElement
@@ -139,6 +141,8 @@ export function Hub({
         gap: 14,
         cursor: 'pointer',
         transition: 'all 0.2s',
+        position: 'relative',
+        overflow: 'hidden',
       }}
       onMouseEnter={e => {
         const el = e.currentTarget as HTMLElement

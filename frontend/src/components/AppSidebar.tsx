@@ -1,20 +1,19 @@
 import React from 'react'
 import { addRipple } from '@/lib/ripple'
 import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
-  SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
-  SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarSeparator,
+  Sidebar, SidebarContent, SidebarFooter, SidebarHeader,
 } from '@/components/ui/sidebar'
 import { MODULOS } from '@/lib/constants'
 import { LogoBaia360 } from '@/components/LogoBaia360'
 import { T } from '@/lib/theme'
+import { glass } from '@/lib/glass'
 import {
   Home,
   Package, Truck, Warehouse, ClipboardList, Users, Activity,
   PackageOpen, Receipt, BarChart3, LayoutDashboard, DollarSign,
 } from 'lucide-react'
 
-type LucideIcon = React.ComponentType<{ size?: number; color?: string }>
+type LucideIcon = React.ComponentType<{ size?: number; color?: string; style?: React.CSSProperties }>
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Package, Truck, Warehouse, ClipboardList, Users, Activity,
@@ -41,43 +40,98 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }
   const temOperacional = modulos_operacional.length > 0
   const temFinanceiro  = modulos_financeiro.length > 0
 
-  const itemStyle = (isActive: boolean) => ({
-    color: isActive ? T.text : T.textMuted,
-    background: isActive ? T.goldSubtle : 'transparent',
-    borderLeft: `2px solid ${isActive ? T.gold : 'transparent'}`,
-    paddingLeft: 12,
-    transition: 'all 0.15s ease',
-    display: 'flex' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-    borderRadius: 6,
-  })
+  const glassStyle = glass(0.45, 20)
 
-  const onEnter = (e: React.MouseEvent<HTMLButtonElement>, isActive: boolean) => {
-    if (!isActive) {
-      const el = e.currentTarget as HTMLElement
-      el.style.transform = 'translateX(2px)'
-      el.style.color = T.text
-    }
-  }
-  const onLeave = (e: React.MouseEvent<HTMLButtonElement>, isActive: boolean) => {
-    if (!isActive) {
-      const el = e.currentTarget as HTMLElement
-      el.style.transform = 'translateX(0)'
-      el.style.color = T.textMuted
-    }
+  const containerStyle: React.CSSProperties = {
+    ...glassStyle,
+    boxShadow: '4px 0 16px rgba(0, 0, 0, 0.3), 1px 0 4px rgba(0, 0, 0, 0.2)',
   }
 
-  const sidebarBg = {
-    background: T.surface1,
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
+  const renderSeparator = () => (
+    <div style={{
+      height: 1,
+      background: `linear-gradient(90deg, transparent, ${T.border}, transparent)`,
+      margin: '8px 12px',
+    }} />
+  )
+
+  const renderGroupLabel = (color: string, Icon: LucideIcon, label: string) => (
+    <span style={{
+      fontSize: 10,
+      fontWeight: 700,
+      color,
+      padding: '6px 14px',
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+    }}>
+      <Icon size={12} color={color} />
+      {label}
+    </span>
+  )
+
+  const renderMenuItem = (key: string, Icon: LucideIcon | null, label: string) => {
+    const isActive = paginaAtiva === key
+    return (
+      <div
+        key={key}
+        onClick={e => { addRipple(e, T.gold, 0.12, 500); onNavegar(key) }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '9px 14px',
+          borderRadius: 8,
+          cursor: 'pointer',
+          background: isActive ? 'rgba(240, 180, 41, 0.08)' : 'transparent',
+          transition: 'all 0.2s ease',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+        onMouseEnter={e => {
+          if (!isActive) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'
+        }}
+        onMouseLeave={e => {
+          if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'
+        }}
+      >
+        {isActive && (
+          <div style={{
+            position: 'absolute',
+            left: 0,
+            top: '20%',
+            height: '60%',
+            width: 3,
+            borderRadius: '0 3px 3px 0',
+            background: T.gold,
+            boxShadow: `0 0 8px ${T.gold}44`,
+          }} />
+        )}
+        {Icon && (
+          <Icon
+            size={16}
+            color={isActive ? T.gold : T.textMuted}
+            style={{ flexShrink: 0 }}
+          />
+        )}
+        <span style={{
+          fontSize: 13,
+          color: isActive ? T.text : T.textMuted,
+          fontWeight: isActive ? 600 : 400,
+          transition: 'all 0.2s',
+        }}>
+          {label}
+        </span>
+      </div>
+    )
   }
 
   return (
-    <Sidebar className="border-r" style={{ ...sidebarBg, borderColor: T.border }}>
+    <Sidebar className="border-r" style={{ ...containerStyle, borderColor: T.border }}>
 
-      <SidebarHeader className="px-4 py-5" style={sidebarBg}>
+      <SidebarHeader className="px-4 py-5" style={glassStyle}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           <div style={{
             width: '80%', height: 2, borderRadius: 1, marginBottom: 10,
@@ -90,109 +144,36 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }
         </div>
       </SidebarHeader>
 
-      <SidebarSeparator style={{ background: T.border }} />
+      {renderSeparator()}
 
-      <SidebarContent style={sidebarBg}>
+      <SidebarContent style={glassStyle}>
+        <div style={{ padding: '4px 8px' }}>
 
-        {/* Home */}
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem key="home">
-                <SidebarMenuButton
-                  isActive={paginaAtiva === 'home'}
-                  onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, undefined, 0.12, 500); onNavegar('home') }}
-                  className="cursor-pointer text-sm"
-                  style={itemStyle(paginaAtiva === 'home')}
-                  onMouseEnter={e => onEnter(e, paginaAtiva === 'home')}
-                  onMouseLeave={e => onLeave(e, paginaAtiva === 'home')}
-                >
-                  <Home size={15} color={paginaAtiva === 'home' ? T.gold : T.textMuted} />
-                  Home
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+          {renderMenuItem('home', Home, 'Home')}
 
-        <SidebarSeparator style={{ background: T.border }} />
+          {renderSeparator()}
 
-        {/* Operacional */}
-        {temOperacional && (
-          <>
-            <SidebarGroup>
-              <SidebarGroupLabel style={{ color: T.accentBlue, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <LayoutDashboard size={12} color={T.accentBlue} />
-                Operacional
-              </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {modulos_operacional.map(m => {
-                    const Icon = ICON_MAP[m.lucideIcon]
-                    const isActive = paginaAtiva === m.key
-                    return (
-                      <SidebarMenuItem key={m.key}>
-                        <SidebarMenuButton
-                          isActive={isActive}
-                          onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, undefined, 0.12, 500); onNavegar(m.key) }}
-                          className="cursor-pointer text-sm"
-                          style={itemStyle(isActive)}
-                          onMouseEnter={e => onEnter(e, isActive)}
-                          onMouseLeave={e => onLeave(e, isActive)}
-                        >
-                          {Icon && <Icon size={15} color={isActive ? T.gold : T.textMuted} />}
-                          {m.titulo}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarSeparator style={{ background: T.border }} />
-          </>
-        )}
+          {temOperacional && (
+            <>
+              {renderGroupLabel(T.accentBlue, LayoutDashboard, 'Operacional')}
+              {modulos_operacional.map(m => renderMenuItem(m.key, ICON_MAP[m.lucideIcon] ?? null, m.titulo))}
+              {renderSeparator()}
+            </>
+          )}
 
-        {/* Financeiro */}
-        {temFinanceiro && (
-          <>
-            <SidebarGroup>
-              <SidebarGroupLabel style={{ color: T.accentGreen, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <DollarSign size={12} color={T.accentGreen} />
-                Financeiro
-              </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {modulos_financeiro.map(m => {
-                    const Icon = ICON_MAP[m.lucideIcon]
-                    const isActive = paginaAtiva === m.key
-                    return (
-                      <SidebarMenuItem key={m.key}>
-                        <SidebarMenuButton
-                          isActive={isActive}
-                          onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, undefined, 0.12, 500); onNavegar(m.key) }}
-                          className="cursor-pointer text-sm"
-                          style={itemStyle(isActive)}
-                          onMouseEnter={e => onEnter(e, isActive)}
-                          onMouseLeave={e => onLeave(e, isActive)}
-                        >
-                          {Icon && <Icon size={15} color={isActive ? T.gold : T.textMuted} />}
-                          {m.titulo}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarSeparator style={{ background: T.border }} />
-          </>
-        )}
+          {temFinanceiro && (
+            <>
+              {renderGroupLabel(T.accentGreen, DollarSign, 'Financeiro')}
+              {modulos_financeiro.map(m => renderMenuItem(m.key, ICON_MAP[m.lucideIcon] ?? null, m.titulo))}
+              {renderSeparator()}
+            </>
+          )}
 
+        </div>
       </SidebarContent>
 
-      <SidebarFooter style={sidebarBg}>
-        <SidebarSeparator style={{ background: T.border }} />
+      <SidebarFooter style={glassStyle}>
+        {renderSeparator()}
         <p style={{ textAlign: 'center', fontSize: 11, padding: '8px 0', color: T.textDim }}>
           v1.0 · {new Date().toLocaleDateString('pt-BR')}
         </p>

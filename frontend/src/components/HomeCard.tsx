@@ -38,6 +38,7 @@ export function HomeCard({ lucideIcon, icone, titulo, descricao, cor, ultimaExtr
         borderColor: `${cor}25`,
         cursor: 'pointer',
         transition: 'all 0.2s',
+        position: 'relative',
         overflow: 'hidden',
       }}
       onMouseEnter={e => {
