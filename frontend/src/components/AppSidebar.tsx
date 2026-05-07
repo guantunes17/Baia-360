@@ -1,8 +1,6 @@
 import React from 'react'
 import { addRipple } from '@/lib/ripple'
-import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarHeader,
-} from '@/components/ui/sidebar'
+import { Sidebar } from '@/components/ui/sidebar'
 import { MODULOS } from '@/lib/constants'
 import { LogoBaia360 } from '@/components/LogoBaia360'
 import { T } from '@/lib/theme'
@@ -131,7 +129,8 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }
   return (
     <Sidebar className="border-r" style={{ ...containerStyle, borderColor: T.border }}>
 
-      <SidebarHeader className="px-4 py-5" style={glassStyle}>
+      {/* Header */}
+      <div style={{ padding: '20px 16px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           <div style={{
             width: '80%', height: 2, borderRadius: 1, marginBottom: 10,
@@ -142,42 +141,41 @@ export function AppSidebar({ paginaAtiva, onNavegar, perfil, modulosPermitidos }
             Central de<br />Relatórios
           </span>
         </div>
-      </SidebarHeader>
+      </div>
 
       {renderSeparator()}
 
-      <SidebarContent style={glassStyle}>
-        <div style={{ padding: '4px 8px' }}>
+      {/* Scrollable menu */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '4px 8px' }}>
 
-          {renderMenuItem('home', Home, 'Home')}
+        {renderMenuItem('home', Home, 'Home')}
 
-          {renderSeparator()}
-
-          {temOperacional && (
-            <>
-              {renderGroupLabel(T.accentBlue, LayoutDashboard, 'Operacional')}
-              {modulos_operacional.map(m => renderMenuItem(m.key, ICON_MAP[m.lucideIcon] ?? null, m.titulo))}
-              {renderSeparator()}
-            </>
-          )}
-
-          {temFinanceiro && (
-            <>
-              {renderGroupLabel(T.accentGreen, DollarSign, 'Financeiro')}
-              {modulos_financeiro.map(m => renderMenuItem(m.key, ICON_MAP[m.lucideIcon] ?? null, m.titulo))}
-              {renderSeparator()}
-            </>
-          )}
-
-        </div>
-      </SidebarContent>
-
-      <SidebarFooter style={glassStyle}>
         {renderSeparator()}
+
+        {temOperacional && (
+          <>
+            {renderGroupLabel(T.accentBlue, LayoutDashboard, 'Operacional')}
+            {modulos_operacional.map(m => renderMenuItem(m.key, ICON_MAP[m.lucideIcon] ?? null, m.titulo))}
+            {renderSeparator()}
+          </>
+        )}
+
+        {temFinanceiro && (
+          <>
+            {renderGroupLabel(T.accentGreen, DollarSign, 'Financeiro')}
+            {modulos_financeiro.map(m => renderMenuItem(m.key, ICON_MAP[m.lucideIcon] ?? null, m.titulo))}
+            {renderSeparator()}
+          </>
+        )}
+
+      </div>
+
+      {/* Footer */}
+      <div style={{ borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
         <p style={{ textAlign: 'center', fontSize: 11, padding: '8px 0', color: T.textDim }}>
           v1.0 · {new Date().toLocaleDateString('pt-BR')}
         </p>
-      </SidebarFooter>
+      </div>
 
     </Sidebar>
   )

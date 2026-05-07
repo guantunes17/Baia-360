@@ -20,7 +20,6 @@ export function addRipple(
     left: ${x - size / 2}px;
     top: ${y - size / 2}px;
     background: radial-gradient(circle, ${color} 0%, transparent 70%);
-    opacity: ${opacity};
     border-radius: 50%;
     pointer-events: none;
     transform: scale(0);
