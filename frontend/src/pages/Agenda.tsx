@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { T } from '@/lib/theme'
 import { glass, neoShadow, neoShadowInset } from '@/lib/glass'
+import { addRipple } from '@/lib/ripple'
 import { API } from '@/config'
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` })
@@ -104,20 +105,24 @@ const inputStyle: React.CSSProperties = {
 }
 const btnCancelStyle: React.CSSProperties = {
   background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8,
-  color: T.textMuted, padding: '7px 16px', fontSize: 13, cursor: 'pointer'
+  color: T.textMuted, padding: '7px 16px', fontSize: 13, cursor: 'pointer',
+  position: 'relative', overflow: 'hidden',
 }
 const btnSaveStyle: React.CSSProperties = {
   background: T.accentBlue, border: 'none', borderRadius: 8,
-  color: 'white', padding: '7px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 500
+  color: 'white', padding: '7px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 500,
+  position: 'relative', overflow: 'hidden',
 }
 const btnDangerStyle: React.CSSProperties = {
   background: `${T.accentRed}15`, border: `1px solid ${T.accentRed}33`, borderRadius: 8,
-  color: T.accentRed, padding: '7px 16px', fontSize: 13, cursor: 'pointer'
+  color: T.accentRed, padding: '7px 16px', fontSize: 13, cursor: 'pointer',
+  position: 'relative', overflow: 'hidden',
 }
 const navBtnStyle: React.CSSProperties = {
   background: 'rgba(14,22,45,0.5)', border: `1px solid ${T.border}`, borderRadius: 8,
   color: T.textMuted, width: 28, height: 28, display: 'flex', alignItems: 'center',
-  justifyContent: 'center', cursor: 'pointer', fontSize: 16
+  justifyContent: 'center', cursor: 'pointer', fontSize: 16,
+  position: 'relative', overflow: 'hidden',
 }
 
 // ── Modal: Novo Evento ────────────────────────────────────────────────────────
@@ -181,8 +186,8 @@ function ModalNovoEvento({
         {erroForm && <p style={{ fontSize: 12, color: T.accentRed, marginBottom: 10 }}>{erroForm}</p>}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onFechar} style={btnCancelStyle}>Cancelar</button>
-          <button onClick={handleSalvar} disabled={salvando} style={btnSaveStyle}>
+          <button onClick={e => { addRipple(e); onFechar() }} style={btnCancelStyle}>Cancelar</button>
+          <button onClick={e => { addRipple(e); handleSalvar() }} disabled={salvando} style={btnSaveStyle}>
             {salvando ? 'Salvando...' : 'Salvar no Outlook'}
           </button>
         </div>
@@ -215,7 +220,7 @@ function ModalDetalheEvento({
               <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>Organizado por {ev.organizador}</div>
             )}
           </div>
-          <button onClick={onFechar} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 2, flexShrink: 0 }}>✕</button>
+          <button onClick={e => { addRipple(e); onFechar() }} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 2, flexShrink: 0, position: 'relative', overflow: 'hidden' }}>✕</button>
         </div>
 
         <div style={{ height: 1, background: T.border, marginBottom: 16 }} />
@@ -284,15 +289,15 @@ function ModalDetalheEvento({
 
         {!confirmDelete ? (
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-            <button onClick={() => setConfirmDelete(true)} style={btnDangerStyle}>Deletar</button>
-            <button onClick={onEditar} style={btnCancelStyle}>Editar</button>
+            <button onClick={e => { addRipple(e, T.accentRed, 0.2); setConfirmDelete(true) }} style={btnDangerStyle}>Deletar</button>
+            <button onClick={e => { addRipple(e); onEditar() }} style={btnCancelStyle}>Editar</button>
           </div>
         ) : (
           <div style={{ background: `${T.accentRed}11`, border: `1px solid ${T.accentRed}33`, borderRadius: 8, padding: '12px 14px', marginTop: 8 }}>
             <div style={{ fontSize: 13, color: T.text, marginBottom: 10 }}>Tem certeza? Este evento será removido do Outlook.</div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setConfirmDelete(false)} style={btnCancelStyle}>Cancelar</button>
-              <button onClick={onDeletar} disabled={deletando} style={{ ...btnDangerStyle, background: T.accentRed, color: '#fff', border: 'none' }}>
+              <button onClick={e => { addRipple(e); setConfirmDelete(false) }} style={btnCancelStyle}>Cancelar</button>
+              <button onClick={e => { addRipple(e, T.accentRed, 0.25); onDeletar() }} disabled={deletando} style={{ ...btnDangerStyle, background: T.accentRed, color: '#fff', border: 'none' }}>
                 {deletando ? 'Deletando...' : 'Confirmar deleção'}
               </button>
             </div>
@@ -368,8 +373,8 @@ function ModalEditarEvento({
         {erroForm && <p style={{ fontSize: 12, color: T.accentRed, marginBottom: 10 }}>{erroForm}</p>}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onFechar} style={btnCancelStyle}>Cancelar</button>
-          <button onClick={handleSalvar} disabled={salvando} style={btnSaveStyle}>
+          <button onClick={e => { addRipple(e); onFechar() }} style={btnCancelStyle}>Cancelar</button>
+          <button onClick={e => { addRipple(e); handleSalvar() }} disabled={salvando} style={btnSaveStyle}>
             {salvando ? 'Salvando...' : 'Salvar alterações'}
           </button>
         </div>
@@ -399,7 +404,7 @@ function DiaCell({
 
   return (
     <div
-      onClick={onClick}
+      onClick={e => { if (!outro) { addRipple(e as React.MouseEvent<HTMLElement>, T.accentBlue, 0.12, 400) } onClick() }}
       style={{
         background: bgBase,
         minHeight:  90,
@@ -408,7 +413,8 @@ function DiaCell({
         opacity:    outro ? 0.4 : 1,
         outline:    selecionado ? `1px solid ${T.accentBlue}44` : 'none',
         transition: 'background 0.1s',
-        position:   'relative'
+        position:   'relative',
+        overflow:   'hidden',
       }}
       onMouseEnter={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = selecionado ? `${T.accentBlue}18` : 'rgba(14,22,45,0.8)' }}
       onMouseLeave={e => { if (!outro) (e.currentTarget as HTMLElement).style.background = bgBase }}
@@ -671,13 +677,13 @@ export function Agenda() {
             {MESES[mesCurrent.getMonth()]} {mesCurrent.getFullYear()}
           </span>
           <div style={{ display: 'flex', gap: 4 }}>
-            <button onClick={() => setMesCurrent(new Date(mesCurrent.getFullYear(), mesCurrent.getMonth()-1, 1))} style={navBtnStyle}>&#8249;</button>
-            <button onClick={() => setMesCurrent(new Date(hoje.getFullYear(), hoje.getMonth(), 1))} style={{ ...navBtnStyle, padding: '0 12px', fontSize: 11 }}>Hoje</button>
-            <button onClick={() => setMesCurrent(new Date(mesCurrent.getFullYear(), mesCurrent.getMonth()+1, 1))} style={navBtnStyle}>&#8250;</button>
+            <button onClick={e => { addRipple(e); setMesCurrent(new Date(mesCurrent.getFullYear(), mesCurrent.getMonth()-1, 1)) }} style={navBtnStyle}>&#8249;</button>
+            <button onClick={e => { addRipple(e); setMesCurrent(new Date(hoje.getFullYear(), hoje.getMonth(), 1)) }} style={{ ...navBtnStyle, padding: '0 12px', fontSize: 11 }}>Hoje</button>
+            <button onClick={e => { addRipple(e); setMesCurrent(new Date(mesCurrent.getFullYear(), mesCurrent.getMonth()+1, 1)) }} style={navBtnStyle}>&#8250;</button>
           </div>
           {carregando && <span style={{ fontSize: 11, color: T.textMuted }}>Atualizando...</span>}
         </div>
-        <button onClick={() => setModalNovo(true)} style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '0 16px', height: 32, fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button onClick={e => { addRipple(e); setModalNovo(true) }} style={{ background: T.accentBlue, border: 'none', borderRadius: 8, color: 'white', padding: '0 16px', height: 32, fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, position: 'relative', overflow: 'hidden' }}>
           <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Novo evento
         </button>
       </div>
@@ -712,7 +718,7 @@ export function Agenda() {
           <span style={{ fontSize: 13, fontWeight: 500, color: T.text }}>
             Eventos — {sdDia}/{sdMes}/{sdAno}
           </span>
-          <button onClick={() => setModalNovo(true)} style={{ fontSize: 11, color: T.accentBlue, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+          <button onClick={e => { addRipple(e, T.accentBlue, 0.15); setModalNovo(true) }} style={{ fontSize: 11, color: T.accentBlue, background: 'transparent', border: 'none', cursor: 'pointer', position: 'relative', overflow: 'hidden' }}>
             + Adicionar evento
           </button>
         </div>
@@ -728,8 +734,8 @@ export function Agenda() {
             return (
               <div
                 key={i}
-                onClick={() => setEventoDetalhe(ev.raw)}
-                style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 8px', borderBottom: i < eventosDia.length-1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', borderRadius: 6, transition: 'background 0.1s' }}
+                onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, T.gold, 0.1); setEventoDetalhe(ev.raw) }}
+                style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 8px', borderBottom: i < eventosDia.length-1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', borderRadius: 6, transition: 'background 0.1s', position: 'relative', overflow: 'hidden' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(8,11,20,0.6)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
               >
