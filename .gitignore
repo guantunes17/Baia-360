@@ -26,3 +26,6 @@ dist-ssr/
 test-results/
 tests/screenshots/
 playwright-report/
+
+# Red-team suite: generated per-run artifacts, not source
+tests/redteam/results/
