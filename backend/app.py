@@ -663,7 +663,7 @@ def seed():
     if User.query.filter_by(email=admin_email).first():
         return jsonify({'msg': 'Admin já existe'}), 200
 
-    admin = User(nome='Administrador', email=admin_email, perfil='admin')
+    admin = User(nome='Administrador', email=admin_email, perfil='admin', ativo=True, status='ativo')
     admin.set_senha(admin_senha)
     db.session.add(admin)
     db.session.commit()
