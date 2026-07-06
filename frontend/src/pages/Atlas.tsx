@@ -552,8 +552,11 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   const usoSessaoRef = useRef<HTMLDivElement>(null)
   const [modo, setModo] = useState<string>(() => localStorage.getItem('atlas_modo') || 'Padrão')
   // temperatura, modeloSelecionado e reasoningEffort foram movidos para o backend
-  const [instrucoes, setInstrucoes] = useState<string>(() => localStorage.getItem('atlas_instrucoes') || '')
-  const [memorias, setMemorias] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('atlas_memorias') || '[]') } catch { return [] } })
+  // Fase 4: instrucoes e memorias agora vivem no backend (AtlasInstrucao / AtlasMemoria)
+  // em vez de localStorage — carregadas via useEffect abaixo, nunca mais enviadas no
+  // corpo de /api/atlas/chat (o servidor as ignoraria de qualquer forma).
+  const [instrucoes, setInstrucoes] = useState<string>('')
+  const [memorias, setMemorias] = useState<string[]>([])
   const [novaMemoria, setNovaMemoria] = useState('')
   const [tokenCount, setTokenCount] = useState(0)
   // modeloSelecionado e reasoningEffort movidos para o backend (constantes fixas)
@@ -611,7 +614,9 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
     } catch {}
   }, [token])
 
-// Carrega memórias do banco ao montar
+// Carrega memórias do banco ao montar — todas vêm do servidor agora (Fase 4);
+// origem='automatica' vira [auto], origem='manual' fica sem prefixo, preservando
+// a mesma distinção visual que a UI já usava.
   useEffect(() => {
     if (!token) return
     fetch(`${API}/api/atlas/memorias`, {
@@ -620,14 +625,20 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) {
-          setMemorias(prev => {
-            // Mantém memórias manuais (localStorage) e adiciona as automáticas do banco
-            const automaticas = data.map((m: any) => `[auto] ${m.conteudo}`)
-            const manuais = prev.filter(m => !m.startsWith('[auto]'))
-            return [...manuais, ...automaticas]
-          })
+          setMemorias(data.map((m: any) => m.origem === 'manual' ? m.conteudo : `[auto] ${m.conteudo}`))
         }
       })
+      .catch(() => {})
+  }, [token])
+
+  // Carrega instruções personalizadas do banco ao montar (Fase 4 — antes localStorage)
+  useEffect(() => {
+    if (!token) return
+    fetch(`${API}/api/atlas/instrucoes`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => setInstrucoes(data.instrucoes || ''))
       .catch(() => {})
   }, [token])
   
@@ -808,22 +819,49 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   // ── Grupo 3: Configurações ───────────────────────────────────────────────
   const salvarConfig = () => {
     localStorage.setItem('atlas_modo', modo)
-    localStorage.setItem('atlas_instrucoes', instrucoes)
-    localStorage.setItem('atlas_memorias', JSON.stringify(memorias))
     localStorage.setItem('atlas_code_interp', codeInterpreter.toString())
+    // Fase 4: instruções persistem no backend, não em localStorage
+    fetch(`${API}/api/atlas/instrucoes`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instrucoes })
+    }).catch(() => {})
     setPainelConfig(false)
   }
 
-  const adicionarMemoria = () => {
+  const adicionarMemoria = async () => {
     const mem = novaMemoria.trim()
     if (!mem) return
-    const novas = [...memorias, mem]
-    setMemorias(novas)
-    setNovaMemoria('')
+    try {
+      const res = await fetch(`${API}/api/atlas/memorias`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conteudo: mem })
+      })
+      if (!res.ok) return
+      setMemorias(prev => [...prev, mem])
+      setNovaMemoria('')
+    } catch { /* falha de rede — não adiciona localmente para não recriar o vetor antigo (client-only) */ }
   }
 
   const removerMemoria = (idx: number) => {
+    const mem = memorias[idx]
     setMemorias(prev => prev.filter((_, i) => i !== idx))
+    // Memórias manuais agora também são linhas reais em AtlasMemoria (Fase 4) —
+    // localiza pelo conteúdo (mesmo padrão já usado para as automáticas) e remove.
+    const conteudo = mem.startsWith('[auto] ') ? mem.replace('[auto] ', '') : mem
+    fetch(`${API}/api/atlas/memorias`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then((data: any[]) => {
+        const found = data.find(m => m.conteudo === conteudo)
+        if (found) {
+          fetch(`${API}/api/atlas/memorias/${found.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        }
+      })
+      .catch(() => {})
   }
 
   const handleRenameKey = (e: React.KeyboardEvent) => {
@@ -1144,11 +1182,12 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
       setPreviousResponseId(null)
     }
 
-    // Apenas preferências de UI seguras — model/tools/temperature/system_prompt são fixados no backend
+    // Apenas preferências de UI seguras — model/tools/temperature/system_prompt são fixados no backend.
+    // Fase 4: instrucoes/memorias NÃO são mais enviadas aqui — o backend as lê direto
+    // do banco (AtlasInstrucao/AtlasMemoria) por usuario_id; o servidor ignoraria de
+    // qualquer forma qualquer valor de instrucoes/memorias vindo no corpo da requisição.
     const base = {
       modo,
-      instrucoes: instrucoes.slice(0, 500),
-      memorias,
       projeto_nome:        projetoAtivo?.nome        ?? '',
       projeto_descricao:   projetoAtivo?.descricao   ?? '',
       code_interpreter:    codeInterpreter,
@@ -1997,28 +2036,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                     <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 6, padding: '5px 10px' }}>
                       <span style={{ fontSize: 11, color: T.textMuted, flex: 1 }}>{mem.replace('[auto] ', '')}</span>
                       <button
-                        onClick={() => {
-                          const conteudo = mem.replace('[auto] ', '')
-                          const memoriaObj = memorias.find(m => m === mem)
-                          if (!memoriaObj) return
-                          // Remove localmente
-                          setMemorias(prev => prev.filter(m => m !== mem))
-                          // Remove do banco
-                          fetch(`${API}/api/atlas/memorias`, {
-                            headers: { Authorization: `Bearer ${token}` }
-                          })
-                            .then(r => r.json())
-                            .then((data: any[]) => {
-                              const found = data.find(m => m.conteudo === conteudo)
-                              if (found) {
-                                fetch(`${API}/api/atlas/memorias/${found.id}`, {
-                                  method: 'DELETE',
-                                  headers: { Authorization: `Bearer ${token}` }
-                                })
-                              }
-                            })
-                            .catch(() => {})
-                        }}
+                        onClick={() => removerMemoria(memorias.indexOf(mem))}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.border, fontSize: 12, padding: '0 0 0 8px', transition: 'color .12s', flexShrink: 0 }}
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = T.accentRed}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = T.border}
