@@ -70,9 +70,9 @@ _prod_url = os.getenv("FRONTEND_URL", "").strip()
 if _is_prod and _prod_url:
     _frontend_origins = [_prod_url]
 elif _prod_url:
-    _frontend_origins = ["http://localhost:5173", "http://localhost:3000", _prod_url]
+    _frontend_origins = ["http://localhost", "http://localhost:5173", "http://localhost:3000", _prod_url]
 else:
-    _frontend_origins = ["http://localhost:5173", "http://localhost:3000"]
+    _frontend_origins = ["http://localhost", "http://localhost:5173", "http://localhost:3000"]
 CORS(app, origins=_frontend_origins, supports_credentials=True)
 db      = SQLAlchemy(app)
 jwt     = JWTManager(app)

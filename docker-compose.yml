@@ -15,7 +15,10 @@ services:
       - baia360
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_MODE: development
     container_name: baia360-frontend
     restart: unless-stopped
     volumes:
