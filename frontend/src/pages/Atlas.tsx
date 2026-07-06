@@ -16,7 +16,45 @@ import { addRipple } from '@/lib/ripple'
 // TOOLS_DEF removido: definições de tools movidas para o backend (segurança).
 // MOCK_RESPONSES abaixo usa apenas os nomes das tools para dispatch local.
 
-const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>) | ((args: any) => any)> = {
+// Ferramentas side-effectful — não executam automaticamente. O function_call
+// primeiro passa por /api/atlas/preparar_acao (token HMAC de curta duração)
+// e só é executado de fato depois que o usuário aprova o card de confirmação.
+const GATED_TOOLS = new Set([
+  'enviar_email', 'teams_enviar_mensagem', 'teams_criar_reuniao',
+  'teams_chat_enviar', 'criar_evento', 'deletar_evento',
+])
+
+const NOME_AMIGAVEL_TOOL: Record<string, string> = {
+  enviar_email:           'Enviar e-mail',
+  teams_enviar_mensagem:  'Enviar mensagem no Teams',
+  teams_criar_reuniao:    'Criar reunião no Teams',
+  teams_chat_enviar:      'Enviar mensagem direta no Teams',
+  criar_evento:           'Criar evento na agenda',
+  deletar_evento:         'Excluir evento da agenda',
+}
+
+function resumoAcao(tool: string, args: any): string {
+  const a = args || {}
+  const truncar = (s: string, n = 220) => (s && s.length > n ? s.slice(0, n) + '…' : (s || ''))
+  switch (tool) {
+    case 'enviar_email':
+      return `Para: ${a.destinatario}${a.nome_destinatario ? ` (${a.nome_destinatario})` : ''}\nAssunto: ${a.assunto}\n\n${truncar(a.corpo)}`
+    case 'teams_enviar_mensagem':
+      return `Time: ${a.team_id}  ·  Canal: ${a.channel_id}\n\n${truncar(a.mensagem)}`
+    case 'teams_criar_reuniao':
+      return `Título: ${a.titulo}\nInício: ${a.inicio}\nFim: ${a.fim}\nParticipantes: ${(a.participantes || []).join(', ') || 'nenhum'}`
+    case 'teams_chat_enviar':
+      return `Para: ${a.email_destino}\n\n${truncar(a.mensagem)}`
+    case 'criar_evento':
+      return `Título: ${a.titulo}\nData: ${a.data} · ${a.hora_inicio}–${a.hora_fim}${a.descricao ? `\n${truncar(a.descricao)}` : ''}`
+    case 'deletar_evento':
+      return `Excluir o evento de id: ${a.evento_id}`
+    default:
+      return JSON.stringify(a)
+  }
+}
+
+const MOCK_RESPONSES: Record<string, ((args: any, token: string, confirmToken?: string) => Promise<any>) | ((args: any) => any)> = {
   get_dashboard: async (_args: any, token: string) => {
     const res = await fetch(`${API}/api/atlas/dashboard_data`, {
       headers: { Authorization: `Bearer ${token}` }
@@ -36,11 +74,11 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
     }
     return data
   },
-  criar_evento: async (args: any, token: string) => {
+  criar_evento: async (args: any, token: string, confirmToken?: string) => {
     const res = await fetch(`${API}/api/outlook/evento`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args)
+      body: JSON.stringify({ ...args, token: confirmToken })
     })
     const data = await res.json()
     if (!res.ok) {
@@ -49,10 +87,11 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
     }
     return data
   },
-  deletar_evento: async ({ evento_id }: any, token: string) => {
+  deletar_evento: async ({ evento_id }: any, token: string, confirmToken?: string) => {
     const res = await fetch(`${API}/api/outlook/evento/${evento_id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: confirmToken })
     })
     const data = await res.json()
     if (!res.ok) return { erro: data.erro || 'Erro ao deletar evento.' }
@@ -82,11 +121,11 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
     if (!res.ok) return { erro: 'Não foi possível buscar conversas.' }
     return res.json()
   },
-  enviar_email: async (args: any, token: string) => {
+  enviar_email: async (args: any, token: string, confirmToken?: string) => {
     const res = await fetch(`${API}/api/outlook/enviar_email`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args)
+      body: JSON.stringify({ ...args, token: confirmToken })
     })
     const data = await res.json()
     if (!res.ok) {
@@ -117,11 +156,11 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
     }
     return data
   },
-  teams_enviar_mensagem: async (args: any, token: string) => {
+  teams_enviar_mensagem: async (args: any, token: string, confirmToken?: string) => {
     const res = await fetch(`${API}/api/teams/mensagem`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args)
+      body: JSON.stringify({ ...args, token: confirmToken })
     })
     const data = await res.json()
     if (!res.ok) {
@@ -130,33 +169,47 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
     }
     return data
   },
-  teams_criar_reuniao: async (args: any, token: string) => {
+  teams_criar_reuniao: async (args: any, token: string, confirmToken?: string) => {
     const res = await fetch(`${API}/api/teams/reuniao`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args)
+      body: JSON.stringify({ ...args, token: confirmToken })
     })
     const data = await res.json()
     if (!res.ok) {
       if (data.nao_conectado) return { erro: 'Outlook não conectado. O usuário precisa conectar o Outlook nas configurações do perfil.' }
       return { erro: data.erro || 'Erro ao criar reunião no Teams.' }
     }
-    // Registra automaticamente na agenda com o link da reunião
+    // Registra automaticamente na agenda com o link da reunião. Isso é um
+    // efeito colateral interno e sempre-ativo da própria criação da reunião
+    // (ver system prompt do Atlas: toda reunião do Teams DEVE virar evento),
+    // não uma ação separada solicitada pelo modelo — por isso obtemos o
+    // token de confirmação dela aqui mesmo, sem exigir um segundo clique:
+    // aprovar a reunião já cobre o registro do evento correspondente.
     let agenda_registrada = false
     if (data.ok && data.link_reuniao) {
       try {
-        await fetch(`${API}/api/outlook/evento`, {
+        const eventoArgs = {
+          titulo:      args.titulo,
+          data:        args.inicio.split('T')[0],
+          hora_inicio: args.inicio.split('T')[1]?.slice(0, 5) || '00:00',
+          hora_fim:    args.fim.split('T')[1]?.slice(0, 5) || '01:00',
+          descricao:   `🔗 Link da reunião Teams: ${data.link_reuniao}`
+        }
+        const prep = await fetch(`${API}/api/atlas/preparar_acao`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            titulo:      args.titulo,
-            data:        args.inicio.split('T')[0],
-            hora_inicio: args.inicio.split('T')[1]?.slice(0, 5) || '00:00',
-            hora_fim:    args.fim.split('T')[1]?.slice(0, 5) || '01:00',
-            descricao:   `🔗 Link da reunião Teams: ${data.link_reuniao}`
-          })
+          body: JSON.stringify({ tool: 'criar_evento', args: eventoArgs })
         })
-        agenda_registrada = true
+        if (prep.ok) {
+          const prepData = await prep.json()
+          await fetch(`${API}/api/outlook/evento`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...eventoArgs, token: prepData.token })
+          })
+          agenda_registrada = true
+        }
       } catch {
         // Agenda falhou mas reunião foi criada — não bloqueia o retorno
       }
@@ -172,11 +225,11 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string) => Promise<any>
       instrucao:         'Evento já registrado na agenda do Outlook automaticamente. NÃO chame criar_evento.'
     }
   },
-  teams_chat_enviar: async (args: any, token: string) => {
+  teams_chat_enviar: async (args: any, token: string, confirmToken?: string) => {
     const res = await fetch(`${API}/api/teams/chat`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args)
+      body: JSON.stringify({ ...args, token: confirmToken })
     })
     const data = await res.json()
     if (!res.ok) {
@@ -231,6 +284,16 @@ interface ArquivoPendente {
 interface ArquivoContexto {
   file_id: string
   nome: string
+}
+
+interface PendingConfirmacao {
+  id: string
+  convId: string
+  tool: string
+  args: any
+  confirmToken: string
+  jti: string
+  avisoExterno: boolean
 }
 
 interface Conversa {
@@ -496,6 +559,11 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   // modeloSelecionado e reasoningEffort movidos para o backend (constantes fixas)
   const [codeInterpreter, setCodeInterpreter] = useState<boolean>(() => localStorage.getItem('atlas_code_interp') === 'true')
   const [previousResponseId, setPreviousResponseId] = useState<string | null>(null)
+  // Gate de confirmação humana (Fase 2): ações side-effectful ficam pendentes
+  // aqui até o usuário aprovar/rejeitar pelo card. confirmResolvers guarda o
+  // resolve() da Promise que o Promise.all do function_call está aguardando.
+  const [pendingConfirmacoes, setPendingConfirmacoes] = useState<PendingConfirmacao[]>([])
+  const confirmResolvers = useRef<Record<string, (result: any) => void>>({})
   const bottomRef = useRef<HTMLDivElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -988,6 +1056,67 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
     }
   }
 
+  // Gate de confirmação humana (Fase 2) — chamado no lugar de executar
+  // diretamente um function_call de uma ferramenta side-effectful. Propõe a
+  // ação no backend (token HMAC de 5 min amarrado a tool+args+usuário),
+  // publica um card de confirmação e devolve uma Promise que só resolve
+  // quando o usuário aprova ou rejeita — o Promise.all do handler de
+  // function_call espera por ela como espera por qualquer outra chamada.
+  const solicitarConfirmacao = useCallback(async (tool: string, args: any, authToken: string, convId: string): Promise<any> => {
+    try {
+      const res = await fetch(`${API}/api/atlas/preparar_acao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ tool, args })
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        return { erro: err.erro || 'Não foi possível preparar a ação para confirmação.' }
+      }
+      const prep = await res.json()
+
+      return await new Promise(resolve => {
+        const id = `${tool}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        confirmResolvers.current[id] = resolve
+        setPendingConfirmacoes(prev => [...prev, {
+          id, convId, tool, args, confirmToken: prep.token, jti: prep.jti, avisoExterno: !!prep.aviso_externo
+        }])
+      })
+    } catch {
+      return { erro: 'Falha de rede ao preparar a ação.' }
+    }
+  }, [])
+
+  // Resolve um card pendente — chamado pelos botões Aprovar/Rejeitar.
+  const resolverConfirmacao = useCallback(async (id: string, aprovado: boolean) => {
+    const pendente = pendingConfirmacoes.find(p => p.id === id)
+    if (!pendente) return
+    setPendingConfirmacoes(prev => prev.filter(p => p.id !== id))
+
+    const resolve = confirmResolvers.current[id]
+    delete confirmResolvers.current[id]
+    if (!resolve) return
+
+    if (!aprovado) {
+      fetch(`${API}/api/atlas/recusar_acao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jti: pendente.jti })
+      }).catch(() => { /* melhor esforço — não bloqueia a rejeição no chat */ })
+      resolve({ status: 'cancelado_pelo_usuario', mensagem: 'Ação cancelada pelo usuário.' })
+      return
+    }
+
+    const handler = MOCK_RESPONSES[pendente.tool]
+    let resultado
+    try {
+      resultado = handler ? await (handler as any)(pendente.args, token, pendente.confirmToken) : { erro: 'não implementado' }
+    } catch (e: any) {
+      resultado = { erro: `Handler error: ${e.message}` }
+    }
+    resolve(resultado)
+  }, [pendingConfirmacoes, token])
+
   const send = async () => {
     const text = input.trim()
     if (loading) return
@@ -1248,6 +1377,10 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
               } else {
                 const fnResponses = await Promise.all(fnCallsColetados.map(async f => {
+                  if (GATED_TOOLS.has(f.name)) {
+                    const result = await solicitarConfirmacao(f.name, f.args || {}, token, convId)
+                    return { functionResponse: { call_id: f.call_id, name: f.name, response: { result } } }
+                  }
                   const handler = MOCK_RESPONSES[f.name]
                   let result
                   try {
@@ -2270,6 +2403,41 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
         `}</style>
 
         <div style={{ padding: '16px 10%', borderTop: `1px solid ${T.border}`, background: T.bg }}>
+
+          {/* Cards de confirmação de ação (Fase 2 — gate humano) */}
+          {pendingConfirmacoes.filter(p => p.convId === ativaId).map(p => (
+            <div key={p.id} style={{
+              marginBottom: 10, padding: '12px 16px', ...glass(0.5, 20),
+              border: `1px solid ${p.avisoExterno ? `${T.accentAmber}55` : T.border}`,
+              borderRadius: 10
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                🔒 Confirmação necessária — {NOME_AMIGAVEL_TOOL[p.tool] || p.tool}
+              </div>
+              <div style={{ fontSize: 12, color: T.textMuted, whiteSpace: 'pre-wrap', marginBottom: 10, lineHeight: 1.5 }}>
+                {resumoAcao(p.tool, p.args)}
+              </div>
+              {p.avisoExterno && (
+                <div style={{ fontSize: 11, color: T.accentAmber, marginBottom: 8 }}>
+                  ⚠️ Destinatário externo à empresa.
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => resolverConfirmacao(p.id, true)}
+                  style={{ padding: '6px 16px', borderRadius: 6, background: `${T.accentBlue}22`, border: `1px solid ${T.accentBlue}55`, color: T.accentBlue, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Aprovar
+                </button>
+                <button
+                  onClick={() => resolverConfirmacao(p.id, false)}
+                  style={{ padding: '6px 16px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: `1px solid ${T.border}`, color: T.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Rejeitar
+                </button>
+              </div>
+            </div>
+          ))}
 
           {/* Banner upload para geração de relatório */}
           {uploadInfo && (

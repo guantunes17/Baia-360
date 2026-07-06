@@ -1,3 +1,4 @@
+import hashlib
 import importlib
 import importlib.util
 import json
@@ -23,6 +24,7 @@ from flask_jwt_extended import (
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_sqlalchemy import SQLAlchemy
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from openai import OpenAI
 from sqlalchemy import func
 from pathlib import Path
@@ -162,6 +164,31 @@ class AtlasMemoria(db.Model):
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     usuario = db.relationship('User', backref='memorias_atlas')
+
+
+class AtlasAcaoLog(db.Model):
+    """
+    Registro de toda ação side-effectful proposta pelo Atlas — dobra como
+    audit log (Fase 4 estende os campos). Uma linha nasce 'proposta' em
+    /api/atlas/preparar_acao e só chega a 'executada' se o token HMAC
+    correspondente for validado com sucesso pela rota de ação.
+
+    NOTA DE DEPLOY: como qualquer outro modelo aqui, esta tabela é criada por
+    db.create_all() (ver entrypoint.sh) — um novo deploy/restart do container
+    já cria a tabela. Não há migração manual necessária neste ambiente.
+    """
+    __tablename__ = 'atlas_acao_log'
+    id           = db.Column(db.Integer, primary_key=True)
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    tool         = db.Column(db.String(50), nullable=False)
+    jti          = db.Column(db.String(36), nullable=False, unique=True)
+    args_hash    = db.Column(db.String(64), nullable=False)
+    destinatario = db.Column(db.String(255), nullable=True)
+    status       = db.Column(db.String(20), nullable=False, default='proposta')  # proposta|executada|recusada|expirada|bloqueada
+    criada_em    = db.Column(db.DateTime, default=datetime.utcnow)
+    executada_em = db.Column(db.DateTime, nullable=True)
+
+    usuario = db.relationship('User', backref='acoes_atlas')
 
 # ── Atlas: configurações server-side (imutáveis pelo cliente) ────────────────
 ATLAS_MODEL            = 'gpt-5.4-mini'
@@ -426,6 +453,94 @@ ATLAS_TOOLS_DECLARATIONS = [
         }
     },
 ]
+
+# ── Gate de confirmação humana para ferramentas side-effectful ──────────────
+# Cada rota de ação (mais abaixo) e /api/atlas/preparar_acao usam exatamente
+# este mesmo whitelist de campos para calcular o args_hash — é isso que
+# garante que o token não pode ser reaproveitado com argumentos diferentes
+# dos que o usuário efetivamente aprovou.
+GATED_TOOL_FIELDS = {
+    'enviar_email':           ['destinatario', 'nome_destinatario', 'assunto', 'corpo'],
+    'criar_evento':           ['titulo', 'data', 'hora_inicio', 'hora_fim', 'descricao'],
+    'deletar_evento':         ['evento_id'],
+    'teams_enviar_mensagem':  ['team_id', 'channel_id', 'mensagem'],
+    'teams_criar_reuniao':    ['titulo', 'inicio', 'fim', 'participantes'],
+    'teams_chat_enviar':      ['email_destino', 'mensagem'],
+}
+
+
+def _acao_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(app.config['SECRET_KEY'], salt='atlas-acao')
+
+
+def _canonical_args(tool: str, args: dict) -> dict:
+    campos = GATED_TOOL_FIELDS[tool]
+    return {campo: (args or {}).get(campo) for campo in campos}
+
+
+def _hash_args(tool: str, args: dict) -> str:
+    canonico = _canonical_args(tool, args)
+    codificado = json.dumps(canonico, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+    return hashlib.sha256(codificado.encode('utf-8')).hexdigest()
+
+
+def _extrair_destinatario_acao(tool: str, args: dict) -> str:
+    args = args or {}
+    if tool == 'enviar_email':
+        return args.get('destinatario') or None
+    if tool == 'teams_chat_enviar':
+        return args.get('email_destino') or None
+    if tool == 'teams_criar_reuniao':
+        participantes = args.get('participantes') or []
+        return ', '.join(participantes) if participantes else None
+    if tool == 'teams_enviar_mensagem':
+        return args.get('channel_id') or None
+    if tool == 'deletar_evento':
+        return args.get('evento_id') or None
+    return None
+
+
+def verificar_token_acao(tool: str, args: dict, token: str, usuario_id: int):
+    """
+    Valida um token de confirmação de ação para exatamente este `tool` +
+    `args` + usuário. Retorna (True, None) em sucesso ou (False, mensagem)
+    em falha — a mensagem nunca vaza detalhes internos (motivo específico só
+    vai para o status da linha em AtlasAcaoLog).
+    """
+    if not token:
+        return False, 'Ação não autorizada.'
+
+    serializer = _acao_serializer()
+    try:
+        payload = serializer.loads(token, max_age=300)
+    except SignatureExpired as e:
+        payload_expirado = e.payload or {}
+        jti = payload_expirado.get('jti')
+        if jti:
+            log = AtlasAcaoLog.query.filter_by(jti=jti).first()
+            if log and log.status == 'proposta':
+                log.status = 'expirada'
+                db.session.commit()
+        return False, 'Ação não autorizada.'
+    except BadSignature:
+        return False, 'Ação não autorizada.'
+
+    if payload.get('tool') != tool or int(payload.get('usuario_id', -1)) != int(usuario_id):
+        return False, 'Ação não autorizada.'
+
+    if payload.get('args_hash') != _hash_args(tool, args):
+        return False, 'Ação não autorizada.'
+
+    jti = payload.get('jti')
+    log = AtlasAcaoLog.query.filter_by(jti=jti, usuario_id=usuario_id, tool=tool).first()
+    if not log or log.status != 'proposta':
+        return False, 'Ação não autorizada.'
+
+    log.status       = 'executada'
+    log.executada_em = datetime.utcnow()
+    db.session.commit()
+    return True, None
+
 
 # Defaults de permissão por perfil
 PERMISSOES_PADRAO = {
@@ -2245,6 +2360,65 @@ def atlas_chat():
         return jsonify({'erro': 'Erro interno no servidor.'}), 500
 
 
+@app.route('/api/atlas/preparar_acao', methods=['POST'])
+@jwt_required()
+def atlas_preparar_acao():
+    """
+    Fase 2 do gate de confirmação: o frontend chama esta rota assim que o
+    modelo emite um function_call para uma ferramenta side-effectful, ANTES
+    de mostrar o card de confirmação ao usuário. Devolve um token HMAC de
+    curta duração (5 min) amarrado a exatamente esse tool + esses args — a
+    rota de ação (mais abaixo) exige esse token e recusa qualquer args
+    diferente do que foi proposto aqui.
+    """
+    usuario_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    tool = data.get('tool', '')
+    args = data.get('args', {}) or {}
+
+    if tool not in GATED_TOOL_FIELDS:
+        return jsonify({'erro': 'Ferramenta não sujeita a confirmação.'}), 400
+
+    args_hash    = _hash_args(tool, args)
+    jti          = str(uuid.uuid4())
+    destinatario = _extrair_destinatario_acao(tool, args)
+
+    # Stub nesta fase: sempre permite propor a ação e sempre reporta
+    # aviso_externo=False. A Fase 4 implementa a allow-list real de domínios
+    # e passa a marcar aviso_externo=True / bloquear conforme a política.
+    db.session.add(AtlasAcaoLog(
+        usuario_id=usuario_id, tool=tool, jti=jti, args_hash=args_hash,
+        destinatario=destinatario, status='proposta',
+    ))
+    db.session.commit()
+
+    token = _acao_serializer().dumps({
+        'jti': jti, 'usuario_id': usuario_id, 'tool': tool, 'args_hash': args_hash,
+    })
+
+    return jsonify({'token': token, 'jti': jti, 'aviso_externo': False}), 200
+
+
+@app.route('/api/atlas/recusar_acao', methods=['POST'])
+@jwt_required()
+def atlas_recusar_acao():
+    """Chamada quando o usuário clica Rejeitar no card de confirmação — fecha
+    o ciclo de vida da proposta em AtlasAcaoLog (proposta -> recusada) mesmo
+    que a ação nunca chegue a ser executada."""
+    usuario_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    jti = data.get('jti', '')
+
+    log = AtlasAcaoLog.query.filter_by(jti=jti, usuario_id=usuario_id).first()
+    if not log:
+        return jsonify({'erro': 'Ação não encontrada.'}), 404
+    if log.status == 'proposta':
+        log.status = 'recusada'
+        db.session.commit()
+
+    return jsonify({'ok': True}), 200
+
+
 @app.route('/api/atlas/upload_arquivo', methods=['POST'])
 @jwt_required()
 def atlas_upload_arquivo():
@@ -3212,7 +3386,12 @@ def outlook_agenda_admin():
 def outlook_criar_evento():
     """Cria um evento no calendário do usuário via MCP Server."""
     usuario_id = get_jwt_identity()
-    data       = request.get_json()
+    data       = request.get_json() or {}
+
+    args = {campo: data.get(campo) for campo in GATED_TOOL_FIELDS['criar_evento']}
+    ok, erro = verificar_token_acao('criar_evento', args, data.get('token', ''), int(usuario_id))
+    if not ok:
+        return jsonify({'erro': erro}), 403
 
     access_token, erro_msg = _get_access_token(usuario_id)
     if not access_token:
@@ -3221,7 +3400,7 @@ def outlook_criar_evento():
     try:
         resultado = _chamar_mcp('criar_evento', {
             'access_token': access_token,
-            **data
+            **args
         })
         return jsonify(resultado)
     except Exception as e:
@@ -3233,6 +3412,12 @@ def outlook_criar_evento():
 def outlook_deletar_evento(evento_id):
     """Deleta um evento do calendário do usuário via MCP Server."""
     usuario_id = get_jwt_identity()
+    data       = request.get_json(silent=True) or {}
+
+    args = {'evento_id': evento_id}
+    ok, erro = verificar_token_acao('deletar_evento', args, data.get('token', ''), int(usuario_id))
+    if not ok:
+        return jsonify({'erro': erro}), 403
 
     access_token, erro_msg = _get_access_token(usuario_id)
     if not access_token:
@@ -3332,11 +3517,17 @@ def outlook_enviar_email():
       nome_destinatario : str   (opcional)
     """
     usuario_id = get_jwt_identity()
+    data = request.get_json() or {}
+
+    args = {campo: data.get(campo) for campo in GATED_TOOL_FIELDS['enviar_email']}
+    ok, erro = verificar_token_acao('enviar_email', args, data.get('token', ''), int(usuario_id))
+    if not ok:
+        return jsonify({'erro': erro}), 403
+
     access_token, erro_msg = _get_access_token(usuario_id)
     if not access_token:
         return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
 
-    data = request.get_json()
     destinatario      = data.get('destinatario', '').strip()
     assunto           = data.get('assunto', '').strip()
     corpo             = data.get('corpo', '').strip()
@@ -3397,7 +3588,13 @@ def teams_listar_canais():
 @jwt_required()
 def teams_enviar_mensagem():
     usuario_id = int(get_jwt_identity())
-    data       = request.get_json()
+    data       = request.get_json() or {}
+
+    args = {campo: data.get(campo) for campo in GATED_TOOL_FIELDS['teams_enviar_mensagem']}
+    ok, erro = verificar_token_acao('teams_enviar_mensagem', args, data.get('token', ''), usuario_id)
+    if not ok:
+        return jsonify({'erro': erro}), 403
+
     access_token, erro_msg = _get_access_token(usuario_id)
     if not access_token:
         return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
@@ -3417,7 +3614,13 @@ def teams_enviar_mensagem():
 @jwt_required()
 def teams_criar_reuniao():
     usuario_id = int(get_jwt_identity())
-    data       = request.get_json()
+    data       = request.get_json() or {}
+
+    args = {campo: data.get(campo) for campo in GATED_TOOL_FIELDS['teams_criar_reuniao']}
+    ok, erro = verificar_token_acao('teams_criar_reuniao', args, data.get('token', ''), usuario_id)
+    if not ok:
+        return jsonify({'erro': erro}), 403
+
     access_token, erro_msg = _get_access_token(usuario_id)
     if not access_token:
         return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
@@ -3438,7 +3641,13 @@ def teams_criar_reuniao():
 @jwt_required()
 def teams_chat_enviar():
     usuario_id = int(get_jwt_identity())
-    data       = request.get_json()
+    data       = request.get_json() or {}
+
+    args = {campo: data.get(campo) for campo in GATED_TOOL_FIELDS['teams_chat_enviar']}
+    ok, erro = verificar_token_acao('teams_chat_enviar', args, data.get('token', ''), usuario_id)
+    if not ok:
+        return jsonify({'erro': erro}), 403
+
     access_token, erro_msg = _get_access_token(usuario_id)
     if not access_token:
         return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
