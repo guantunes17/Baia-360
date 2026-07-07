@@ -105,6 +105,103 @@ function AtlasLogCard() {
   )
 }
 
+function fmtPct(v: number | null | undefined) {
+  return v == null ? '—' : `${Math.round(v * 100)}%`
+}
+function fmtScore(v: number | null | undefined) {
+  return v == null ? '—' : v.toFixed(2)
+}
+
+function AtlasObservabilidadeCard() {
+  const [dados,   setDados]   = useState<any>(null)
+  const [dias,    setDias]    = useState(30)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    axios.get(`${API}/api/atlas/observabilidade`, { headers: headers(), params: { dias } })
+      .then(r => setDados(r.data))
+      .catch(() => setDados(null))
+      .finally(() => setLoading(false))
+  }, [dias])
+
+  if (!loading && !dados) return null
+
+  const cards = dados ? [
+    { label: 'Interações c/ retrieval', valor: dados.total,                         cor: T.accentBlue   },
+    { label: 'Retrieval hit rate',      valor: fmtPct(dados.retrieval_hit_rate),     cor: T.accentGreen  },
+    { label: 'Zero retrieval',          valor: fmtPct(dados.zero_retrieval_rate),    cor: T.accentRed    },
+    { label: 'Top score médio',         valor: fmtScore(dados.mean_top_score),       cor: T.accentCyan   },
+    { label: 'Groundedness médio',      valor: fmtScore(dados.mean_groundedness),    cor: T.accentPurple },
+    { label: 'Faithfulness (judge)',    valor: fmtScore(dados.mean_faithfulness),    cor: T.accentAmber  },
+    { label: 'Answer relevancy',        valor: fmtScore(dados.mean_answer_rel),      cor: T.accentAmber  },
+    { label: 'Context relevancy',       valor: fmtScore(dados.mean_context_rel),     cor: T.accentAmber  },
+    { label: 'Feedback (👍/👎)',         valor: `${dados.feedback?.up ?? 0} / ${dados.feedback?.down ?? 0}`, cor: T.accentGreen },
+    { label: 'Latência P95',            valor: dados.latencia_p95_ms != null ? `${dados.latencia_p95_ms} ms` : '—', cor: T.accentBlue },
+  ] : []
+
+  const serie = dados?.serie_top_score || []
+  const maxN  = Math.max(...serie.map((s: any) => s.n), 1)
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 600, color: T.text, paddingLeft: 10, borderLeft: `2px solid ${T.accentCyan}`, margin: 0 }}>
+          Observabilidade RAG (Atlas)
+        </h2>
+        <select
+          value={dias}
+          onChange={e => setDias(Number(e.target.value))}
+          style={{ fontSize: 12, color: T.text, background: 'rgba(14,22,45,0.8)', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 8px' }}
+        >
+          <option value={7}>Últimos 7 dias</option>
+          <option value={30}>Últimos 30 dias</option>
+          <option value={90}>Últimos 90 dias</option>
+        </select>
+      </div>
+
+      {loading && <p style={{ fontSize: 13, color: T.textMuted }}>Carregando...</p>}
+
+      {!loading && dados && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+            {cards.map(card => (
+              <div key={card.label} style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 10, padding: '14px 16px' }}>
+                <p style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{card.label}</p>
+                <p style={{ fontSize: 24, fontWeight: 700, color: card.cor, lineHeight: 1 }}>{card.valor}</p>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 10, padding: 16 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Top score médio por dia
+            </p>
+            {serie.length === 0 ? (
+              <p style={{ fontSize: 12, color: T.textMuted }}>Sem dados suficientes na janela selecionada.</p>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100 }}>
+                {serie.map((s: any) => {
+                  const altura = s.score != null ? Math.max(s.score * 100, 4) : 2
+                  return (
+                    <div key={s.dia} title={`${s.dia}: ${fmtScore(s.score)} (${s.n} interações)`}
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, gap: 4, minWidth: 0 }}>
+                      <div style={{
+                        width: '100%', borderRadius: '3px 3px 0 0', height: `${altura}%`,
+                        background: T.accentCyan, minHeight: 2, opacity: 0.4 + 0.6 * (s.n / maxN)
+                      }} />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export function PainelControle() {
   const [porModulo, setPorModulo] = useState<PorModulo[]>([])
   const [porMes,    setPorMes]    = useState<PorMes[]>([])
@@ -265,6 +362,7 @@ export function PainelControle() {
             </div>
           </div>
 
+          {isAdmin && <AtlasObservabilidadeCard />}
           {isAdmin && <AtlasLogCard />}
         </>
       )}

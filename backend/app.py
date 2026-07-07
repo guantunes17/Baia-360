@@ -3253,6 +3253,58 @@ def atlas_log_conversas():
         traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
 
+@app.route('/api/atlas/observabilidade', methods=['GET'])
+@jwt_required()
+def atlas_observabilidade():
+    """Métricas agregadas de RAG observability — apenas admins."""
+    usuario = User.query.get(int(get_jwt_identity()))
+    if not usuario or usuario.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+    dias = request.args.get('dias', default=30, type=int)
+    from sqlalchemy import text
+    since = datetime.utcnow() - timedelta(days=dias)
+    base = AtlasRAGTrace.query.filter(AtlasRAGTrace.criado_em >= since)
+    total = base.count()
+    com_fs = base.filter_by(usou_file_search=True).count()
+    zero   = base.filter_by(zero_retrieval=True).count()
+
+    def _avg(col):
+        v = db.session.query(func.avg(col)).filter(AtlasRAGTrace.criado_em >= since).scalar()
+        return round(float(v), 4) if v is not None else None
+
+    up   = base.filter_by(feedback='up').count()
+    down = base.filter_by(feedback='down').count()
+
+    # P95 latência (portável: ordena e pega o índice)
+    lats = [r[0] for r in db.session.query(AtlasRAGTrace.latencia_ms)
+            .filter(AtlasRAGTrace.criado_em >= since, AtlasRAGTrace.latencia_ms.isnot(None))
+            .order_by(AtlasRAGTrace.latencia_ms.asc()).all()]
+    p95 = lats[int(len(lats) * 0.95)] if lats else None
+
+    # série diária de mean top_score (para um gráfico simples)
+    serie = db.session.execute(text(
+        "SELECT date_trunc('day', criado_em) d, AVG(top_score) s, COUNT(*) n "
+        "FROM atlas_rag_trace WHERE criado_em >= :s GROUP BY d ORDER BY d"
+    ), {'s': since}).fetchall()
+
+    return jsonify({
+        'janela_dias':        dias,
+        'total':              total,
+        'com_file_search':    com_fs,
+        'retrieval_hit_rate': round(1 - (zero / com_fs), 4) if com_fs else None,
+        'zero_retrieval_rate':round(zero / com_fs, 4) if com_fs else None,
+        'mean_top_score':     _avg(AtlasRAGTrace.top_score),
+        'mean_groundedness':  _avg(AtlasRAGTrace.groundedness),
+        'mean_faithfulness':  _avg(AtlasRAGTrace.eval_faithfulness),
+        'mean_answer_rel':    _avg(AtlasRAGTrace.eval_answer_rel),
+        'mean_context_rel':   _avg(AtlasRAGTrace.eval_context_rel),
+        'feedback':           {'up': up, 'down': down,
+                               'ratio': round(up / (up + down), 4) if (up + down) else None},
+        'latencia_p95_ms':    p95,
+        'serie_top_score':    [{'dia': str(r.d)[:10], 'score': round(float(r.s), 4) if r.s else None,
+                                'n': r.n} for r in serie],
+    }), 200
+
 @app.route('/api/atlas/conversas', methods=['GET'])
 @jwt_required()
 def atlas_listar_conversas():
