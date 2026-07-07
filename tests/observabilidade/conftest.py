@@ -90,11 +90,14 @@ def _assert_test_db_isolated(bind_url) -> None:
     # by default — comparing that against the raw TEST_DATABASE_URL string
     # (which has the real password) would never match and would make every
     # legitimate Postgres run abort. render_as_string(hide_password=False)
-    # avoids that false abort; str() is just a fallback for plain strings.
-    try:
-        u = bind_url.render_as_string(hide_password=False)
-    except AttributeError:
-        u = str(bind_url)
+    # fixes that comparison, BUT that unmasked form must never end up in an
+    # exception message — this thing is meant to abort loudly, and "loudly"
+    # goes straight to console/CI logs. So: unmasked form for the internal
+    # checks only, masked form for anything that gets raised/printed.
+    from sqlalchemy.engine import make_url
+    url_obj = bind_url if hasattr(bind_url, 'render_as_string') else make_url(str(bind_url))
+    u_unmasked = url_obj.render_as_string(hide_password=False)
+    u          = url_obj.render_as_string(hide_password=True)  # safe to display
 
     real_markers = ('baia360.db', '/instance/', 'baia360_prod', 'baia360-postgres')
     for m in real_markers:
@@ -106,7 +109,7 @@ def _assert_test_db_isolated(bind_url) -> None:
     looks_isolated = (
         ':memory:' in u
         or tempfile.gettempdir() in u
-        or (test_url and u == test_url)
+        or (test_url and u_unmasked == test_url)
         or '_test' in u
     )
     if not looks_isolated:
