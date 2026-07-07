@@ -3379,7 +3379,6 @@ def atlas_observabilidade():
     if not usuario or usuario.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
     dias = request.args.get('dias', default=30, type=int)
-    from sqlalchemy import text
     since = datetime.utcnow() - timedelta(days=dias)
     base = AtlasRAGTrace.query.filter(AtlasRAGTrace.criado_em >= since)
     total = base.count()
@@ -3399,11 +3398,25 @@ def atlas_observabilidade():
             .order_by(AtlasRAGTrace.latencia_ms.asc()).all()]
     p95 = lats[int(len(lats) * 0.95)] if lats else None
 
-    # série diária de mean top_score (para um gráfico simples)
-    serie = db.session.execute(text(
-        "SELECT date_trunc('day', criado_em) d, AVG(top_score) s, COUNT(*) n "
-        "FROM atlas_rag_trace WHERE criado_em >= :s GROUP BY d ORDER BY d"
-    ), {'s': since}).fetchall()
+    # série diária de mean top_score (portável — bucketing em Python, sem date_trunc)
+    from collections import defaultdict
+    _serie_rows = db.session.query(
+        AtlasRAGTrace.criado_em, AtlasRAGTrace.top_score
+    ).filter(AtlasRAGTrace.criado_em >= since).all()
+    _serie_scores = defaultdict(list)
+    _serie_counts = defaultdict(int)
+    for _dt, _sc in _serie_rows:
+        _dia = _dt.date().isoformat()
+        _serie_counts[_dia] += 1
+        if _sc is not None:
+            _serie_scores[_dia].append(_sc)
+    serie_top_score = [
+        {'dia': _dia,
+         'score': round(sum(_serie_scores[_dia]) / len(_serie_scores[_dia]), 4)
+                  if _serie_scores[_dia] else None,
+         'n': _serie_counts[_dia]}
+        for _dia in sorted(_serie_counts)
+    ]
 
     return jsonify({
         'janela_dias':        dias,
@@ -3419,8 +3432,7 @@ def atlas_observabilidade():
         'feedback':           {'up': up, 'down': down,
                                'ratio': round(up / (up + down), 4) if (up + down) else None},
         'latencia_p95_ms':    p95,
-        'serie_top_score':    [{'dia': str(r.d)[:10], 'score': round(float(r.s), 4) if r.s else None,
-                                'n': r.n} for r in serie],
+        'serie_top_score':    serie_top_score,
     }), 200
 
 @app.route('/api/atlas/observabilidade/regressao', methods=['POST'])

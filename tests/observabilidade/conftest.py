@@ -26,15 +26,26 @@ init_app() against the new config:
 registered in app.extensions). Do not "simplify" this back to a plain config
 assignment; it silently re-opens the hole described above.
 
+"The fixture is correct" is a hope, not a guarantee — that incident is also why
+_assert_test_db_isolated() exists below: a hard, independent interlock that aborts
+the whole suite if the resolved bind URL looks like the real DB, checked right after
+the rebind and before db.create_all() ever touches it. Defense in depth, not a
+replacement for getting the rebind right.
+
 TEST DATABASE
 Prefer TEST_DATABASE_URL (a real, disposable Postgres) if set — this is required to
-actually exercise the Postgres-only code paths (purgar_rag_traces' interval SQL, the
-date_trunc series in /api/atlas/observabilidade). Otherwise falls back to a throwaway
-SQLite file under tests/observabilidade/results/ (gitignored), and the Postgres-only
-tests report themselves as skipped, honestly, rather than faking a pass.
+actually exercise genuinely Postgres-only code paths (purgar_rag_traces' interval
+SQL). Otherwise falls back to a throwaway SQLite file under the OS temp dir (never
+tests/observabilidade/results/ — see the interlock below, which specifically
+recognizes tempfile.gettempdir() as isolated). GET /api/atlas/observabilidade's
+daily series used to be Postgres-only too (a raw date_trunc query that 500'd the
+whole route on SQLite) until that route was made dialect-portable; the interlock
+and the SQLite fallback predate that fix and remain useful for what's still
+genuinely Postgres-specific.
 """
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -44,7 +55,12 @@ BACKEND_DIR = OBS_DIR.parent.parent / 'backend'
 RESULTS_DIR = OBS_DIR / 'results'
 RESULTS_DIR.mkdir(exist_ok=True)
 
-SQLITE_FALLBACK_PATH = RESULTS_DIR / '.test_db.sqlite3'
+# Lives under the OS temp dir, not results/ — this is one of the patterns
+# _assert_test_db_isolated() below explicitly recognizes as safe. (--phoenix
+# doesn't care where the file physically lives: it re-queries through the
+# already-bound `app`/db.engine in the same process, after pytest.main()
+# returns, regardless of this path.)
+SQLITE_FALLBACK_PATH = Path(tempfile.gettempdir()) / 'obs_test_db.sqlite3'
 
 TEST_DATABASE_URL = os.environ.get('TEST_DATABASE_URL', '').strip()
 
@@ -52,6 +68,51 @@ OBS_LIVE       = os.environ.get('OBS_LIVE', '') == '1'
 OBS_LIVE_QUERY = os.environ.get('OBS_LIVE_QUERY', '').strip()
 
 sys.path.insert(0, str(BACKEND_DIR))
+
+
+def _assert_test_db_isolated(bind_url) -> None:
+    """INTERLOCK: aborts the suite if the resolved test DB looks like the real
+    dev/prod DB. Defense in depth — independent of whether the rebind fixture
+    above is actually correct. "The fixture is correct" is a hope; this is a
+    guarantee. Never weaken this to make a misconfigured run pass — it's
+    supposed to abort loudly.
+
+    Real markers confirmed directly against this repo: 'baia360.db' and
+    '/instance/' are exactly how Flask-SQLAlchemy resolves the default
+    sqlite:///baia360.db from backend/.env.example (see the module docstring's
+    incident writeup). 'baia360-postgres' is the prod Postgres container_name
+    in docker-compose.prod.yml. backend/.env.production isn't in this repo
+    (deployed only on the server) so its exact DATABASE_URL host/user can't be
+    verified here — 'baia360_prod' is kept as a defensive placeholder in case
+    that convention is used; update this list if a real value is ever seen.
+    """
+    # URL objects (db.engine.url) stringify with the password MASKED as '***'
+    # by default — comparing that against the raw TEST_DATABASE_URL string
+    # (which has the real password) would never match and would make every
+    # legitimate Postgres run abort. render_as_string(hide_password=False)
+    # avoids that false abort; str() is just a fallback for plain strings.
+    try:
+        u = bind_url.render_as_string(hide_password=False)
+    except AttributeError:
+        u = str(bind_url)
+
+    real_markers = ('baia360.db', '/instance/', 'baia360_prod', 'baia360-postgres')
+    for m in real_markers:
+        if m in u:
+            raise RuntimeError(
+                f"INTERLOCK ABORT: test DB resolved to something that looks REAL → {u}")
+
+    test_url = os.getenv('TEST_DATABASE_URL')
+    looks_isolated = (
+        ':memory:' in u
+        or tempfile.gettempdir() in u
+        or (test_url and u == test_url)
+        or '_test' in u
+    )
+    if not looks_isolated:
+        raise RuntimeError(
+            f"INTERLOCK ABORT: test DB not recognized as isolated → {u}. "
+            f"Use an in-memory DB, a tempfile path, or set TEST_DATABASE_URL.")
 
 
 @pytest.fixture(scope='session')
@@ -73,6 +134,7 @@ def app():
     db.init_app(flask_app)
 
     with flask_app.app_context():
+        _assert_test_db_isolated(db.engine.url)   # interlock, must pass first
         db.create_all()
 
     yield flask_app

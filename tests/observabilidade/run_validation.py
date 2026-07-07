@@ -207,24 +207,39 @@ def _write_report_md(payload: dict) -> None:
     lines.append('')
     lines.append(
         "Per this suite's constraints, discovered bugs are reported here rather than "
-        "quietly worked around in the test or \"fixed\" in production code."
+        "quietly worked around in the test or \"fixed\" in production code. Nothing "
+        "outstanding as of this run — see **Resolved** below for what this suite has "
+        "already caught and fixed."
     )
     lines.append('')
+
+    lines.append('## Resolved')
+    lines.append('')
     lines.append(
-        "- **`GET /api/atlas/observabilidade` is unconditionally Postgres-only, not just "
-        "its daily-series field.** The route runs a raw `date_trunc('day', ...)` query "
-        "before it can build the JSON response at all — on SQLite this raises "
+        "- **`GET /api/atlas/observabilidade` was unconditionally Postgres-only, not just "
+        "its daily-series field.** The route ran a raw `date_trunc('day', ...)` query "
+        "before it could build the JSON response at all — on SQLite that raised "
         "`sqlite3.OperationalError: no such function: date_trunc` and the **entire** "
-        "route 500s, including the simple aggregate counts (total, hit rate, feedback "
-        "ratio, P95 latency) that have nothing to do with the series and are otherwise "
-        "portable. Verified directly: an admin request against an empty SQLite test DB "
-        "raises before returning a response. Since this repo's own `backend/.env.example` "
-        "defaults to `DATABASE_URL=sqlite:///baia360.db`, the admin observability "
-        "dashboard is unusable in that default dev configuration, not just its chart. "
-        "Not fixed here (would require deciding whether to special-case the query on "
-        "`db.engine.dialect.name` or something more general) — flagged for a follow-up "
-        "prompt. `test_06_dashboard.py`'s aggregation-math test documents and skips "
-        "around this on SQLite rather than hiding it."
+        "route 500'd, including the simple aggregate counts (total, hit rate, feedback "
+        "ratio, P95 latency) that had nothing to do with the series and were otherwise "
+        "portable. Since this repo's `backend/.env.example` defaults to "
+        "`DATABASE_URL=sqlite:///baia360.db`, the admin observability dashboard was "
+        "unusable in the default dev configuration, not just its chart. **Fixed**: the "
+        "daily series is now bucketed in Python instead of via `date_trunc`, so the "
+        "route is dialect-portable; Postgres behavior is unchanged. "
+        "`test_06_dashboard.py`'s aggregation-math tests now run unconditionally on "
+        "both dialects instead of being skipped on SQLite."
+    )
+    lines.append(
+        "- **A DB-isolation near-miss**: an early version of the test-DB rebind fixture "
+        "looked correct but silently wrote a row into the real local dev database "
+        "(Flask-SQLAlchemy 3.x binds its engine eagerly at `SQLAlchemy(app)` time, so a "
+        "post-import `app.config[...]` reassignment alone has no effect). **Fixed**: the "
+        "rebind now goes through `app.extensions.pop('sqlalchemy', None); db.init_app(app)`, "
+        "and `_assert_test_db_isolated()` in `conftest.py` is a hard, independent interlock "
+        "that aborts the whole suite if the resolved bind URL doesn't look isolated — "
+        "checked every run, not just when someone remembers to check. Covered by its own "
+        "unit tests in `test_00_schema.py`."
     )
     lines.append('')
 
@@ -237,7 +252,7 @@ def _write_report_md(payload: dict) -> None:
     lines.append('# Default: $0, fully mocked, honest skips on SQLite')
     lines.append('python run_validation.py')
     lines.append('')
-    lines.append('# Exercise the Postgres-only paths (retention, dashboard aggregation)')
+    lines.append('# Exercise the one genuinely Postgres-only path (retention interval SQL)')
     lines.append('TEST_DATABASE_URL=postgresql://user:pass@localhost/obs_test python run_validation.py')
     lines.append('')
     lines.append('# Live end-to-end + push the resulting trace to a local Phoenix')

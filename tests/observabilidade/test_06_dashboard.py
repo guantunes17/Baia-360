@@ -2,18 +2,17 @@
 GET /api/atlas/observabilidade.
 
 The 403-for-non-admin guard runs before any query, so it's DB-agnostic and
-tested unconditionally. The 200-for-admin path is a different story: the route
-executes an UNCONDITIONAL raw `date_trunc(...)` query for the daily series —
-not just when building that one field, but as a required step before the
-response can be built at all. On SQLite this raises OperationalError (no such
-function: date_trunc) and the whole route 500s, not just the series portion.
-This is a real, verified finding — see REPORT.md "Issues found" — not an
-assumption baked into this test. So the aggregation-math assertions are
-skipped (not faked) on SQLite, same as retention.
+tested unconditionally. The 200-for-admin path used to be Postgres-only too:
+the route ran an UNCONDITIONAL raw `date_trunc(...)` query for the daily
+series — not just when building that one field, but as a required step before
+the response could be built at all — which raised OperationalError on SQLite
+and 500'd the WHOLE route, not just the series portion. That was a real,
+verified finding (see REPORT.md's "Issues found" history). The route now
+buckets the daily series in Python instead of via date_trunc, so it's
+dialect-portable and these tests run unconditionally on both SQLite and
+Postgres — no more skip_unless_postgres gate here.
 """
 from datetime import datetime, timedelta
-
-from conftest import skip_unless_postgres
 
 
 def test_non_admin_gets_403(app, db, models, make_user, make_client):
@@ -23,9 +22,7 @@ def test_non_admin_gets_403(app, db, models, make_user, make_client):
     assert resp.status_code == 403
 
 
-def test_admin_aggregation_matches_hand_computed_values(app, db, models, make_user, make_client, db_dialect):
-    skip_unless_postgres(db_dialect)
-
+def test_admin_aggregation_matches_hand_computed_values(app, db, models, make_user, make_client):
     admin_id = make_user(perfil='admin')
     now = datetime.utcnow()
 
@@ -63,11 +60,15 @@ def test_admin_aggregation_matches_hand_computed_values(app, db, models, make_us
     assert data['feedback']['ratio'] == 0.5
     # P95 of [100, 200, 300, 400] sorted ascending, index int(4*0.95)=3 -> 400
     assert data['latencia_p95_ms'] == 400
+    # serie_top_score buckets by calendar day — how many buckets the 4 traces
+    # land in depends on whether "now" is near a UTC midnight boundary, but the
+    # bucket counts must always sum back to the total regardless of that split.
+    serie = data['serie_top_score']
+    assert serie, 'expected at least one day bucket'
+    assert sum(s['n'] for s in serie) == 4
 
 
-def test_admin_empty_window_returns_nulls_not_errors(app, db, models, make_user, make_client, db_dialect):
-    skip_unless_postgres(db_dialect)
-
+def test_admin_empty_window_returns_nulls_not_errors(app, db, models, make_user, make_client):
     admin_id = make_user(perfil='admin')
     client = make_client(admin_id)
     resp = client.get('/api/atlas/observabilidade?dias=30')
@@ -77,3 +78,4 @@ def test_admin_empty_window_returns_nulls_not_errors(app, db, models, make_user,
     assert data['retrieval_hit_rate'] is None
     assert data['feedback']['ratio'] is None
     assert data['latencia_p95_ms'] is None
+    assert data['serie_top_score'] == []
