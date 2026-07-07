@@ -10,6 +10,7 @@ import time
 import traceback
 import uuid
 import msal
+import numpy as np
 import pandas as pd
 import requests as http_requests
 
@@ -361,10 +362,96 @@ def registrar_rag_trace(app_obj, trace_dict: dict):
                 db.session.add(row)
                 db.session.commit()
                 _emit_otel_span(trace_dict)
+
+                try:
+                    _client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', '').strip())
+                    g = avaliar_groundedness(_client, row.resposta or '', chunks)
+                    if g is not None:
+                        row.groundedness = g
+                    if _deve_julgar(row):
+                        row.eval_flagged = True
+                        row.eval_modelo  = RAG_JUDGE_MODEL
+                        j = avaliar_judge(_client, row.pergunta or '', row.resposta or '', chunks)
+                        if j:
+                            row.eval_faithfulness = j['faithfulness']
+                            row.eval_answer_rel   = j['answer_relevancy']
+                            row.eval_context_rel  = j['context_relevancy']
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    traceback.print_exc()
             except Exception:
                 db.session.rollback()
                 traceback.print_exc()
     threading.Thread(target=_worker, daemon=True).start()
+
+def _cosine(a, b):
+    a = np.asarray(a, dtype=float); b = np.asarray(b, dtype=float)
+    na = np.linalg.norm(a); nb = np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return None
+    return float(np.dot(a, b) / (na * nb))
+
+def avaliar_groundedness(client, resposta: str, chunks: list):
+    """Tier 2: cosseno entre a resposta e o texto dos chunks recuperados.
+    Proxy barato de fidelidade. Usa RAG_EMBED_MODEL. Best-effort."""
+    contexto = '\n'.join((c.get('quote') or '') for c in chunks).strip()
+    if not resposta.strip() or not contexto:
+        return None
+    try:
+        emb = client.embeddings.create(
+            model=RAG_EMBED_MODEL,
+            input=[resposta[:6000], contexto[:6000]],
+        )
+        return _cosine(emb.data[0].embedding, emb.data[1].embedding)
+    except Exception:
+        traceback.print_exc()
+        return None
+
+# Flag para triagem do judge (Tier 3): só julga o que parece suspeito
+def _deve_julgar(trace: 'AtlasRAGTrace', amostra_pct: int = 10) -> bool:
+    import random
+    if trace.feedback == 'down':
+        return True
+    if trace.usou_file_search and trace.retrieval_count == 0:
+        return True
+    if trace.top_score is not None and trace.top_score < 0.3:
+        return True
+    if trace.groundedness is not None and trace.groundedness < 0.75:
+        return True
+    return random.randint(1, 100) <= amostra_pct
+
+_JUDGE_PROMPT = (
+    "You are a strict RAG evaluator. Given a QUESTION, the retrieved CONTEXT, "
+    "and the ANSWER, score three metrics from 0.0 to 1.0:\n"
+    "- faithfulness: is the answer supported by the context (no hallucination)?\n"
+    "- answer_relevancy: does the answer address the question?\n"
+    "- context_relevancy: was the retrieved context relevant to the question?\n"
+    "Return ONLY a compact JSON object with keys faithfulness, answer_relevancy, "
+    "context_relevancy. No prose, no markdown."
+)
+
+def avaliar_judge(client, pergunta: str, resposta: str, chunks: list):
+    """Tier 3: LLM-as-judge (RAG_JUDGE_MODEL). Chamar APENAS em traces flagados."""
+    contexto = '\n---\n'.join((c.get('quote') or '') for c in chunks)[:8000]
+    payload = f"QUESTION:\n{pergunta[:2000]}\n\nCONTEXT:\n{contexto}\n\nANSWER:\n{resposta[:4000]}"
+    try:
+        resp = client.chat.completions.create(
+            model=RAG_JUDGE_MODEL,
+            messages=[{'role': 'system', 'content': _JUDGE_PROMPT},
+                      {'role': 'user', 'content': payload}],
+            temperature=0,
+            response_format={'type': 'json_object'},
+        )
+        data = json.loads(resp.choices[0].message.content)
+        return {
+            'faithfulness':      float(data.get('faithfulness')),
+            'answer_relevancy':  float(data.get('answer_relevancy')),
+            'context_relevancy': float(data.get('context_relevancy')),
+        }
+    except Exception:
+        traceback.print_exc()
+        return None
 
 def purgar_rag_traces(dias: int = 90) -> int:
     """Apaga traces com mais de `dias`. Idempotente. Retorna nº de linhas."""
@@ -2711,6 +2798,31 @@ def atlas_chat():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'erro': 'Erro interno no servidor.'}), 500
+
+
+@app.route('/api/atlas/rag_feedback', methods=['POST'])
+@jwt_required()
+def atlas_rag_feedback():
+    """Persiste o thumbs up/down do usuário na AtlasRAGTrace correspondente.
+    Match por response_id (preferido) ou pelo trace mais recente da conv."""
+    usuario_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    valor = data.get('feedback')
+    if valor not in ('up', 'down', None):
+        return jsonify({'erro': 'feedback inválido'}), 400
+    resp_id = (data.get('response_id') or '').strip()
+    conv_id = (data.get('conv_id') or '').strip()
+    q = AtlasRAGTrace.query.filter_by(usuario_id=usuario_id)
+    trace = None
+    if resp_id:
+        trace = q.filter_by(response_id=resp_id).order_by(AtlasRAGTrace.id.desc()).first()
+    if not trace and conv_id:
+        trace = q.filter_by(conv_id=conv_id).order_by(AtlasRAGTrace.id.desc()).first()
+    if not trace:
+        return jsonify({'erro': 'trace não encontrada'}), 404
+    trace.feedback = valor
+    db.session.commit()
+    return jsonify({'ok': True}), 200
 
 
 @app.route('/api/atlas/preparar_acao', methods=['POST'])

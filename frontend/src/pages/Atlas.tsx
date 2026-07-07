@@ -273,6 +273,7 @@ interface Msg {
   reasoning?: string
   reasoningStreaming?: boolean
   citations?: { url: string; title: string }[]
+  response_id?: string
 }
 
 interface ArquivoPendente {
@@ -936,12 +937,17 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
   }
 
   // ── Feedback ──────────────────────────────────────────────────────────────
-  const darFeedback = (convId: string, idx: number, tipo: 'up' | 'down') => {
+  const darFeedback = (convId: string, idx: number, novoValor: 'up' | 'down' | undefined, responseId?: string) => {
     updateConversa(convId, c => {
       const msgs = [...c.msgs]
-      msgs[idx] = { ...msgs[idx], feedback: msgs[idx].feedback === tipo ? undefined : tipo }
+      msgs[idx] = { ...msgs[idx], feedback: novoValor }
       return { ...c, msgs }
     })
+    fetch(`${API}/api/atlas/rag_feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ feedback: novoValor ?? null, response_id: responseId ?? null, conv_id: convId })
+    }).catch(() => {})
   }
 
   // ── Editar mensagem ───────────────────────────────────────────────────────
@@ -1393,7 +1399,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   body: JSON.stringify({ ...base, history: h3, previous_response_id: null, store: false })
                 })
                 const reader2 = res2.body!.getReader()
-                let buf2 = '', text2 = ''
+                let buf2 = '', text2 = '', respId2 = ''
                 while (true) {
                   const { done: d2, value: v2 } = await reader2.read()
                   if (d2) break
@@ -1401,7 +1407,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   const lines2 = buf2.split('\n'); buf2 = lines2.pop() || ''
                   for (const l2 of lines2) {
                     if (!l2.startsWith('data: ')) continue
-                    try { const e2 = JSON.parse(l2.slice(6)); if (e2.type === 'done') text2 = e2.text } catch {}
+                    try { const e2 = JSON.parse(l2.slice(6)); if (e2.type === 'done') { text2 = e2.text; respId2 = e2.response_id || '' } } catch {}
                   }
                 }
                 updateConversa(convId, c => {
@@ -1409,7 +1415,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   msgs[msgs.length - 1] = {
                     role: 'assistant',
                     text: text2 || `Por favor, envie o arquivo Excel de **${modulo}** usando o botão abaixo.`,
-                    tools: toolNames, streaming: false
+                    tools: toolNames, streaming: false,
+                    response_id: respId2 || undefined
                   }
                   return { ...c, msgs, history: [...h3, { role: 'model', parts: [{ text: text2 }] }] }
                 })
@@ -1437,7 +1444,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   body: JSON.stringify({ ...base, history: h3, previous_response_id: null, store: false })
                 })
                 const reader2 = res2.body!.getReader()
-                let buf2 = '', text2 = ''
+                let buf2 = '', text2 = '', respId2 = ''
                 while (true) {
                   const { done: d2, value: v2 } = await reader2.read()
                   if (d2) break
@@ -1445,7 +1452,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   const lines2 = buf2.split('\n'); buf2 = lines2.pop() || ''
                   for (const l2 of lines2) {
                     if (!l2.startsWith('data: ')) continue
-                    try { const e2 = JSON.parse(l2.slice(6)); if (e2.type === 'done') text2 = e2.text } catch {}
+                    try { const e2 = JSON.parse(l2.slice(6)); if (e2.type === 'done') { text2 = e2.text; respId2 = e2.response_id || '' } } catch {}
                   }
                 }
                 updateConversa(convId, c => {
@@ -1453,7 +1460,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   msgs[msgs.length - 1] = {
                     role: 'assistant',
                     text: text2 || '(sem resposta)',
-                    tools: toolNames, streaming: false
+                    tools: toolNames, streaming: false,
+                    response_id: respId2 || undefined
                   }
                   return { ...c, msgs, history: [...h3, { role: 'model', parts: [{ text: text2 }] }] }
                 })
@@ -1477,7 +1485,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   text: parsed.displayText || (parsed.artifact ? '' : '(sem resposta)'),
                   streaming: false,
                   artifact: parsed.artifact || undefined,
-                  citations: citations.length > 0 ? citations : undefined
+                  citations: citations.length > 0 ? citations : undefined,
+                  response_id: evt.response_id || undefined
                 }
                 return { ...c, msgs, history: newHistory }
               })
@@ -2385,7 +2394,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                       )}
                       <div style={{ width: 1, height: 16, background: '#2d3148', margin: '0 2px' }} />
                       <IcBtn
-                        onClick={() => darFeedback(ativaId!, i, 'up')}
+                        onClick={() => darFeedback(ativaId!, i, m.feedback === 'up' ? undefined : 'up', m.response_id)}
                         tip="Boa resposta"
                         active={m.feedback === 'up'}
                         color="green"
@@ -2393,7 +2402,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                         <IconThumbUp />
                       </IcBtn>
                       <IcBtn
-                        onClick={() => darFeedback(ativaId!, i, 'down')}
+                        onClick={() => darFeedback(ativaId!, i, m.feedback === 'down' ? undefined : 'down', m.response_id)}
                         tip="Resposta ruim"
                         active={m.feedback === 'down'}
                         color="red"
