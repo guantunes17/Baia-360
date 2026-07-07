@@ -108,6 +108,56 @@ class AtlasLog(db.Model):
     total_msgs  = db.Column(db.Integer, default=0)
     criado_em   = db.Column(db.DateTime, default=datetime.utcnow)
 
+class AtlasRAGTrace(db.Model):
+    """
+    Uma linha por turno do Atlas que envolveu retrieval (file_search). Fonte
+    da verdade para observabilidade de RAG — telemetria de retrieval,
+    metadados da resposta, feedback do usuário e scores de avaliação
+    (preenchidos por fases posteriores).
+
+    Escrita de forma assíncrona DEPOIS que o stream SSE termina (ver
+    registrar_rag_trace), então não adiciona latência à resposta do usuário.
+
+    NOTA DE DEPLOY: tabela nova — db.create_all() a cria no próximo restart
+    do container (ver entrypoint.sh). Sem migração manual.
+    """
+    __tablename__ = 'atlas_rag_trace'
+    id            = db.Column(db.Integer, primary_key=True)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=True, index=True)
+    conv_id       = db.Column(db.String(20), nullable=True, index=True)
+    response_id   = db.Column(db.String(80), nullable=True, index=True)
+    modelo        = db.Column(db.String(50), nullable=True)
+
+    pergunta      = db.Column(db.Text, nullable=True)          # pergunta do usuário (truncada)
+    resposta      = db.Column(db.Text, nullable=True)          # resposta do assistente (truncada)
+
+    # Telemetria de retrieval (Tier 0)
+    usou_file_search   = db.Column(db.Boolean, default=False, index=True)
+    retrieval_query    = db.Column(db.Text, nullable=True)
+    retrieval_count    = db.Column(db.Integer, default=0)      # nº de chunks retornados
+    top_score          = db.Column(db.Float, nullable=True)    # maior relevance score
+    mean_score         = db.Column(db.Float, nullable=True)
+    zero_retrieval     = db.Column(db.Boolean, default=False, index=True)
+    chunks_json        = db.Column(db.Text, nullable=True)     # [{file_id, filename, score, quote}]
+
+    # Heurísticas (Tier 1)
+    n_file_citations   = db.Column(db.Integer, default=0)      # quantas file_citation a resposta usou
+    citation_coverage  = db.Column(db.Boolean, default=False)  # resposta citou algum chunk?
+    feedback           = db.Column(db.String(10), nullable=True, index=True)  # 'up' | 'down' | None
+
+    # Groundedness (Tier 2) e Judge (Tier 3) — preenchidos por fases posteriores
+    groundedness       = db.Column(db.Float, nullable=True)    # cosseno resposta×chunks
+    eval_faithfulness  = db.Column(db.Float, nullable=True)
+    eval_answer_rel    = db.Column(db.Float, nullable=True)
+    eval_context_rel   = db.Column(db.Float, nullable=True)
+    eval_flagged       = db.Column(db.Boolean, default=False, index=True)  # entrou na triagem do judge
+    eval_modelo        = db.Column(db.String(50), nullable=True)
+
+    latencia_ms   = db.Column(db.Integer, nullable=True)
+    tokens_in     = db.Column(db.Integer, nullable=True)
+    tokens_out    = db.Column(db.Integer, nullable=True)
+    criado_em     = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
 class AtlasProjeto(db.Model):
     __tablename__ = 'atlas_projetos'
     id          = db.Column(db.Integer, primary_key=True)
@@ -253,6 +303,78 @@ def migrar_colunas_novas():
             print(f'[migracao] Coluna "{nome}" adicionada a "{tabela}".')
 
     db.session.commit()
+
+
+# ── RAG observability: writer assíncrono ──────────────────────────────────────
+# Config models (independentes do ATLAS_MODEL)
+RAG_JUDGE_MODEL = os.getenv('RAG_JUDGE_MODEL', 'gpt-4o-mini')
+RAG_EMBED_MODEL = os.getenv('RAG_EMBED_MODEL', 'text-embedding-3-small')
+PHOENIX_OTLP_ENABLED = os.getenv('PHOENIX_OTLP_ENABLED', '0') == '1'
+
+def _emit_otel_span(trace_dict: dict):
+    """Emite um span OTLP para o Phoenix APENAS se PHOENIX_OTLP_ENABLED=1.
+    Em produção fica desligado (no-op). Em falha, engole a exceção — nunca
+    deixa a observabilidade quebrar o request."""
+    if not PHOENIX_OTLP_ENABLED:
+        return
+    try:
+        from phoenix.otel import register  # import tardio: só quando ligado
+        tracer = register(project_name='baia360-rag', batch=True).get_tracer(__name__)
+        with tracer.start_as_current_span('rag.retrieval') as span:
+            span.set_attribute('rag.retrieval_count', trace_dict.get('retrieval_count', 0))
+            span.set_attribute('rag.top_score', trace_dict.get('top_score') or 0.0)
+            span.set_attribute('rag.zero_retrieval', trace_dict.get('zero_retrieval', False))
+            span.set_attribute('rag.latencia_ms', trace_dict.get('latencia_ms') or 0)
+    except Exception:
+        pass
+
+def registrar_rag_trace(app_obj, trace_dict: dict):
+    """Grava uma AtlasRAGTrace numa thread de background, DEPOIS que o stream
+    já terminou. Recebe o app para abrir um app_context próprio (a thread não
+    herda o contexto do request). Best-effort: qualquer erro é logado e
+    engolido — observabilidade nunca derruba o Atlas."""
+    def _worker():
+        with app_obj.app_context():
+            try:
+                chunks = trace_dict.get('chunks') or []
+                scores = [c['score'] for c in chunks if c.get('score') is not None]
+                row = AtlasRAGTrace(
+                    usuario_id       = trace_dict.get('usuario_id'),
+                    conv_id          = trace_dict.get('conv_id'),
+                    response_id      = trace_dict.get('response_id'),
+                    modelo           = trace_dict.get('modelo'),
+                    pergunta         = (trace_dict.get('pergunta') or '')[:4000],
+                    resposta         = (trace_dict.get('resposta') or '')[:8000],
+                    usou_file_search = trace_dict.get('usou_file_search', False),
+                    retrieval_query  = (trace_dict.get('retrieval_query') or '')[:2000],
+                    retrieval_count  = len(chunks),
+                    top_score        = max(scores) if scores else None,
+                    mean_score       = (sum(scores) / len(scores)) if scores else None,
+                    zero_retrieval   = trace_dict.get('usou_file_search', False) and len(chunks) == 0,
+                    chunks_json      = json.dumps(chunks, ensure_ascii=False)[:200000],
+                    n_file_citations = trace_dict.get('n_file_citations', 0),
+                    citation_coverage= trace_dict.get('n_file_citations', 0) > 0,
+                    latencia_ms      = trace_dict.get('latencia_ms'),
+                    tokens_in        = trace_dict.get('tokens_in'),
+                    tokens_out       = trace_dict.get('tokens_out'),
+                )
+                db.session.add(row)
+                db.session.commit()
+                _emit_otel_span(trace_dict)
+            except Exception:
+                db.session.rollback()
+                traceback.print_exc()
+    threading.Thread(target=_worker, daemon=True).start()
+
+def purgar_rag_traces(dias: int = 90) -> int:
+    """Apaga traces com mais de `dias`. Idempotente. Retorna nº de linhas."""
+    from sqlalchemy import text
+    res = db.session.execute(
+        text("DELETE FROM atlas_rag_trace WHERE criado_em < NOW() - (:d || ' days')::interval"),
+        {'d': dias}
+    )
+    db.session.commit()
+    return res.rowcount or 0
 
 
 # ── Atlas: configurações server-side (imutáveis pelo cliente) ────────────────
@@ -2404,6 +2526,22 @@ def atlas_chat():
         input_list   = converter_input(history)
         openai_tools = build_tools(ATLAS_TOOLS_DECLARATIONS)
 
+        # RAG observability: última mensagem do usuário, capturada para o trace
+        _rag_pergunta = ''
+        try:
+            for _m in reversed(input_list):
+                if _m.get('role') == 'user':
+                    _c = _m.get('content')
+                    if isinstance(_c, str):
+                        _rag_pergunta = _c
+                    elif isinstance(_c, list):
+                        _rag_pergunta = ' '.join(
+                            p.get('text', '') for p in _c if isinstance(p, dict) and p.get('text')
+                        )
+                    break
+        except Exception:
+            _rag_pergunta = ''
+
         # ── Chamada à Responses API com streaming SSE ─────────────────────────
         def generate():
             try:
@@ -2424,10 +2562,12 @@ def atlas_chat():
                     stream=True,
                     reasoning={'effort': ATLAS_REASONING_EFFORT, 'summary': 'auto'},
                     store=True,
+                    include=['file_search_call.results'],
                 )
                 if previous_resp_id:
                     kwargs['previous_response_id'] = previous_resp_id
 
+                _rag_t0 = time.time()   # RAG observability: início da medição de latência
                 stream = client.responses.create(**kwargs)
 
                 text_buffer     = ''
@@ -2471,22 +2611,65 @@ def atlas_chat():
                     elif etype == 'response.completed':
                         resp_id   = getattr(event.response, 'id', None)
                         citations = []
+                        rag_chunks = []          # [{file_id, filename, score, quote}]
+                        rag_query  = None
+                        n_file_cit = 0
                         try:
                             output = getattr(event.response, 'output', None) or []
                             for item in output:
+                                # (a) file_search_call output item → resultados de retrieval
+                                if getattr(item, 'type', '') == 'file_search_call':
+                                    queries = getattr(item, 'queries', None) or []
+                                    if queries:
+                                        rag_query = ' | '.join([str(q) for q in queries])
+                                    results = getattr(item, 'results', None) or []
+                                    for r in results:
+                                        rag_chunks.append({
+                                            'file_id':  getattr(r, 'file_id', None),
+                                            'filename': getattr(r, 'filename', None),
+                                            'score':    getattr(r, 'score', None),
+                                            'quote':    (getattr(r, 'text', None) or '')[:600],
+                                        })
+                                # (b) conteúdo da mensagem → annotations (url e file citations)
                                 content = getattr(item, 'content', None) or []
                                 for part in content:
                                     annotations = getattr(part, 'annotations', None) or []
                                     for ann in annotations:
-                                        if getattr(ann, 'type', '') == 'url_citation':
+                                        atype = getattr(ann, 'type', '')
+                                        if atype == 'url_citation':
                                             url   = getattr(ann, 'url', '')
                                             title = getattr(ann, 'title', url)
                                             start = getattr(ann, 'start_index', None)
                                             end   = getattr(ann, 'end_index', None)
                                             if url and not any(c['url'] == url for c in citations):
                                                 citations.append({'url': url, 'title': title, 'start': start, 'end': end})
+                                        elif atype == 'file_citation':
+                                            n_file_cit += 1
                         except Exception:
-                            pass
+                            traceback.print_exc()
+
+                        # ── RAG observability: dispatch assíncrono (não bloqueia) ──
+                        try:
+                            usage = getattr(event.response, 'usage', None)
+                            trace_dict = {
+                                'usuario_id':       usuario_id,
+                                'conv_id':          conv_id,
+                                'response_id':      resp_id,
+                                'modelo':           ATLAS_MODEL,
+                                'pergunta':         _rag_pergunta,
+                                'resposta':         text_buffer,
+                                'usou_file_search': bool(rag_chunks) or (rag_query is not None),
+                                'retrieval_query':  rag_query,
+                                'chunks':           rag_chunks,
+                                'n_file_citations': n_file_cit,
+                                'latencia_ms':      int((time.time() - _rag_t0) * 1000),
+                                'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
+                                'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
+                            }
+                            registrar_rag_trace(app, trace_dict)
+                        except Exception:
+                            traceback.print_exc()
+
                         yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations})}\n\n"
 
                     elif etype == 'error':
