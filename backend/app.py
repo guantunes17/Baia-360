@@ -335,6 +335,52 @@ RAG_JUDGE_MODEL = os.getenv('RAG_JUDGE_MODEL', 'gpt-4o-mini')
 RAG_EMBED_MODEL = os.getenv('RAG_EMBED_MODEL', 'text-embedding-3-small')
 PHOENIX_OTLP_ENABLED = os.getenv('PHOENIX_OTLP_ENABLED', '0') == '1'
 
+def extrair_rag_do_output(output) -> dict:
+    """Recebe event.response.output (lista de items de uma Response da OpenAI) e
+    devolve {'chunks': [...], 'retrieval_query': str|None, 'n_file_citations': int,
+    'url_citations': [...]}. Função pura, sem efeitos colaterais — extraída do
+    branch response.completed do handler SSE de atlas_chat para ser testável
+    isoladamente (ver tests/observabilidade/test_01_parser.py)."""
+    chunks           = []   # [{file_id, filename, score, quote}]
+    retrieval_query  = None
+    n_file_citations = 0
+    url_citations    = []
+    for item in (output or []):
+        # (a) file_search_call output item → resultados de retrieval
+        if getattr(item, 'type', '') == 'file_search_call':
+            queries = getattr(item, 'queries', None) or []
+            if queries:
+                retrieval_query = ' | '.join([str(q) for q in queries])
+            results = getattr(item, 'results', None) or []
+            for r in results:
+                chunks.append({
+                    'file_id':  getattr(r, 'file_id', None),
+                    'filename': getattr(r, 'filename', None),
+                    'score':    getattr(r, 'score', None),
+                    'quote':    (getattr(r, 'text', None) or '')[:600],
+                })
+        # (b) conteúdo da mensagem → annotations (url e file citations)
+        content = getattr(item, 'content', None) or []
+        for part in content:
+            annotations = getattr(part, 'annotations', None) or []
+            for ann in annotations:
+                atype = getattr(ann, 'type', '')
+                if atype == 'url_citation':
+                    url   = getattr(ann, 'url', '')
+                    title = getattr(ann, 'title', url)
+                    start = getattr(ann, 'start_index', None)
+                    end   = getattr(ann, 'end_index', None)
+                    if url and not any(c['url'] == url for c in url_citations):
+                        url_citations.append({'url': url, 'title': title, 'start': start, 'end': end})
+                elif atype == 'file_citation':
+                    n_file_citations += 1
+    return {
+        'chunks': chunks,
+        'retrieval_query': retrieval_query,
+        'n_file_citations': n_file_citations,
+        'url_citations': url_citations,
+    }
+
 def _emit_otel_span(trace_dict: dict):
     """Emite um span OTLP para o Phoenix APENAS se PHOENIX_OTLP_ENABLED=1.
     Em produção fica desligado (no-op). Em falha, engole a exceção — nunca
@@ -352,6 +398,61 @@ def _emit_otel_span(trace_dict: dict):
     except Exception:
         pass
 
+def _persistir_rag_trace(trace_dict: dict) -> int:
+    """Monta e grava a AtlasRAGTrace, roda Tier 2/3 (groundedness + judge triado),
+    retorna o id da linha. Síncrona — extraída do worker de background de
+    registrar_rag_trace para ser testável diretamente, sem thread nem
+    app_context próprio (ver tests/observabilidade/test_02_writer.py). Assume
+    que já roda dentro de um app_context com sessão de DB ativa; erros de
+    avaliação são engolidos (best-effort), mas erros na gravação inicial da
+    linha propagam para o chamador."""
+    chunks = trace_dict.get('chunks') or []
+    scores = [c['score'] for c in chunks if c.get('score') is not None]
+    row = AtlasRAGTrace(
+        usuario_id       = trace_dict.get('usuario_id'),
+        conv_id          = trace_dict.get('conv_id'),
+        response_id      = trace_dict.get('response_id'),
+        modelo           = trace_dict.get('modelo'),
+        pergunta         = (trace_dict.get('pergunta') or '')[:4000],
+        resposta         = (trace_dict.get('resposta') or '')[:8000],
+        usou_file_search = trace_dict.get('usou_file_search', False),
+        retrieval_query  = (trace_dict.get('retrieval_query') or '')[:2000],
+        retrieval_count  = len(chunks),
+        top_score        = max(scores) if scores else None,
+        mean_score       = (sum(scores) / len(scores)) if scores else None,
+        zero_retrieval   = trace_dict.get('usou_file_search', False) and len(chunks) == 0,
+        chunks_json      = json.dumps(chunks, ensure_ascii=False)[:200000],
+        n_file_citations = trace_dict.get('n_file_citations', 0),
+        citation_coverage= trace_dict.get('n_file_citations', 0) > 0,
+        latencia_ms      = trace_dict.get('latencia_ms'),
+        tokens_in        = trace_dict.get('tokens_in'),
+        tokens_out       = trace_dict.get('tokens_out'),
+    )
+    db.session.add(row)
+    db.session.commit()
+    _emit_otel_span(trace_dict)
+
+    try:
+        _client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', '').strip())
+        g = avaliar_groundedness(_client, row.resposta or '', chunks)
+        if g is not None:
+            row.groundedness = g
+        if _deve_julgar(row):
+            row.eval_flagged = True
+            row.eval_modelo  = RAG_JUDGE_MODEL
+            j = avaliar_judge(_client, row.pergunta or '', row.resposta or '', chunks)
+            if j:
+                row.eval_faithfulness = j['faithfulness']
+                row.eval_answer_rel   = j['answer_relevancy']
+                row.eval_context_rel  = j['context_relevancy']
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        traceback.print_exc()
+
+    return row.id
+
+
 def registrar_rag_trace(app_obj, trace_dict: dict):
     """Grava uma AtlasRAGTrace numa thread de background, DEPOIS que o stream
     já terminou. Recebe o app para abrir um app_context próprio (a thread não
@@ -360,49 +461,7 @@ def registrar_rag_trace(app_obj, trace_dict: dict):
     def _worker():
         with app_obj.app_context():
             try:
-                chunks = trace_dict.get('chunks') or []
-                scores = [c['score'] for c in chunks if c.get('score') is not None]
-                row = AtlasRAGTrace(
-                    usuario_id       = trace_dict.get('usuario_id'),
-                    conv_id          = trace_dict.get('conv_id'),
-                    response_id      = trace_dict.get('response_id'),
-                    modelo           = trace_dict.get('modelo'),
-                    pergunta         = (trace_dict.get('pergunta') or '')[:4000],
-                    resposta         = (trace_dict.get('resposta') or '')[:8000],
-                    usou_file_search = trace_dict.get('usou_file_search', False),
-                    retrieval_query  = (trace_dict.get('retrieval_query') or '')[:2000],
-                    retrieval_count  = len(chunks),
-                    top_score        = max(scores) if scores else None,
-                    mean_score       = (sum(scores) / len(scores)) if scores else None,
-                    zero_retrieval   = trace_dict.get('usou_file_search', False) and len(chunks) == 0,
-                    chunks_json      = json.dumps(chunks, ensure_ascii=False)[:200000],
-                    n_file_citations = trace_dict.get('n_file_citations', 0),
-                    citation_coverage= trace_dict.get('n_file_citations', 0) > 0,
-                    latencia_ms      = trace_dict.get('latencia_ms'),
-                    tokens_in        = trace_dict.get('tokens_in'),
-                    tokens_out       = trace_dict.get('tokens_out'),
-                )
-                db.session.add(row)
-                db.session.commit()
-                _emit_otel_span(trace_dict)
-
-                try:
-                    _client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', '').strip())
-                    g = avaliar_groundedness(_client, row.resposta or '', chunks)
-                    if g is not None:
-                        row.groundedness = g
-                    if _deve_julgar(row):
-                        row.eval_flagged = True
-                        row.eval_modelo  = RAG_JUDGE_MODEL
-                        j = avaliar_judge(_client, row.pergunta or '', row.resposta or '', chunks)
-                        if j:
-                            row.eval_faithfulness = j['faithfulness']
-                            row.eval_answer_rel   = j['answer_relevancy']
-                            row.eval_context_rel  = j['context_relevancy']
-                    db.session.commit()
-                except Exception:
-                    db.session.rollback()
-                    traceback.print_exc()
+                _persistir_rag_trace(trace_dict)
             except Exception:
                 db.session.rollback()
                 traceback.print_exc()
@@ -2785,36 +2844,12 @@ def atlas_chat():
                         rag_query  = None
                         n_file_cit = 0
                         try:
-                            output = getattr(event.response, 'output', None) or []
-                            for item in output:
-                                # (a) file_search_call output item → resultados de retrieval
-                                if getattr(item, 'type', '') == 'file_search_call':
-                                    queries = getattr(item, 'queries', None) or []
-                                    if queries:
-                                        rag_query = ' | '.join([str(q) for q in queries])
-                                    results = getattr(item, 'results', None) or []
-                                    for r in results:
-                                        rag_chunks.append({
-                                            'file_id':  getattr(r, 'file_id', None),
-                                            'filename': getattr(r, 'filename', None),
-                                            'score':    getattr(r, 'score', None),
-                                            'quote':    (getattr(r, 'text', None) or '')[:600],
-                                        })
-                                # (b) conteúdo da mensagem → annotations (url e file citations)
-                                content = getattr(item, 'content', None) or []
-                                for part in content:
-                                    annotations = getattr(part, 'annotations', None) or []
-                                    for ann in annotations:
-                                        atype = getattr(ann, 'type', '')
-                                        if atype == 'url_citation':
-                                            url   = getattr(ann, 'url', '')
-                                            title = getattr(ann, 'title', url)
-                                            start = getattr(ann, 'start_index', None)
-                                            end   = getattr(ann, 'end_index', None)
-                                            if url and not any(c['url'] == url for c in citations):
-                                                citations.append({'url': url, 'title': title, 'start': start, 'end': end})
-                                        elif atype == 'file_citation':
-                                            n_file_cit += 1
+                            output   = getattr(event.response, 'output', None) or []
+                            extraido = extrair_rag_do_output(output)
+                            rag_chunks = extraido['chunks']
+                            rag_query  = extraido['retrieval_query']
+                            n_file_cit = extraido['n_file_citations']
+                            citations  = extraido['url_citations']
                         except Exception:
                             traceback.print_exc()
 

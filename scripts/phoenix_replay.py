@@ -82,22 +82,26 @@ def _tracer():
     trace.set_tracer_provider(provider)
     return trace.get_tracer('baia360.phoenix_replay')
 
-def _emitir_span(tracer, t):
-    """Cria um span CHAIN (pergunta→resposta) com um filho RETRIEVER que
-    carrega os documentos recuperados e seus scores."""
+def emitir_trace_para_phoenix(trace: dict, tracer) -> None:
+    """Emite UMA trace (mesmo shape do export_traces / AtlasRAGTrace) como span
+    CHAIN+RETRIEVER. Cria um span CHAIN (pergunta→resposta) com um filho
+    RETRIEVER que carrega os documentos recuperados e seus scores. Reutilizável
+    pelo replay de produção (abaixo) E pela suíte de validação
+    (tests/observabilidade/run_validation.py --phoenix) — uma única definição
+    do schema de spans, sem divergência entre as duas."""
     with tracer.start_as_current_span('atlas.turn') as chain:
         chain.set_attribute('openinference.span.kind', 'CHAIN')
-        chain.set_attribute('input.value', t.get('pergunta') or '')
-        chain.set_attribute('output.value', t.get('resposta') or '')
-        chain.set_attribute('metadata.trace_id', t.get('id'))
-        chain.set_attribute('metadata.groundedness', t.get('groundedness') or 0.0)
-        chain.set_attribute('metadata.eval_faithfulness', t.get('eval_faithfulness') or 0.0)
-        chain.set_attribute('metadata.feedback', t.get('feedback') or '')
-        chain.set_attribute('metadata.latencia_ms', t.get('latencia_ms') or 0)
+        chain.set_attribute('input.value', trace.get('pergunta') or '')
+        chain.set_attribute('output.value', trace.get('resposta') or '')
+        chain.set_attribute('metadata.trace_id', trace.get('id'))
+        chain.set_attribute('metadata.groundedness', trace.get('groundedness') or 0.0)
+        chain.set_attribute('metadata.eval_faithfulness', trace.get('eval_faithfulness') or 0.0)
+        chain.set_attribute('metadata.feedback', trace.get('feedback') or '')
+        chain.set_attribute('metadata.latencia_ms', trace.get('latencia_ms') or 0)
         with tracer.start_as_current_span('atlas.retrieval') as ret:
             ret.set_attribute('openinference.span.kind', 'RETRIEVER')
-            ret.set_attribute('input.value', t.get('retrieval_query') or t.get('pergunta') or '')
-            for i, c in enumerate(t.get('chunks') or []):
+            ret.set_attribute('input.value', trace.get('retrieval_query') or trace.get('pergunta') or '')
+            for i, c in enumerate(trace.get('chunks') or []):
                 ret.set_attribute(f'retrieval.documents.{i}.document.id', str(c.get('file_id') or ''))
                 ret.set_attribute(f'retrieval.documents.{i}.document.content', c.get('quote') or '')
                 ret.set_attribute(f'retrieval.documents.{i}.document.score', c.get('score') or 0.0)
@@ -112,7 +116,7 @@ def replay_once(tracer):
         return
     for t in traces:
         try:
-            _emitir_span(tracer, t)
+            emitir_trace_para_phoenix(t, tracer)
         except Exception as e:
             print('[replay] falha ao emitir span:', e, file=sys.stderr)
     _salvar_cursor(traces[-1]['criado_em'])

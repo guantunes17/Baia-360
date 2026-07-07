@@ -1,0 +1,9 @@
+# This suite imports backend/app.py directly (not over HTTP, unlike tests/redteam),
+# so it needs everything in backend/requirements.txt installed in the same
+# environment, plus pytest itself:
+pytest==8.3.4
+
+# Optional, only needed for `run_validation.py --phoenix`:
+#   opentelemetry-sdk
+#   opentelemetry-exporter-otlp-proto-grpc
+# (same as scripts/phoenix_replay.py — see its docstring)
