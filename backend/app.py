@@ -159,6 +159,29 @@ class AtlasRAGTrace(db.Model):
     tokens_out    = db.Column(db.Integer, nullable=True)
     criado_em     = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
+class AtlasGoldenQA(db.Model):
+    """Perguntas canônicas para teste de regressão do RAG. Semeadas por admin."""
+    __tablename__ = 'atlas_golden_qa'
+    id            = db.Column(db.Integer, primary_key=True)
+    pergunta      = db.Column(db.Text, nullable=False)
+    resposta_ref  = db.Column(db.Text, nullable=True)   # resposta de referência (opcional)
+    ativo         = db.Column(db.Boolean, default=True)
+    criado_em     = db.Column(db.DateTime, default=datetime.utcnow)
+
+class AtlasGoldenRun(db.Model):
+    """Uma execução do golden set. Guarda médias para comparar regressões."""
+    __tablename__ = 'atlas_golden_run'
+    id             = db.Column(db.Integer, primary_key=True)
+    motivo         = db.Column(db.String(50), nullable=True)  # 'deploy'|'docs'|'model'|'floor'|'manual'
+    n_perguntas    = db.Column(db.Integer, default=0)
+    mean_faith     = db.Column(db.Float, nullable=True)
+    mean_answer    = db.Column(db.Float, nullable=True)
+    mean_context   = db.Column(db.Float, nullable=True)
+    mean_ground    = db.Column(db.Float, nullable=True)
+    custo_estimado = db.Column(db.Float, nullable=True)
+    detalhe_json   = db.Column(db.Text, nullable=True)
+    criado_em      = db.Column(db.DateTime, default=datetime.utcnow)
+
 class AtlasProjeto(db.Model):
     __tablename__ = 'atlas_projetos'
     id          = db.Column(db.Integer, primary_key=True)
@@ -2482,6 +2505,87 @@ Sem explicações, sem markdown, apenas o JSON."""
         except Exception as e:
             print(f'[AtlasMemoria] Erro na análise: {e}')
 
+
+# ── Converte declarações de tools para formato OpenAI strict mode ────────────
+def build_tools(declarations: list) -> list:
+    tools = []
+    for t in declarations:
+        params = t.get('parameters', {'type': 'object', 'properties': {}})
+        properties = params.get('properties', {})
+        all_keys = list(properties.keys())
+        tools.append({
+            'type': 'function',
+            'name': t['name'],
+            'description': t.get('description', ''),
+            'parameters': {
+                'type': 'object',
+                'properties': properties,
+                'required': all_keys,
+                'additionalProperties': False
+            },
+            'strict': True
+        })
+    return tools
+
+
+def responder_atlas(pergunta: str, usuario_id: int = None):
+    """Chamada não-streaming ao Atlas, para uso fora do fluxo de chat interativo
+    (regressão do golden set em tasks_observabilidade.py). Reaproveita a montagem
+    de tools/system prompt do atlas_chat, mas com store=False e sem streaming —
+    não deixa rastro na Conversation State da OpenAI. Retorna (resposta, chunks),
+    onde chunks é a lista de resultados de file_search (mesmo formato usado em
+    registrar_rag_trace: file_id, filename, score, quote)."""
+    api_key = os.getenv('OPENAI_API_KEY', '').strip()
+    if not api_key:
+        raise RuntimeError('OPENAI_API_KEY não configurada no servidor')
+    client = OpenAI(api_key=api_key)
+
+    nome_usuario = 'Usuário'
+    if usuario_id:
+        usuario = User.query.get(usuario_id)
+        if usuario:
+            nome_usuario = usuario.nome
+    system_prompt = ATLAS_SYSTEM_PROMPT_BASE.replace('{nome_usuario}', nome_usuario)
+
+    all_tools = build_tools(ATLAS_TOOLS_DECLARATIONS)
+    all_tools.append({'type': 'web_search_preview'})
+    vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
+    if vs_id:
+        all_tools.append({'type': 'file_search', 'vector_store_ids': [vs_id]})
+
+    resp = client.responses.create(
+        model=ATLAS_MODEL,
+        input=[{'role': 'user', 'content': [{'type': 'input_text', 'text': pergunta}]}],
+        instructions=system_prompt,
+        temperature=ATLAS_TEMPERATURE,
+        tools=all_tools,
+        stream=False,
+        reasoning={'effort': ATLAS_REASONING_EFFORT, 'summary': 'auto'},
+        store=False,
+        include=['file_search_call.results'],
+    )
+
+    resposta_texto = ''
+    chunks = []
+    for item in (resp.output or []):
+        if getattr(item, 'type', '') == 'file_search_call':
+            results = getattr(item, 'results', None) or []
+            for r in results:
+                chunks.append({
+                    'file_id':  getattr(r, 'file_id', None),
+                    'filename': getattr(r, 'filename', None),
+                    'score':    getattr(r, 'score', None),
+                    'quote':    (getattr(r, 'text', None) or '')[:600],
+                })
+        content = getattr(item, 'content', None) or []
+        for part in content:
+            texto = getattr(part, 'text', None)
+            if texto:
+                resposta_texto += texto
+
+    return resposta_texto, chunks
+
+
 @app.route('/api/atlas/chat', methods=['POST'])
 @limiter.limit("60 per minute")
 @jwt_required()
@@ -2588,27 +2692,6 @@ def atlas_chat():
                     input_list.append({'role': role, 'content': content})
 
             return input_list
-
-        # ── Converte declarações de tools para formato OpenAI strict mode ─────
-        def build_tools(declarations: list) -> list:
-            tools = []
-            for t in declarations:
-                params = t.get('parameters', {'type': 'object', 'properties': {}})
-                properties = params.get('properties', {})
-                all_keys = list(properties.keys())
-                tools.append({
-                    'type': 'function',
-                    'name': t['name'],
-                    'description': t.get('description', ''),
-                    'parameters': {
-                        'type': 'object',
-                        'properties': properties,
-                        'required': all_keys,
-                        'additionalProperties': False
-                    },
-                    'strict': True
-                })
-            return tools
 
         input_list   = converter_input(history)
         openai_tools = build_tools(ATLAS_TOOLS_DECLARATIONS)
@@ -3304,6 +3387,26 @@ def atlas_observabilidade():
         'serie_top_score':    [{'dia': str(r.d)[:10], 'score': round(float(r.s), 4) if r.s else None,
                                 'n': r.n} for r in serie],
     }), 200
+
+@app.route('/api/atlas/observabilidade/regressao', methods=['POST'])
+@jwt_required()
+def atlas_disparar_regressao():
+    """Dispara uma execução do golden set em background — apenas admins.
+    O worker web só agenda o processo; a regressão de fato roda em
+    tasks_observabilidade.py, isolada do request/response cycle."""
+    usuario = User.query.get(int(get_jwt_identity()))
+    if not usuario or usuario.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+    motivo = (request.get_json() or {}).get('motivo', 'manual')
+    import subprocess
+    def _run():
+        try:
+            subprocess.run(['python', 'tasks_observabilidade.py', 'regressao',
+                            '--motivo', motivo], check=False)
+        except Exception:
+            traceback.print_exc()
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'ok': True, 'msg': 'Regressão disparada em background.'}), 202
 
 @app.route('/api/atlas/conversas', methods=['GET'])
 @jwt_required()
