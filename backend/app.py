@@ -335,16 +335,42 @@ RAG_JUDGE_MODEL = os.getenv('RAG_JUDGE_MODEL', 'gpt-4o-mini')
 RAG_EMBED_MODEL = os.getenv('RAG_EMBED_MODEL', 'text-embedding-3-small')
 PHOENIX_OTLP_ENABLED = os.getenv('PHOENIX_OTLP_ENABLED', '0') == '1'
 
+# Citações de file_search no texto de resposta do gpt-5.4-mini (Responses API)
+# vêm como spans delimitados por caracteres da Private Use Area do Unicode, não
+# como texto normal — só aparecem com repr(), um print() comum não mostra nada:
+#   fileciteturn0file0turn0file5
+#  abre o span,  separa "filecite" de cada token turnNfileM (e os
+# tokens entre si),  fecha. Confirmado por diagnóstico ao vivo em 2026-07-08
+# contra o vector store real: um mesmo span pode agrupar vários tokens
+# turnNfileM, e a lista `part.annotations` (type 'file_citation') NÃO é 1:1 com
+# esses spans — na mesma resposta, 3 spans no texto renderizaram só 4 objetos de
+# annotation (nem 3, nem a soma de 8 tokens), e no limite pode vir vazia mesmo
+# com spans presentes no texto. Por isso a contagem é feita a partir do texto
+# (sempre presente), não de len(annotations) (não confiável).
+#
+# O dígito de turn é generalizado para \d+ (não travado em "turn0"): com
+# previous_response_id (conversas multi-turn), o modelo pode citar um arquivo
+# recuperado em um turno anterior, cujo file_search_call não está no output
+# desta resposta — turn general (não 0) é justamente esse caso de "reuso de
+# contexto" descrito abaixo. Travar o span em turn0 faria o span inteiro (e a
+# contagem) sumir sempre que isso acontecesse — o mesmo tipo de undercount que
+# este fix existe para eliminar.
+_FILE_CITE_SPAN  = re.compile('filecite(?:turn\\d+file\\d+)+')
+_FILE_CITE_TOKEN = re.compile(r'turn(\d+)file(\d+)')
+
+
 def extrair_rag_do_output(output) -> dict:
     """Recebe event.response.output (lista de items de uma Response da OpenAI) e
     devolve {'chunks': [...], 'retrieval_query': str|None, 'n_file_citations': int,
-    'url_citations': [...]}. Função pura, sem efeitos colaterais — extraída do
-    branch response.completed do handler SSE de atlas_chat para ser testável
-    isoladamente (ver tests/observabilidade/test_01_parser.py)."""
-    chunks           = []   # [{file_id, filename, score, quote}]
-    retrieval_query  = None
-    n_file_citations = 0
-    url_citations    = []
+    'url_citations': [...], 'file_citations': [...]}. Função pura, sem efeitos
+    colaterais — extraída do branch response.completed do handler SSE de
+    atlas_chat para ser testável isoladamente (ver
+    tests/observabilidade/test_01_parser.py)."""
+    chunks                     = []   # [{file_id, filename, score, quote}]
+    retrieval_query            = None
+    url_citations              = []
+    resposta_texto             = []
+    n_annotation_file_citations = 0
     for item in (output or []):
         # (a) file_search_call output item → resultados de retrieval
         if getattr(item, 'type', '') == 'file_search_call':
@@ -359,9 +385,12 @@ def extrair_rag_do_output(output) -> dict:
                     'score':    getattr(r, 'score', None),
                     'quote':    (getattr(r, 'text', None) or '')[:600],
                 })
-        # (b) conteúdo da mensagem → annotations (url e file citations)
+        # (b) conteúdo da mensagem → texto (para os spans de citação) + annotations (url citations)
         content = getattr(item, 'content', None) or []
         for part in content:
+            texto = getattr(part, 'text', None)
+            if texto:
+                resposta_texto.append(texto)
             annotations = getattr(part, 'annotations', None) or []
             for ann in annotations:
                 atype = getattr(ann, 'type', '')
@@ -373,12 +402,34 @@ def extrair_rag_do_output(output) -> dict:
                     if url and not any(c['url'] == url for c in url_citations):
                         url_citations.append({'url': url, 'title': title, 'start': start, 'end': end})
                 elif atype == 'file_citation':
-                    n_file_citations += 1
+                    n_annotation_file_citations += 1
+
+    spans = _FILE_CITE_SPAN.findall(''.join(resposta_texto))
+
+    file_citations = []
+    for span in spans:
+        arquivos = []
+        for turn_str, file_str in _FILE_CITE_TOKEN.findall(span):
+            if turn_str != '0':
+                continue  # cita um turno anterior — sem file_search_call nesta resposta para resolver o nome
+            idx = int(file_str)
+            if 0 <= idx < len(chunks):
+                nome = chunks[idx].get('filename')
+                if nome and nome not in arquivos:
+                    arquivos.append(nome)
+        file_citations.append({'files': arquivos})
+
+    # Spans no texto são a fonte confiável (sempre presentes quando há citação);
+    # len(annotations) só entra como fallback no caso teórico de annotations
+    # sem span algum no texto.
+    n_file_citations = len(spans) if spans else n_annotation_file_citations
+
     return {
         'chunks': chunks,
         'retrieval_query': retrieval_query,
         'n_file_citations': n_file_citations,
         'url_citations': url_citations,
+        'file_citations': file_citations,
     }
 
 def _emit_otel_span(trace_dict: dict):
@@ -2840,16 +2891,18 @@ def atlas_chat():
                     elif etype == 'response.completed':
                         resp_id   = getattr(event.response, 'id', None)
                         citations = []
+                        file_citations = []      # [{'files': [filename, ...]}, ...] — 1 entrada por span, sem texto de documento
                         rag_chunks = []          # [{file_id, filename, score, quote}]
                         rag_query  = None
                         n_file_cit = 0
                         try:
                             output   = getattr(event.response, 'output', None) or []
                             extraido = extrair_rag_do_output(output)
-                            rag_chunks = extraido['chunks']
-                            rag_query  = extraido['retrieval_query']
-                            n_file_cit = extraido['n_file_citations']
-                            citations  = extraido['url_citations']
+                            rag_chunks     = extraido['chunks']
+                            rag_query      = extraido['retrieval_query']
+                            n_file_cit     = extraido['n_file_citations']
+                            citations      = extraido['url_citations']
+                            file_citations = extraido['file_citations']
                         except Exception:
                             traceback.print_exc()
 
@@ -2875,7 +2928,7 @@ def atlas_chat():
                         except Exception:
                             traceback.print_exc()
 
-                        yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations, 'file_citations': file_citations})}\n\n"
 
                     elif etype == 'error':
                         yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
