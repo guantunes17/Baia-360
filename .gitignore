@@ -34,3 +34,4 @@ tests/redteam/results/
 # (REPORT.md itself IS committed — only the raw results/ dir is ignored)
 tests/observabilidade/results/
 tests/observabilidade/.venv/
+tests/observabilidade/obs_metrics_redacted.json
