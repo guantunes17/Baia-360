@@ -1,12 +1,12 @@
 # RAG observability — validation report
 
-**Generated:** 2026-07-07T23:39:21Z
+**Generated:** 2026-07-08T00:02:00Z
 
 Validates the RAG observability system shipped across 6 prompts (AtlasRAGTrace model + async writer, SSE capture hook, tiered evaluation, admin dashboard, golden-set regression loop, Phoenix export) — mirrors `tests/redteam/` in layout and reporting style. Runs with **zero OpenAI cost by default** (the OpenAI client is mocked); the one live, cost-incurring test only runs with `OBS_LIVE=1`.
 
 ## Summary
 
-**48/51 passed, 0 failed, 3 skipped.**
+**48/51 passed, 1 failed, 2 skipped.**
 
 | Tier | Pass | Fail | Skip |
 |---|---|---|---|
@@ -17,12 +17,12 @@ Validates the RAG observability system shipped across 6 prompts (AtlasRAGTrace m
 | test_04_retention | 0 | 0 | 2 |
 | test_05_feedback | 5 | 0 | 0 |
 | test_06_dashboard | 3 | 0 | 0 |
-| test_99_live | 0 | 0 | 1 |
+| test_99_live | 0 | 1 | 0 |
 
 ## Environment
 
 - **DB dialect:** sqlite
-- **Live test enabled (`OBS_LIVE=1`):** False
+- **Live test enabled (`OBS_LIVE=1`):** True
 - **OpenAI keys present:** True
 
 ## Skipped and why
@@ -31,7 +31,17 @@ Validates the RAG observability system shipped across 6 prompts (AtlasRAGTrace m
 |---|---|
 | `test_04_retention.py::test_purge_deletes_only_traces_older_than_window` | Skipped: requires PostgreSQL (test DB is 'sqlite') — set TEST_DATABASE_URL to a disposable Postgres to exercise this path |
 | `test_04_retention.py::test_purge_is_idempotent` | Skipped: requires PostgreSQL (test DB is 'sqlite') — set TEST_DATABASE_URL to a disposable Postgres to exercise this path |
-| `test_99_live.py::test_live_retrieval_returns_scored_chunks` | Skipped: OBS_LIVE not set to 1 — this is the one opt-in, cost-incurring test in the suite |
+
+## Failures
+
+### `test_99_live.py::test_live_retrieval_returns_scored_chunks`
+
+```
+test_99_live.py:44: in test_live_retrieval_returns_scored_chunks
+    assert chunks, 'expected at least one retrieved chunk for a question known to be covered'
+E   AssertionError: expected at least one retrieved chunk for a question known to be covered
+E   assert []
+```
 
 ## Issues found
 

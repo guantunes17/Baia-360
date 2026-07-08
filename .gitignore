@@ -33,3 +33,4 @@ tests/redteam/results/
 # RAG observability validation suite: generated per-run artifacts, not source
 # (REPORT.md itself IS committed — only the raw results/ dir is ignored)
 tests/observabilidade/results/
+tests/observabilidade/.venv/

@@ -4285,10 +4285,10 @@ def outlook_enviar_email():
     if not access_token:
         return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
 
-    destinatario      = data.get('destinatario', '').strip()
-    assunto           = data.get('assunto', '').strip()
-    corpo             = data.get('corpo', '').strip()
-    nome_destinatario = data.get('nome_destinatario', '').strip()
+    destinatario      = (data.get('destinatario') or '').strip()
+    assunto           = (data.get('assunto') or '').strip()
+    corpo             = (data.get('corpo') or '').strip()
+    nome_destinatario = (data.get('nome_destinatario') or '').strip()
 
     if not all([destinatario, assunto, corpo]):
         return jsonify({'erro': 'Campos obrigatórios: destinatario, assunto, corpo'}), 400
