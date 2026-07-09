@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Document, Paragraph, TextRun, HeadingLevel, Packer } from 'docx'
@@ -262,6 +262,81 @@ function parseArtifact(raw: string): { displayText: string; artifact: Artifact |
   return { displayText, artifact }
 }
 
+// Citações de file_search do gpt-5.4-mini chegam no texto como spans delimitados
+// por codepoints da Private Use Area (invisíveis, só aparecem com repr() no
+// backend) — ex.: 'fileciteturn0file0turn0file5'. Nunca
+// devem chegar crus na tela; ver backend/app.py (_FILE_CITE_SPAN) para o
+// diagnóstico ao vivo que confirmou o formato.
+//
+// O dígito de turn é \d+ (não travado em "turn0") pelo mesmo motivo do backend:
+// citações de um turno anterior (conversas com previous_response_id) usam outro
+// número — travar em turn0 deixaria esse span vazando cru na tela, violando o
+// requisito de nunca mostrar marcador bruto.
+const FILE_CITE_SPAN = /filecite(?:turn\d+file\d+)+/g
+const FILE_CITE_HREF_PREFIX = 'atlas-file-citation:'
+
+// Substitui cada span de citação por um link markdown reconhecível (href com
+// esquema próprio) na ordem em que aparecem no texto — mesma ordem do array
+// file_citations entregue pelo backend no payload 'done', então o índice N
+// aqui corresponde a file_citations[N]. Rodada tanto no buffer em streaming
+// quanto no texto final: nunca deixa o marcador bruto chegar ao ReactMarkdown.
+function injetarPlaceholdersDeCitacao(raw: string): string {
+  let n = 0
+  return raw.replace(FILE_CITE_SPAN, () => `[•](${FILE_CITE_HREF_PREFIX}${n++})`)
+}
+
+// react-markdown sanitiza qualquer URL fora de um allowlist de esquemas
+// (http/https/mailto/etc.) trocando-a por "" antes do componente `a` sequer
+// rodar — descoberto rodando o parser real: sem isso, o href da citação
+// chegava vazio no componente e o link caía no fallback (some com o chip,
+// mas o "" também não quebra o requisito de nunca mostrar marcador cru).
+// Deixa passar só o nosso esquema interno; delega o resto pro sanitizador
+// padrão do react-markdown, sem afrouxar a segurança pra links reais.
+function urlTransformComCitacoes(url: string): string {
+  if (url.startsWith(FILE_CITE_HREF_PREFIX)) return url
+  return defaultUrlTransform(url)
+}
+
+// Para copiar/exportar como texto puro (sem chip) — mesmos spans, mas sem
+// deixar rastro nenhum (nem o placeholder markdown) no texto copiado.
+function removerCitacoesDoTexto(raw: string): string {
+  return raw.replace(FILE_CITE_SPAN, '').replace(/[ \t]{2,}/g, ' ')
+}
+
+function rotuloCitacaoArquivo(entry: { files: string[] } | undefined): { label: string; title: string } {
+  const arquivos = entry?.files || []
+  if (arquivos.length === 0) return { label: 'fonte', title: '' }
+  if (arquivos.length === 1) {
+    const nome = arquivos[0]
+    const truncado = nome.length > 28 ? nome.slice(0, 25) + '…' : nome
+    return { label: truncado, title: nome }
+  }
+  return { label: `${arquivos.length} fontes`, title: arquivos.join('\n') }
+}
+
+function CitacaoArquivoChip({ entry }: { entry: { files: string[] } | undefined }) {
+  const { label, title } = rotuloCitacaoArquivo(entry)
+  return (
+    <span
+      title={title}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 3,
+        fontSize: 10.5, fontWeight: 500, color: T.textMuted,
+        background: T.surface2, border: `0.5px solid ${T.border}`,
+        borderRadius: 999, padding: '0 6px', margin: '0 2px',
+        lineHeight: '16px', verticalAlign: 'middle', cursor: 'default',
+        maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}
+    >
+      <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <path d="M4 1.5h5L12.5 5v9.5a1 1 0 01-1 1h-7.5a1 1 0 01-1-1v-12a1 1 0 011-1z" />
+        <path d="M9 1.5V5h3.5" />
+      </svg>
+      {label}
+    </span>
+  )
+}
+
 interface Msg {
   role: 'user' | 'assistant' | 'note'
   text: string
@@ -273,6 +348,7 @@ interface Msg {
   reasoning?: string
   reasoningStreaming?: boolean
   citations?: { url: string; title: string }[]
+  fileCitations?: { files: string[] }[]
   response_id?: string
 }
 
@@ -406,9 +482,10 @@ function agruparConversas(conversas: Conversa[], busca: string) {
 // ── Exportar conversa ─────────────────────────────────────────────────────
 function exportarConversa(conversa: Conversa) {
   const linhas = conversa.msgs.map(m => {
-    if (m.role === 'user') return `**Você:** ${m.text}`
-    if (m.role === 'assistant') return `**Atlas:** ${m.text}`
-    return `_${m.text}_`
+    const texto = removerCitacoesDoTexto(m.text)
+    if (m.role === 'user') return `**Você:** ${texto}`
+    if (m.role === 'assistant') return `**Atlas:** ${texto}`
+    return `_${texto}_`
   })
   const conteudo = `# ${conversa.titulo}\n_${new Date(conversa.criadaEm).toLocaleString('pt-BR')}_\n\n---\n\n${linhas.join('\n\n')}`
   const blob = new Blob([conteudo], { type: 'text/markdown' })
@@ -1369,6 +1446,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
             // Salva response_id para Conversation State (próxima mensagem não precisa mandar histórico)
             if (evt.response_id) setPreviousResponseId(evt.response_id)
             const citations: { url: string; title: string }[] = evt.citations || []
+            const fileCitations: { files: string[] }[] = evt.file_citations || []
             newHistory = [...currentHistory,
               { role: 'model', parts: fnCallsColetados.length > 0
                 ? fnCallsColetados.map(f => ({ functionCall: { call_id: f.call_id, name: f.name, args: f.args } }))
@@ -1486,6 +1564,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   streaming: false,
                   artifact: parsed.artifact || undefined,
                   citations: citations.length > 0 ? citations : undefined,
+                  fileCitations: fileCitations.length > 0 ? fileCitations : undefined,
                   response_id: evt.response_id || undefined
                 }
                 return { ...c, msgs, history: newHistory }
@@ -2275,6 +2354,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                       ) : (
                         <div>
                           <ReactMarkdown
+                            urlTransform={urlTransformComCitacoes}
                             components={{
                               p: ({ children }) => <p style={{ margin: '0 0 8px 0' }}>{children}</p>,
                               strong: ({ children }) => <strong style={{ color: '#e2e8f0', fontWeight: 600 }}>{children}</strong>,
@@ -2289,7 +2369,13 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                               thead: ({ children }) => <thead style={{ background: '#1a1d27' }}>{children}</thead>,
                               th: ({ children }) => <th style={{ padding: '6px 12px', textAlign: 'left', color: '#8892a4', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #2d3148' }}>{children}</th>,
                               td: ({ children }) => <td style={{ padding: '6px 12px', color: '#e2e8f0', borderBottom: '0.5px solid #2d3148' }}>{children}</td>,
-                              a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" style={{ color: '#4f8ef7', textDecoration: 'underline' }}>{children}</a>,
+                              a: ({ href, children }) => {
+                                if (href?.startsWith(FILE_CITE_HREF_PREFIX)) {
+                                  const idx = parseInt(href.slice(FILE_CITE_HREF_PREFIX.length), 10)
+                                  return <CitacaoArquivoChip entry={m.fileCitations?.[idx]} />
+                                }
+                                return <a href={href} target="_blank" rel="noreferrer" style={{ color: '#4f8ef7', textDecoration: 'underline' }}>{children}</a>
+                              },
                               code({ node, className, children, ...props }: any) {
                                 const match = /language-(\w+)/.exec(className || '')
                                 const inline = !match
@@ -2316,7 +2402,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                               }
                             }}
                           >
-                            {m.text}
+                            {injetarPlaceholdersDeCitacao(m.text)}
                           </ReactMarkdown>
                           {m.streaming && <span style={{ display: 'inline-block', width: 2, height: 15, background: '#4f8ef7', marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s infinite' }} />}
                         </div>
@@ -2346,7 +2432,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   {/* Action bar — sempre visível, abaixo da resposta */}
                   {!m.streaming && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 40 }}>
-                      <IcBtn onClick={() => copiarResposta(m.text, i)} tip={copiadoIdx === i ? 'Copiado!' : 'Copiar'}>
+                      <IcBtn onClick={() => copiarResposta(removerCitacoesDoTexto(m.text), i)} tip={copiadoIdx === i ? 'Copiado!' : 'Copiar'}>
                         {copiadoIdx === i
                           ? <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3 3 7-7"/></svg>
                           : <IconCopy />
