@@ -270,9 +270,8 @@ class AtlasAcaoLog(db.Model):
     correspondente for validado com sucesso pela rota de ação, ou 'bloqueada'
     se a política de egresso (Fase 4) recusar o destinatário de saída.
 
-    NOTA DE DEPLOY: como qualquer outro modelo aqui, esta tabela é criada por
-    db.create_all() (ver entrypoint.sh) — um novo deploy/restart do container
-    já cria a tabela. Não há migração manual necessária neste ambiente.
+    NOTA DE DEPLOY: schema gerenciado via Alembic (ver backend/migrations e
+    entrypoint.sh, que roda `alembic upgrade head` no boot).
     """
     __tablename__ = 'atlas_acao_log'
     id           = db.Column(db.Integer, primary_key=True)
@@ -288,45 +287,6 @@ class AtlasAcaoLog(db.Model):
     executada_em = db.Column(db.DateTime, nullable=True)
 
     usuario = db.relationship('User', backref='acoes_atlas')
-
-
-def migrar_colunas_novas():
-    """
-    db.create_all() só cria tabelas que ainda não existem — nunca adiciona
-    colunas novas a uma tabela que já existe. Este projeto não usa
-    Flask-Migrate/Alembic (ver migrate_sqlite_para_postgres.py para o
-    precedente de migração manual já usado aqui), então esta função aplica,
-    de forma idempotente, as colunas adicionadas por versões mais recentes
-    do schema — checa o que já existe via introspecção do SQLAlchemy antes de
-    tentar adicionar, então rodar isso de novo em cima de um banco já migrado
-    não faz nada. Funciona tanto em SQLite (dev) quanto em PostgreSQL (produção).
-
-    Chamada pelo entrypoint.sh logo após db.create_all() — roda a cada start
-    do container, então uma tabela nova em produção já sai com o schema atual
-    (nada a fazer aqui) e uma tabela pré-existente ganha só as colunas que
-    ainda não tem.
-    """
-    from sqlalchemy import inspect, text
-
-    inspector           = inspect(db.engine)
-    tabelas_existentes  = set(inspector.get_table_names())
-    colunas_por_tabela = {
-        'atlas_memoria':   [("origem",  "VARCHAR(20) NOT NULL DEFAULT 'automatica'")],
-        'atlas_acao_log':  [("externo", "BOOLEAN NOT NULL DEFAULT FALSE"),
-                             ("origem",  "VARCHAR(50)")],
-    }
-
-    for tabela, colunas in colunas_por_tabela.items():
-        if tabela not in tabelas_existentes:
-            continue  # tabela nova — db.create_all() já criou com todas as colunas do model
-        existentes = {c['name'] for c in inspector.get_columns(tabela)}
-        for nome, definicao_sql in colunas:
-            if nome in existentes:
-                continue
-            db.session.execute(text(f'ALTER TABLE {tabela} ADD COLUMN {nome} {definicao_sql}'))
-            print(f'[migracao] Coluna "{nome}" adicionada a "{tabela}".')
-
-    db.session.commit()
 
 
 # ── RAG observability: writer assíncrono ──────────────────────────────────────

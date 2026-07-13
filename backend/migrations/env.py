@@ -5,6 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 
 from alembic import context
 
@@ -63,6 +64,12 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Chave arbitrária, mas CONSTANTE — coordena boots concorrentes via advisory
+# lock do Postgres (vive no banco, funciona entre containers/hosts; ao
+# contrário de flock, que é por filesystem local e não serve aqui).
+ALEMBIC_ADVISORY_LOCK_KEY = 728041
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
@@ -77,15 +84,28 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-            compare_server_default=True,
-        )
+        # pg_advisory_lock é session-scoped, não transaction-scoped — commitar
+        # aqui só fecha a transação implícita que o execute() abriu (autobegin
+        # do SQLAlchemy 2.0), sem soltar a trava. Necessário: se essa transação
+        # ficar aberta, o MigrationContext do Alembic detecta uma "external
+        # transaction" já em andamento e passa a esperar QUE ELA seja
+        # commitada por fora — o commit interno do run_migrations() vira
+        # no-op e tudo é revertido no rollback do close() da connection.
+        connection.execute(text("SELECT pg_advisory_lock(:k)"), {"k": ALEMBIC_ADVISORY_LOCK_KEY})
+        connection.commit()
+        try:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                compare_type=True,
+                compare_server_default=True,
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            connection.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": ALEMBIC_ADVISORY_LOCK_KEY})
+            connection.commit()
 
 
 if context.is_offline_mode():
