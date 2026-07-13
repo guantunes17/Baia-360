@@ -27,7 +27,7 @@ from flask_limiter.util import get_remote_address
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from openai import OpenAI
-from sqlalchemy import func
+from sqlalchemy import func, text
 from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -211,7 +211,7 @@ class AtlasConversa(db.Model):
     msgs_json   = db.Column(db.Text, nullable=False, default='[]')
     history_json = db.Column(db.Text, nullable=False, default='[]')
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    pinada        = db.Column(db.Boolean, default=False)
+    pinada        = db.Column(db.Boolean, default=False, server_default=text('false'))
     criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
     projeto_id    = db.Column(db.Integer, db.ForeignKey('atlas_projetos.id'), nullable=True)
 
@@ -234,7 +234,7 @@ class AtlasMemoria(db.Model):
     id            = db.Column(db.Integer, primary_key=True)
     usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
     conteudo      = db.Column(db.Text, nullable=False)
-    origem        = db.Column(db.String(20), nullable=False, default='automatica')  # manual|automatica
+    origem        = db.Column(db.String(20), nullable=False, default='automatica', server_default='automatica')  # manual|automatica
     criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1071,7 +1071,7 @@ class User(db.Model):
     senha_hash = db.Column(db.String(256), nullable=False)
     perfil     = db.Column(db.String(20), default='operacional')
     ativo      = db.Column(db.Boolean, default=False)
-    status     = db.Column(db.String(20), default='pendente')
+    status     = db.Column(db.String(20), default='pendente', server_default='ativo')  # server_default é foto da prod atual (ver Fase 2b) — corrigido na Parte 2
     criado_em  = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_senha(self, senha):

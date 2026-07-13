@@ -1,8 +1,8 @@
 """baseline: schema atual
 
-Revision ID: 31b9745f3ba2
+Revision ID: ba7771d00ae9
 Revises: 
-Create Date: 2026-07-10 09:59:06.917655
+Create Date: 2026-07-13 09:21:12.262667
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '31b9745f3ba2'
+revision: str = 'ba7771d00ae9'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -49,7 +49,7 @@ def upgrade() -> None:
     sa.Column('senha_hash', sa.String(length=256), nullable=False),
     sa.Column('perfil', sa.String(length=20), nullable=True),
     sa.Column('ativo', sa.Boolean(), nullable=True),
-    sa.Column('status', sa.String(length=20), nullable=True),
+    sa.Column('status', sa.String(length=20), server_default='ativo', nullable=True),
     sa.Column('criado_em', sa.DateTime(), nullable=True),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email')
@@ -92,7 +92,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('usuario_id', sa.Integer(), nullable=False),
     sa.Column('conteudo', sa.Text(), nullable=False),
-    sa.Column('origem', sa.String(length=20), nullable=False),
+    sa.Column('origem', sa.String(length=20), server_default='automatica', nullable=False),
     sa.Column('criada_em', sa.DateTime(), nullable=True),
     sa.Column('atualizada_em', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['usuario_id'], ['baia360_users.id'], ),
@@ -186,7 +186,7 @@ def upgrade() -> None:
     sa.Column('msgs_json', sa.Text(), nullable=False),
     sa.Column('history_json', sa.Text(), nullable=False),
     sa.Column('atualizada_em', sa.DateTime(), nullable=True),
-    sa.Column('pinada', sa.Boolean(), nullable=True),
+    sa.Column('pinada', sa.Boolean(), server_default=sa.text('false'), nullable=True),
     sa.Column('criada_em', sa.DateTime(), nullable=True),
     sa.Column('projeto_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['projeto_id'], ['atlas_projetos.id'], ),
