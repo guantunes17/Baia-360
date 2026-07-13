@@ -1071,7 +1071,7 @@ class User(db.Model):
     senha_hash = db.Column(db.String(256), nullable=False)
     perfil     = db.Column(db.String(20), default='operacional')
     ativo      = db.Column(db.Boolean, default=False)
-    status     = db.Column(db.String(20), default='pendente', server_default='ativo')  # server_default é foto da prod atual (ver Fase 2b) — corrigido na Parte 2
+    status     = db.Column(db.String(20), default='pendente', server_default='pendente')
     criado_em  = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_senha(self, senha):
