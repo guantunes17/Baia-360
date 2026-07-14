@@ -384,6 +384,121 @@ def test_cap_operacional_api(session):
                  f"status={status} | info={str(info)[:80]}")
 
 
+# ─── Fase 2 (desacoplamento Atlas/Central) — /internal/relatorios/dashboard ──
+
+def test_internal_dashboard_validacao(session):
+    """Endpoint interno consumido pelo Atlas: whitelist de parâmetros e
+    validação de módulo. Sessão admin — aqui não é sobre permissão, é sobre
+    forma da requisição."""
+    print("\n=== Internal Dashboard - Validacao de parametros ===")
+
+    r = session.get(f"{BASE}/internal/relatorios/dashboard")
+    corpo = r.json() if r.status_code == 200 else {}
+    ok = r.status_code == 200 and 'kpis_por_modulo' in corpo and 'historico' in corpo
+    reportar("Internal Dashboard - Sem filtro -> 200 com DTO esperado", ok,
+             f"status={r.status_code}")
+    # Roda depois dos testes de módulo (ver __main__): admin deve enxergar os
+    # relatórios já gerados. Não-vazio aqui é o que teria pego o bug real de
+    # slug ('estoque') vs label ('Estoque') gravado em RelatorioGerado.modulo.
+    reportar("Internal Dashboard - Sem filtro -> kpis_por_modulo nao vazio",
+             r.status_code == 200 and len(corpo.get('kpis_por_modulo', {})) > 0,
+             f"modulos retornados={list(corpo.get('kpis_por_modulo', {}).keys())}")
+
+    r2 = session.get(f"{BASE}/internal/relatorios/dashboard", params={'modulo': 'estoque'})
+    corpo2 = r2.json() if r2.status_code == 200 else {}
+    reportar("Internal Dashboard - Modulo valido (admin) -> 200", r2.status_code == 200,
+             f"status={r2.status_code}")
+    reportar("Internal Dashboard - Modulo 'estoque' -> kpis_por_modulo nao vazio",
+             r2.status_code == 200 and len(corpo2.get('kpis_por_modulo', {})) > 0,
+             f"corpo={corpo2}")
+
+    r3 = session.get(f"{BASE}/internal/relatorios/dashboard", params={'modulo': 'nao_existe'})
+    reportar("Internal Dashboard - Modulo invalido -> 400", r3.status_code == 400,
+             f"status={r3.status_code}")
+
+    r4 = session.get(f"{BASE}/internal/relatorios/dashboard", params={'filtro_livre': 'x'})
+    reportar("Internal Dashboard - Parametro nao suportado -> 400", r4.status_code == 400,
+             f"status={r4.status_code}")
+
+    anon = _session_anonima()
+    r5 = anon.get(f"{BASE}/internal/relatorios/dashboard")
+    reportar("Internal Dashboard - Sem auth -> 401", r5.status_code == 401,
+             f"status={r5.status_code}")
+
+
+def test_internal_dashboard_permissoes(session):
+    """Provisiona um usuário 'financeiro' throwaway (só tem fat_dist/fat_arm,
+    per PERMISSOES_PADRAO) via o fluxo real de cadastro+aprovação e confirma
+    que o endpoint interno aplica _verificar_permissao_modulo por módulo."""
+    print("\n=== Internal Dashboard - Enforcamento de permissao ===")
+    import secrets
+
+    token = secrets.token_hex(6)
+    email = f"teste.financeiro.{token}@baia360.com"
+    senha = "Teste*Financ1"
+
+    r_cad = session.post(f"{BASE}/api/auth/cadastro", json={
+        'nome': f'Teste Financeiro {token}',
+        'email': email,
+        'senha': senha,
+        'senha_confirmacao': senha,
+    })
+    if r_cad.status_code != 201:
+        reportar("Internal Dashboard - Setup usuario financeiro", False,
+                 f"cadastro falhou: status={r_cad.status_code}")
+        return
+
+    usuarios = session.get(f"{BASE}/api/auth/usuarios").json()
+    match = next((u for u in usuarios if u['email'] == email), None)
+    if not match:
+        reportar("Internal Dashboard - Setup usuario financeiro", False, "usuario nao encontrado apos cadastro")
+        return
+    user_id = match['id']
+
+    try:
+        r_aprova = session.post(f"{BASE}/api/auth/usuarios/{user_id}/aprovar", json={'perfil': 'financeiro'})
+        if r_aprova.status_code != 200:
+            reportar("Internal Dashboard - Setup usuario financeiro", False,
+                     f"aprovacao falhou: status={r_aprova.status_code}")
+            return
+
+        fin_session = requests.Session()
+        r_login = fin_session.post(f"{BASE}/api/auth/login", json={'email': email, 'senha': senha})
+        if r_login.status_code != 200:
+            reportar("Internal Dashboard - Setup usuario financeiro", False,
+                     f"login falhou: status={r_login.status_code}")
+            return
+
+        # Financeiro tem fat_dist/fat_arm, NAO tem estoque -> 403
+        r_neg = fin_session.get(f"{BASE}/internal/relatorios/dashboard", params={'modulo': 'estoque'})
+        reportar("Internal Dashboard - Financeiro pede 'estoque' -> 403", r_neg.status_code == 403,
+                 f"status={r_neg.status_code}")
+
+        # Financeiro tem fat_dist -> 200
+        r_pos = fin_session.get(f"{BASE}/internal/relatorios/dashboard", params={'modulo': 'fat_dist'})
+        reportar("Internal Dashboard - Financeiro pede 'fat_dist' -> 200", r_pos.status_code == 200,
+                 f"status={r_pos.status_code}")
+
+        # Sem filtro: resposta agregada não pode vazar módulos fora da permissão do usuário
+        r_agg = fin_session.get(f"{BASE}/internal/relatorios/dashboard")
+        vazou = False
+        if r_agg.status_code == 200:
+            corpo = r_agg.json()
+            # RelatorioGerado.modulo grava o label de exibição, não o slug de
+            # permissão (ver MODULO_SLUG_PARA_LABEL em app.py) — financeiro só
+            # pode ver fat_dist/fat_arm, que no banco aparecem como estes labels.
+            permitidos = {'Fat. Distribuição', 'Fat. Armazenagem'}
+            modulos_no_corpo = set(corpo.get('kpis_por_modulo', {}).keys()) | \
+                               {h['modulo'] for h in corpo.get('historico', [])}
+            vazou = bool(modulos_no_corpo - permitidos)
+        reportar("Internal Dashboard - Agregado nao vaza modulos fora da permissao",
+                 r_agg.status_code == 200 and not vazou,
+                 f"status={r_agg.status_code} | vazou={vazou}")
+
+    finally:
+        session.delete(f"{BASE}/api/auth/usuarios/{user_id}")
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
@@ -415,6 +530,10 @@ if __name__ == '__main__':
     test_fat_dist(session)
     test_fat_arm(session)
     test_cap_operacional_api(session)
+
+    # Fase 2 — desacoplamento Atlas/Central: contrato interno de leitura
+    test_internal_dashboard_validacao(session)
+    test_internal_dashboard_permissoes(session)
 
     # Resumo
     print("\n" + "="*60)

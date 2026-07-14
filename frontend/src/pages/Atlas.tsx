@@ -55,13 +55,8 @@ function resumoAcao(tool: string, args: any): string {
 }
 
 const MOCK_RESPONSES: Record<string, ((args: any, token: string, confirmToken?: string) => Promise<any>) | ((args: any) => any)> = {
-  get_dashboard: async (_args: any, token: string) => {
-    const res = await fetch(`${API}/api/atlas/dashboard_data`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    if (!res.ok) return { erro: 'Não foi possível carregar dados do dashboard.' }
-    return res.json()
-  },
+  // get_dashboard removido: resolvida agora no backend (ver /internal/relatorios/dashboard),
+  // o modelo nunca emite mais esse function_call para o frontend.
   gerar_relatorio: ({ modulo, mes_ref }: any) => ({ status: 'aguardando_arquivo', modulo, mes_ref, mensagem: `Aguardando arquivo Excel para ${modulo} (${mes_ref}).` }),
   get_agenda: async ({ data_inicio, data_fim }: any, token: string) => {
     const res = await fetch(`${API}/api/outlook/agenda?data_inicio=${data_inicio}&data_fim=${data_fim}`, {
@@ -1556,6 +1551,10 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
             } else {
               const parsed = parseArtifact(streamedText || '')
+              // get_dashboard agora é resolvida no backend (nunca chega aqui como
+              // function_call) — o servidor informa em tools_used quais tools ele
+              // já resolveu, só para o badge "Dashboard consultado" continuar aparecendo.
+              const toolsUsados: string[] | undefined = evt.tools_used?.length ? evt.tools_used : undefined
               updateConversa(convId, c => {
                 const msgs = [...c.msgs]
                 msgs[msgs.length - 1] = {
@@ -1565,7 +1564,8 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                   artifact: parsed.artifact || undefined,
                   citations: citations.length > 0 ? citations : undefined,
                   fileCitations: fileCitations.length > 0 ? fileCitations : undefined,
-                  response_id: evt.response_id || undefined
+                  response_id: evt.response_id || undefined,
+                  tools: toolsUsados
                 }
                 return { ...c, msgs, history: newHistory }
               })

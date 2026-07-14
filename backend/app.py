@@ -33,6 +33,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from zoneinfo import ZoneInfo
 
+import central_client
+
 
 def _deletar_temp(path: str):
     """Remove arquivo temporário com tolerância ao PermissionError do Windows."""
@@ -562,6 +564,24 @@ ATLAS_MODEL            = 'gpt-5.4-mini'
 ATLAS_TEMPERATURE      = 1.0
 ATLAS_REASONING_EFFORT = 'medium'
 
+# Slug de permissão (Permissao.modulos_json, PERMISSOES_PADRAO, get_dashboard)
+# → label exato gravado em RelatorioGerado.modulo pelas rotas /api/modulos/*
+# (ver `RelatorioGerado(modulo='...')` em cada rota — os dois vocabulários
+# divergem no banco hoje: permissão usa slugs minúsculos, relatório usa o
+# nome de exibição). Fonte única de verdade para os dois: derivar
+# MODULOS_VALIDOS daqui evita os dois vocabulários saírem de sincronia.
+MODULO_SLUG_PARA_LABEL = {
+    'pedidos':         'Pedidos',
+    'fretes':          'Fretes',
+    'armazenagem':     'Armazenagem',
+    'estoque':         'Estoque',
+    'cap_operacional': 'Cap. Operacional',
+    'recebimentos':    'Recebimentos',
+    'fat_dist':        'Fat. Distribuição',
+    'fat_arm':         'Fat. Armazenagem',
+}
+MODULOS_VALIDOS = list(MODULO_SLUG_PARA_LABEL.keys())
+
 ATLAS_MODO_SUFFIXES: dict = {
     'Resumido':  '\n\nIMPORTANTE: Seja extremamente conciso, máximo 3 linhas por resposta.',
     'Analítico': '\n\nIMPORTANTE: Forneça análise detalhada com dados, contexto e implicações.',
@@ -700,7 +720,14 @@ ATLAS_TOOLS_DECLARATIONS = [
         'parameters': {
             'type': 'object',
             'properties': {
-                'modulo': {'type': ['string', 'null'], 'description': 'Filtrar por módulo específico. Passar null para retornar todos os módulos.'}
+                'modulo': {
+                    'type': ['string', 'null'],
+                    'description': (
+                        'Filtrar por módulo específico — use exatamente um destes slugs (minúsculo): '
+                        + ', '.join(MODULOS_VALIDOS)
+                        + '. Passar null para retornar todos os módulos.'
+                    )
+                }
             },
             'required': ['modulo']
         }
@@ -982,8 +1009,7 @@ def verificar_token_acao(tool: str, args: dict, token: str, usuario_id: int):
 PERMISSOES_PADRAO = {
     'admin': {
         'hub':     ['central', 'painel_controle', 'painel_resultados', 'atlas', 'agenda'],
-        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'cap_operacional',
-                    'recebimentos', 'fat_dist', 'fat_arm']
+        'modulos': list(MODULOS_VALIDOS)
     },
     'analista': {
         'hub':     ['central', 'atlas', 'agenda'],
@@ -1436,6 +1462,114 @@ def _verificar_permissao_modulo(usuario_id: int, modulo: str) -> bool:
         return False
     modulos = json.loads(perm.modulos_json)
     return modulo in modulos
+
+
+def _modulos_permitidos(usuario_id: int) -> list:
+    """Módulos de relatório que o usuário pode ver — todos para admin,
+    interseção de MODULOS_VALIDOS com Permissao.modulos_json para os demais."""
+    usuario = User.query.get(usuario_id)
+    if usuario and usuario.perfil == 'admin':
+        return list(MODULOS_VALIDOS)
+    perm = Permissao.query.filter_by(usuario_id=usuario_id).first()
+    modulos_usuario = json.loads(perm.modulos_json) if perm else []
+    return [m for m in MODULOS_VALIDOS if m in modulos_usuario]
+
+
+def _serializar_relatorio(r: 'RelatorioGerado', incluir_modulo: bool = True) -> dict:
+    """DTO explícito para um RelatorioGerado — nunca serializa o ORM cru."""
+    kpis = {}
+    if r.kpis_json:
+        try:
+            kpis = json.loads(r.kpis_json)
+        except Exception:
+            kpis = {}
+    dto = {'mes_ref': r.mes_ref, 'gerado_em': r.gerado_em.isoformat(), 'kpis': kpis}
+    if incluir_modulo:
+        dto = {'modulo': r.modulo, **dto}
+    return dto
+
+
+def _dashboard_service(usuario_id: int, modulo: str | None = None) -> dict:
+    """Lógica de dados por trás de /internal/relatorios/dashboard — chamada
+    tanto pela rota HTTP quanto pelo loop de resolução da tool get_dashboard,
+    sempre através de central_client (nunca direto por outro código)."""
+    if modulo is not None:
+        modulo = modulo.strip().lower()  # o modelo às vezes envia o nome de exibição
+                                          # (ex.: "Fretes") em vez do slug — normaliza
+                                          # antes de validar, em vez de falhar.
+        if modulo not in MODULOS_VALIDOS:
+            raise central_client.ModuloInvalidoError(f"Módulo inválido: {modulo!r}")
+        if not _verificar_permissao_modulo(usuario_id, modulo):
+            raise central_client.PermissaoNegadaError(f"Sem permissão para o módulo {modulo!r}")
+        modulos_permitidos = [modulo]
+    else:
+        modulos_permitidos = _modulos_permitidos(usuario_id)
+
+    if not modulos_permitidos:
+        return {'kpis_por_modulo': {}, 'historico': []}
+
+    # RelatorioGerado.modulo grava o label de exibição (ex.: 'Fat. Armazenagem'),
+    # não o slug de permissão — traduz antes de filtrar.
+    labels_permitidos = [MODULO_SLUG_PARA_LABEL[m] for m in modulos_permitidos]
+
+    subq = (
+        db.session.query(
+            RelatorioGerado.modulo,
+            func.max(RelatorioGerado.gerado_em).label('ultimo')
+        )
+        .filter(RelatorioGerado.modulo.in_(labels_permitidos))
+        .group_by(RelatorioGerado.modulo)
+        .subquery()
+    )
+    ultimos = (
+        db.session.query(RelatorioGerado)
+        .join(subq, (RelatorioGerado.modulo == subq.c.modulo) &
+                    (RelatorioGerado.gerado_em == subq.c.ultimo))
+        .all()
+    )
+    kpis_por_modulo = {r.modulo: _serializar_relatorio(r, incluir_modulo=False) for r in ultimos}
+
+    historico = (
+        RelatorioGerado.query
+        .filter(RelatorioGerado.modulo.in_(labels_permitidos))
+        .order_by(RelatorioGerado.gerado_em.desc())
+        .limit(10)
+        .all()
+    )
+    historico_list = [_serializar_relatorio(r) for r in historico]
+
+    return {'kpis_por_modulo': kpis_por_modulo, 'historico': historico_list}
+
+
+central_client.register(_dashboard_service)
+
+
+@app.route('/internal/relatorios/dashboard', methods=['GET'])
+@jwt_required()
+def internal_relatorios_dashboard():
+    """Endpoint interno de leitura da Central, consumido pelo Atlas via
+    central_client — única rota que expõe KPIs de relatórios para o domínio
+    Atlas. Fixa, com whitelist de parâmetros; sem passthrough de SQL/filtros
+    livres."""
+    usuario_id = int(get_jwt_identity())
+
+    params_permitidos = {'modulo'}
+    extras = set(request.args.keys()) - params_permitidos
+    if extras:
+        return jsonify({'erro': f'Parâmetros não suportados: {sorted(extras)}'}), 400
+
+    modulo = request.args.get('modulo') or None
+
+    try:
+        return jsonify(central_client.obter_dashboard(usuario_id, modulo)), 200
+    except central_client.ModuloInvalidoError as e:
+        return jsonify({'erro': str(e)}), 400
+    except central_client.PermissaoNegadaError as e:
+        return jsonify({'erro': str(e)}), 403
+    except Exception:
+        traceback.print_exc()
+        return jsonify({'erro': 'Erro interno ao consultar dashboard.'}), 500
+
 
 # Dicionário para armazenar progresso dos jobs
 jobs = {}
@@ -2782,6 +2916,31 @@ def atlas_chat():
         except Exception:
             _rag_pergunta = ''
 
+        # ── Resolução server-side da tool get_dashboard (Central) ─────────────
+        # Fase 2 do desacoplamento Atlas/Central: ao contrário das demais tools
+        # (executadas pelo frontend), get_dashboard é resolvida aqui, via
+        # central_client — nenhum código de tool passa a ler RelatorioGerado
+        # diretamente. Isso também prepara o terreno para a Fase 5, quando o
+        # navegador deixará de conseguir alcançar a API interna da Central.
+        def _resolver_get_dashboard(args: dict) -> dict:
+            modulo = (args or {}).get('modulo') or None
+            try:
+                # generate() é um gerador consumido depois que a view retorna —
+                # o app_context do request original já foi encerrado a essa
+                # altura (mesmo padrão de registrar_rag_trace, acima), então
+                # qualquer acesso a DB aqui precisa abrir o seu próprio.
+                with app.app_context():
+                    return central_client.obter_dashboard(usuario_id, modulo)
+            except central_client.ModuloInvalidoError as e:
+                return {'erro': str(e)}
+            except central_client.PermissaoNegadaError as e:
+                return {'erro': str(e)}
+            except Exception:
+                traceback.print_exc()
+                return {'erro': 'Não foi possível carregar dados do dashboard.'}
+
+        MAX_HOPS_DASHBOARD = 3
+
         # ── Chamada à Responses API com streaming SSE ─────────────────────────
         def generate():
             try:
@@ -2807,91 +2966,141 @@ def atlas_chat():
                 if previous_resp_id:
                     kwargs['previous_response_id'] = previous_resp_id
 
-                _rag_t0 = time.time()   # RAG observability: início da medição de latência
-                stream = client.responses.create(**kwargs)
+                _rag_t0 = time.time()   # RAG observability: início da medição de latência (toda a troca, incl. hops de tool)
+                text_buffer = ''
+                tools_resolvidos = []   # nomes das tools resolvidas server-side — repassado no 'done' para o frontend exibir o badge
+                hop = 0
 
-                text_buffer     = ''
-                fn_calls_buffer: dict = {}
+                while True:
+                    stream = client.responses.create(**kwargs)
 
-                for event in stream:
-                    etype = event.type
+                    fn_calls_buffer: dict = {}
+                    resolver_dashboard = False
+                    next_kwargs = None
 
-                    if etype == 'response.output_text.delta':
-                        delta = event.delta or ''
-                        text_buffer += delta
-                        yield f"data: {json.dumps({'type': 'text_delta', 'delta': delta})}\n\n"
+                    for event in stream:
+                        etype = event.type
 
-                    elif etype == 'response.output_item.added':
-                        item = event.item
-                        if getattr(item, 'type', None) == 'function_call':
-                            fn_calls_buffer[item.call_id] = {'name': item.name, 'arguments': ''}
-                        elif getattr(item, 'type', None) == 'reasoning':
-                            yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
+                        if etype == 'response.output_text.delta':
+                            delta = event.delta or ''
+                            text_buffer += delta
+                            yield f"data: {json.dumps({'type': 'text_delta', 'delta': delta})}\n\n"
 
-                    elif etype == 'response.reasoning_summary_text.delta':
-                        delta = event.delta or ''
-                        yield f"data: {json.dumps({'type': 'reasoning_delta', 'delta': delta})}\n\n"
+                        elif etype == 'response.output_item.added':
+                            item = event.item
+                            if getattr(item, 'type', None) == 'function_call':
+                                fn_calls_buffer[item.call_id] = {'name': item.name, 'arguments': ''}
+                            elif getattr(item, 'type', None) == 'reasoning':
+                                yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
 
-                    elif etype == 'response.function_call_arguments.delta':
-                        if fn_calls_buffer:
-                            call_id = list(fn_calls_buffer.keys())[-1]
-                            fn_calls_buffer[call_id]['arguments'] += (event.delta or '')
+                        elif etype == 'response.reasoning_summary_text.delta':
+                            delta = event.delta or ''
+                            yield f"data: {json.dumps({'type': 'reasoning_delta', 'delta': delta})}\n\n"
 
-                    elif etype == 'response.output_item.done':
-                        item = event.item
-                        if getattr(item, 'type', None) == 'function_call':
-                            call_id = item.call_id
+                        elif etype == 'response.function_call_arguments.delta':
+                            if fn_calls_buffer:
+                                call_id = list(fn_calls_buffer.keys())[-1]
+                                fn_calls_buffer[call_id]['arguments'] += (event.delta or '')
+
+                        elif etype == 'response.output_item.done':
+                            item = event.item
+                            if getattr(item, 'type', None) == 'function_call':
+                                call_id = item.call_id
+                                try:
+                                    args = json.loads(item.arguments or '{}')
+                                except Exception:
+                                    args = {}
+                                fn_calls_buffer[call_id] = {'name': item.name, 'arguments': item.arguments, 'args': args}
+                                # Não emite mais o evento function_call aqui — a decisão de
+                                # resolver server-side (get_dashboard) ou repassar ao
+                                # frontend (demais tools) só é possível em response.completed,
+                                # quando o conjunto completo de chamadas pendentes é conhecido.
+
+                        elif etype == 'response.completed':
+                            resp_id   = getattr(event.response, 'id', None)
+                            pendentes = list(fn_calls_buffer.items())
+                            somente_dashboard = bool(pendentes) and all(
+                                c['name'] == 'get_dashboard' for _, c in pendentes
+                            )
+
+                            if somente_dashboard and hop < MAX_HOPS_DASHBOARD:
+                                tool_outputs = [
+                                    {
+                                        'type':    'function_call_output',
+                                        'call_id': call_id,
+                                        'output':  json.dumps(_resolver_get_dashboard(chamada['args']), ensure_ascii=False),
+                                    }
+                                    for call_id, chamada in pendentes
+                                ]
+                                next_kwargs = dict(
+                                    model=ATLAS_MODEL,
+                                    input=tool_outputs,
+                                    instructions=system_prompt,
+                                    temperature=ATLAS_TEMPERATURE,
+                                    tools=all_tools,
+                                    stream=True,
+                                    reasoning={'effort': ATLAS_REASONING_EFFORT, 'summary': 'auto'},
+                                    store=True,
+                                    include=['file_search_call.results'],
+                                    previous_response_id=resp_id,
+                                )
+                                tools_resolvidos.append('get_dashboard')
+                                resolver_dashboard = True
+                                break
+
+                            # Qualquer chamada pendente não resolvida automaticamente
+                            # (tool que não é get_dashboard, ou limite de hops atingido)
+                            # volta ao fluxo original: o frontend a executa.
+                            for call_id, chamada in pendentes:
+                                yield f"data: {json.dumps({'type': 'function_call', 'call_id': call_id, 'name': chamada['name'], 'args': chamada['args']})}\n\n"
+
+                            citations = []
+                            file_citations = []      # [{'files': [filename, ...]}, ...] — 1 entrada por span, sem texto de documento
+                            rag_chunks = []          # [{file_id, filename, score, quote}]
+                            rag_query  = None
+                            n_file_cit = 0
                             try:
-                                args = json.loads(item.arguments or '{}')
+                                output   = getattr(event.response, 'output', None) or []
+                                extraido = extrair_rag_do_output(output)
+                                rag_chunks     = extraido['chunks']
+                                rag_query      = extraido['retrieval_query']
+                                n_file_cit     = extraido['n_file_citations']
+                                citations      = extraido['url_citations']
+                                file_citations = extraido['file_citations']
                             except Exception:
-                                args = {}
-                            fn_calls_buffer[call_id] = {'name': item.name, 'arguments': item.arguments}
-                            yield f"data: {json.dumps({'type': 'function_call', 'call_id': call_id, 'name': item.name, 'args': args})}\n\n"
+                                traceback.print_exc()
 
-                    elif etype == 'response.completed':
-                        resp_id   = getattr(event.response, 'id', None)
-                        citations = []
-                        file_citations = []      # [{'files': [filename, ...]}, ...] — 1 entrada por span, sem texto de documento
-                        rag_chunks = []          # [{file_id, filename, score, quote}]
-                        rag_query  = None
-                        n_file_cit = 0
-                        try:
-                            output   = getattr(event.response, 'output', None) or []
-                            extraido = extrair_rag_do_output(output)
-                            rag_chunks     = extraido['chunks']
-                            rag_query      = extraido['retrieval_query']
-                            n_file_cit     = extraido['n_file_citations']
-                            citations      = extraido['url_citations']
-                            file_citations = extraido['file_citations']
-                        except Exception:
-                            traceback.print_exc()
+                            # ── RAG observability: dispatch assíncrono (não bloqueia) ──
+                            try:
+                                usage = getattr(event.response, 'usage', None)
+                                trace_dict = {
+                                    'usuario_id':       usuario_id,
+                                    'conv_id':          conv_id,
+                                    'response_id':      resp_id,
+                                    'modelo':           ATLAS_MODEL,
+                                    'pergunta':         _rag_pergunta,
+                                    'resposta':         text_buffer,
+                                    'usou_file_search': bool(rag_chunks) or (rag_query is not None),
+                                    'retrieval_query':  rag_query,
+                                    'chunks':           rag_chunks,
+                                    'n_file_citations': n_file_cit,
+                                    'latencia_ms':      int((time.time() - _rag_t0) * 1000),
+                                    'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
+                                    'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
+                                }
+                                registrar_rag_trace(app, trace_dict)
+                            except Exception:
+                                traceback.print_exc()
 
-                        # ── RAG observability: dispatch assíncrono (não bloqueia) ──
-                        try:
-                            usage = getattr(event.response, 'usage', None)
-                            trace_dict = {
-                                'usuario_id':       usuario_id,
-                                'conv_id':          conv_id,
-                                'response_id':      resp_id,
-                                'modelo':           ATLAS_MODEL,
-                                'pergunta':         _rag_pergunta,
-                                'resposta':         text_buffer,
-                                'usou_file_search': bool(rag_chunks) or (rag_query is not None),
-                                'retrieval_query':  rag_query,
-                                'chunks':           rag_chunks,
-                                'n_file_citations': n_file_cit,
-                                'latencia_ms':      int((time.time() - _rag_t0) * 1000),
-                                'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
-                                'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
-                            }
-                            registrar_rag_trace(app, trace_dict)
-                        except Exception:
-                            traceback.print_exc()
+                            yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations, 'file_citations': file_citations, 'tools_used': tools_resolvidos})}\n\n"
 
-                        yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations, 'file_citations': file_citations})}\n\n"
+                        elif etype == 'error':
+                            yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
 
-                    elif etype == 'error':
-                        yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
+                    if not resolver_dashboard:
+                        break
+                    kwargs = next_kwargs
+                    hop += 1
 
             except Exception as e:
                 traceback.print_exc()
@@ -3074,73 +3283,6 @@ def atlas_upload_arquivo():
         return jsonify({
             'file_id': uploaded.id,
             'nome': nome
-        }), 200
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({'erro': str(e)}), 500
-
-@app.route('/api/atlas/dashboard_data', methods=['GET'])
-@jwt_required()
-def atlas_dashboard_data():
-    try:
-        # KPIs do último relatório por módulo
-        subq = (
-            db.session.query(
-                RelatorioGerado.modulo,
-                func.max(RelatorioGerado.gerado_em).label('ultimo')
-            )
-            .group_by(RelatorioGerado.modulo)
-            .subquery()
-        )
-
-        ultimos = (
-            db.session.query(RelatorioGerado)
-            .join(subq, (RelatorioGerado.modulo == subq.c.modulo) &
-                        (RelatorioGerado.gerado_em == subq.c.ultimo))
-            .all()
-        )
-
-        kpis_por_modulo = {}
-        for r in ultimos:
-            kpis = {}
-            if r.kpis_json:
-                try:
-                    kpis = json.loads(r.kpis_json)
-                except Exception:
-                    pass
-            kpis_por_modulo[r.modulo] = {
-                'mes_ref':    r.mes_ref,
-                'gerado_em':  r.gerado_em.isoformat(),
-                'kpis':       kpis
-            }
-
-        # Histórico recente (últimas 10 gerações)
-        historico = (
-            RelatorioGerado.query
-            .order_by(RelatorioGerado.gerado_em.desc())
-            .limit(10)
-            .all()
-        )
-
-        historico_list = []
-        for r in historico:
-            kpis = {}
-            if r.kpis_json:
-                try:
-                    kpis = json.loads(r.kpis_json)
-                except Exception:
-                    pass
-            historico_list.append({
-                'modulo':    r.modulo,
-                'mes_ref':   r.mes_ref,
-                'gerado_em': r.gerado_em.isoformat(),
-                'kpis':      kpis
-            })
-
-        return jsonify({
-            'kpis_por_modulo': kpis_por_modulo,
-            'historico':       historico_list
         }), 200
 
     except Exception as e:
