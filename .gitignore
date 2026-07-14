@@ -11,6 +11,11 @@ venv/
 *.db
 *.sqlite3
 
+# Chaves (RS256 — ver backend/identity.py). O conteúdo vai em JWT_PRIVATE_KEY/
+# JWT_PUBLIC_KEY no .env, mas isso cobre quem gerar os arquivos .pem localmente.
+*.pem
+*.key
+
 # Node
 node_modules/
 dist/

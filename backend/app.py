@@ -19,8 +19,7 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask_jwt_extended import (
-    JWTManager, create_access_token, jwt_required,
-    get_jwt_identity, decode_token, set_access_cookies, unset_jwt_cookies
+    jwt_required, get_jwt_identity, set_access_cookies, unset_jwt_cookies
 )
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -34,6 +33,7 @@ from werkzeug.utils import secure_filename
 from zoneinfo import ZoneInfo
 
 import central_client
+import identity
 
 
 def _deletar_temp(path: str):
@@ -57,18 +57,9 @@ app = Flask(__name__)
 _is_prod = os.getenv('FLASK_ENV', 'development') == 'production'
 
 app.config['SECRET_KEY']                     = os.getenv('SECRET_KEY')
-app.config['JWT_SECRET_KEY']                 = os.getenv('JWT_SECRET_KEY')
 app.config['SQLALCHEMY_DATABASE_URI']        = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH']             = 50 * 1024 * 1024  # 50 MB
-
-# JWT via httpOnly cookie
-app.config['JWT_TOKEN_LOCATION']             = ['cookies']
-app.config['JWT_COOKIE_SECURE']              = _is_prod        # True em prod (HTTPS), False em dev (HTTP)
-app.config['JWT_COOKIE_SAMESITE']            = 'Lax'           # Proteção CSRF básica
-app.config['JWT_COOKIE_CSRF_PROTECT']        = False           # CSRF desabilitado — SPA no mesmo domínio
-app.config['JWT_ACCESS_COOKIE_NAME']         = 'access_token_cookie'
-app.config['JWT_COOKIE_DOMAIN']              = None            # Usa o domínio atual automaticamente
 
 # CORS — em produção usa apenas FRONTEND_URL; em dev também aceita localhost
 _prod_url = os.getenv("FRONTEND_URL", "").strip()
@@ -80,7 +71,7 @@ else:
     _frontend_origins = ["http://localhost", "http://localhost:5173", "http://localhost:3000"]
 CORS(app, origins=_frontend_origins, supports_credentials=True)
 db      = SQLAlchemy(app)
-jwt     = JWTManager(app)
+jwt     = identity.configurar_jwt(app)  # RS256 — autoridade de identidade única (ver identity.py)
 limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
 
 
@@ -1131,7 +1122,7 @@ def login():
     if not user.ativo:
         return jsonify({'erro': 'Usuário inativo'}), 403
 
-    token = create_access_token(identity=str(user.id), expires_delta=timedelta(hours=8))
+    token = identity.emitir_token(user)
     resp  = jsonify({'usuario': user.to_dict()})
     set_access_cookies(resp, token)
     return resp, 200
@@ -1550,7 +1541,17 @@ def internal_relatorios_dashboard():
     """Endpoint interno de leitura da Central, consumido pelo Atlas via
     central_client — única rota que expõe KPIs de relatórios para o domínio
     Atlas. Fixa, com whitelist de parâmetros; sem passthrough de SQL/filtros
-    livres."""
+    livres.
+
+    Fase 3: exige tanto o JWT do usuário (@jwt_required(), revalidado a cada
+    chamada — stateless) quanto a credencial de serviço do Atlas. Hoje quem
+    chama esta lógica em produção é central_client, no mesmo processo (sem
+    passar pelo HTTP e portanto sem este header) — a checagem aqui é o que a
+    Fase 5 vai passar a exigir de verdade quando Atlas e Central virarem
+    processos separados; testável via HTTP direto desde já."""
+    if not identity.verificar_credencial_servico(request):
+        return jsonify({'erro': 'Credencial de serviço ausente ou inválida.'}), 403
+
     usuario_id = int(get_jwt_identity())
 
     params_permitidos = {'modulo'}

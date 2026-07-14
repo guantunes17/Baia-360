@@ -24,6 +24,12 @@ except ImportError:
     print("ERRO: requests nao instalado. Execute: pip install requests")
     sys.exit(1)
 
+try:
+    import jwt as pyjwt  # PyJWT — ja e dependencia do backend (Flask-JWT-Extended)
+except ImportError:
+    print("ERRO: PyJWT nao instalado. Execute: pip install PyJWT[crypto]")
+    sys.exit(1)
+
 BASE        = "http://localhost:5001"
 FIXTURES    = os.path.join(os.path.dirname(__file__), 'fixtures')
 OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), 'output')
@@ -31,6 +37,11 @@ ADMIN_EMAIL = "admin@baia360.com"
 ADMIN_SENHA = "Agucla*25"
 MES_REF     = "04-2026"   # formato MM-AAAA esperado por _atualizar_historico e _caminho_saida
 MES_FILTRO  = "2026-04"   # formato YYYY-MM esperado por processar_armazenagem
+
+# Credencial de serviço Atlas->Central (ver backend/identity.py) — precisa bater
+# com CENTRAL_SERVICE_TOKEN no .env usado para rodar o backend deste teste.
+CENTRAL_SERVICE_TOKEN  = "test-service-token-abc123"
+CENTRAL_SERVICE_HEADER = "X-Central-Service-Token"
 
 RESULTADOS = []
 
@@ -50,6 +61,13 @@ def _session_logada():
 
 def _session_anonima():
     return requests.Session()
+
+
+def _com_credencial_servico(session):
+    """Anexa o header de credencial de serviço à sessão — necessário para
+    qualquer chamada a /internal/relatorios/* desde a Fase 3."""
+    session.headers[CENTRAL_SERVICE_HEADER] = CENTRAL_SERVICE_TOKEN
+    return session
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -115,6 +133,9 @@ def test_auth():
     reportar("Auth - Job inexistente -> 404", r4.status_code == 404,
              f"status={r4.status_code}")
 
+    # A partir daqui a sessão carrega a credencial de serviço para os testes
+    # de /internal/relatorios/* — não afeta as demais rotas (elas ignoram o header).
+    _com_credencial_servico(session)
     return session
 
 
@@ -468,6 +489,9 @@ def test_internal_dashboard_permissoes(session):
             reportar("Internal Dashboard - Setup usuario financeiro", False,
                      f"login falhou: status={r_login.status_code}")
             return
+        # Credencial de serviço presente daqui pra frente: os 403 abaixo têm que
+        # ser por falta de PERMISSÃO de módulo, não por falta desse header.
+        _com_credencial_servico(fin_session)
 
         # Financeiro tem fat_dist/fat_arm, NAO tem estoque -> 403
         r_neg = fin_session.get(f"{BASE}/internal/relatorios/dashboard", params={'modulo': 'estoque'})
@@ -497,6 +521,72 @@ def test_internal_dashboard_permissoes(session):
 
     finally:
         session.delete(f"{BASE}/api/auth/usuarios/{user_id}")
+
+
+# ─── Fase 3 (desacoplamento Atlas/Central) — RS256 + credencial de serviço ───
+
+def test_rs256_e_credencial_servico(session):
+    """Token emitido é RS256 (assimétrico); um token re-assinado com outra
+    chave é rejeitado; /internal/relatorios/* exige JWT válido E a
+    credencial de serviço — as quatro combinações. `session` já carrega o
+    header de credencial (ver test_auth)."""
+    print("\n=== RS256 + Credencial de Servico (Fase 3) ===")
+
+    token = session.cookies.get('access_token_cookie')
+    header = pyjwt.get_unverified_header(token) if token else {}
+    reportar("RS256 - Token emitido usa alg RS256", header.get('alg') == 'RS256',
+             f"alg={header.get('alg')}")
+
+    # Token re-assinado com uma chave RSA DIFERENTE da configurada no servidor —
+    # prova que a validação é assimétrica de verdade (um segredo simétrico
+    # vazado não bastaria pra forjar isso), não só que "alguma checagem existe".
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+
+    claims = pyjwt.decode(token, options={'verify_signature': False}) if token else {}
+    chave_forjada = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem_forjada = chave_forjada.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    token_forjado = pyjwt.encode(claims, pem_forjada, algorithm='RS256')
+
+    forjado = requests.Session()
+    forjado.cookies.set('access_token_cookie', token_forjado)
+    r_forjado = forjado.get(f"{BASE}/api/auth/me")
+    # Flask-JWT-Extended usa 422 pra "token presente mas assinatura invalida"
+    # e reserva 401 pra "token ausente" — qualquer um dos dois é rejeição;
+    # o que importa é NUNCA 200 (autenticaria como o usuário forjado).
+    reportar("RS256 - Token re-assinado com outra chave -> rejeitado (401/422)",
+             r_forjado.status_code in (401, 422),
+             f"status={r_forjado.status_code}")
+
+    # /internal/relatorios/* exige JWT válido E credencial de serviço.
+    sem_credencial = _session_logada()
+    r1 = sem_credencial.get(f"{BASE}/internal/relatorios/dashboard")
+    reportar("Credencial servico - JWT valido, sem credencial -> 403", r1.status_code == 403,
+             f"status={r1.status_code}")
+
+    sem_jwt = requests.Session()
+    sem_jwt.headers[CENTRAL_SERVICE_HEADER] = CENTRAL_SERVICE_TOKEN
+    r2 = sem_jwt.get(f"{BASE}/internal/relatorios/dashboard")
+    reportar("Credencial servico - Sem JWT, credencial valida -> 401", r2.status_code == 401,
+             f"status={r2.status_code}")
+
+    r3 = requests.Session().get(f"{BASE}/internal/relatorios/dashboard")
+    reportar("Credencial servico - Sem JWT e sem credencial -> 401", r3.status_code == 401,
+             f"status={r3.status_code}")
+
+    credencial_errada = _session_logada()
+    credencial_errada.headers[CENTRAL_SERVICE_HEADER] = "valor-errado"
+    r4 = credencial_errada.get(f"{BASE}/internal/relatorios/dashboard")
+    reportar("Credencial servico - Credencial errada -> 403", r4.status_code == 403,
+             f"status={r4.status_code}")
+
+    r5 = session.get(f"{BASE}/internal/relatorios/dashboard")
+    reportar("Credencial servico - JWT valido + credencial valida -> 200", r5.status_code == 200,
+             f"status={r5.status_code}")
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -534,6 +624,9 @@ if __name__ == '__main__':
     # Fase 2 — desacoplamento Atlas/Central: contrato interno de leitura
     test_internal_dashboard_validacao(session)
     test_internal_dashboard_permissoes(session)
+
+    # Fase 3 — RS256 + credencial de serviço
+    test_rs256_e_credencial_servico(session)
 
     # Resumo
     print("\n" + "="*60)
