@@ -96,8 +96,9 @@ def set_security_headers(response):
 # ── Model ─────────────────────────────────────────────────────────────────────
 class AtlasLog(db.Model):
     __tablename__ = 'atlas_logs'
+    __table_args__ = {'schema': 'atlas'}
     id          = db.Column(db.Integer, primary_key=True)
-    usuario_id  = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    usuario_id  = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), nullable=False)
     primeira_msg = db.Column(db.String(200), nullable=True)
     total_msgs  = db.Column(db.Integer, default=0)
     criado_em   = db.Column(db.DateTime, default=datetime.utcnow)
@@ -116,8 +117,9 @@ class AtlasRAGTrace(db.Model):
     do container (ver entrypoint.sh). Sem migração manual.
     """
     __tablename__ = 'atlas_rag_trace'
+    __table_args__ = {'schema': 'atlas'}
     id            = db.Column(db.Integer, primary_key=True)
-    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=True, index=True)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), nullable=True, index=True)
     conv_id       = db.Column(db.String(20), nullable=True, index=True)
     response_id   = db.Column(db.String(80), nullable=True, index=True)
     modelo        = db.Column(db.String(50), nullable=True)
@@ -155,6 +157,7 @@ class AtlasRAGTrace(db.Model):
 class AtlasGoldenQA(db.Model):
     """Perguntas canônicas para teste de regressão do RAG. Semeadas por admin."""
     __tablename__ = 'atlas_golden_qa'
+    __table_args__ = {'schema': 'atlas'}
     id            = db.Column(db.Integer, primary_key=True)
     pergunta      = db.Column(db.Text, nullable=False)
     resposta_ref  = db.Column(db.Text, nullable=True)   # resposta de referência (opcional)
@@ -164,6 +167,7 @@ class AtlasGoldenQA(db.Model):
 class AtlasGoldenRun(db.Model):
     """Uma execução do golden set. Guarda médias para comparar regressões."""
     __tablename__ = 'atlas_golden_run'
+    __table_args__ = {'schema': 'atlas'}
     id             = db.Column(db.Integer, primary_key=True)
     motivo         = db.Column(db.String(50), nullable=True)  # 'deploy'|'docs'|'model'|'floor'|'manual'
     n_perguntas    = db.Column(db.Integer, default=0)
@@ -177,8 +181,9 @@ class AtlasGoldenRun(db.Model):
 
 class AtlasProjeto(db.Model):
     __tablename__ = 'atlas_projetos'
+    __table_args__ = {'schema': 'atlas'}
     id          = db.Column(db.Integer, primary_key=True)
-    usuario_id  = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    usuario_id  = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), nullable=False)
     nome        = db.Column(db.String(200), nullable=False)
     descricao   = db.Column(db.Text, default='')
     criado_em   = db.Column(db.DateTime, default=datetime.utcnow)
@@ -197,8 +202,9 @@ class AtlasProjeto(db.Model):
 
 class AtlasConversa(db.Model):
     __tablename__ = 'atlas_conversas'
+    __table_args__ = {'schema': 'atlas'}
     id          = db.Column(db.Integer, primary_key=True)
-    usuario_id  = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    usuario_id  = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), nullable=False)
     conv_id     = db.Column(db.String(20), nullable=False)       # id gerado no frontend
     titulo      = db.Column(db.String(200), default='Nova conversa')
     msgs_json   = db.Column(db.Text, nullable=False, default='[]')
@@ -206,7 +212,7 @@ class AtlasConversa(db.Model):
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     pinada        = db.Column(db.Boolean, default=False, server_default=text('false'))
     criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
-    projeto_id    = db.Column(db.Integer, db.ForeignKey('atlas_projetos.id'), nullable=True)
+    projeto_id    = db.Column(db.Integer, db.ForeignKey('atlas.atlas_projetos.id'), nullable=True)
 
     def to_dict(self):
         return {
@@ -224,8 +230,9 @@ class AtlasConversa(db.Model):
 
 class AtlasMemoria(db.Model):
     __tablename__ = 'atlas_memoria'
+    __table_args__ = {'schema': 'atlas'}
     id            = db.Column(db.Integer, primary_key=True)
-    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), nullable=False)
     conteudo      = db.Column(db.Text, nullable=False)
     origem        = db.Column(db.String(20), nullable=False, default='automatica', server_default='automatica')  # manual|automatica
     criada_em     = db.Column(db.DateTime, default=datetime.utcnow)
@@ -247,8 +254,9 @@ class AtlasInstrucao(db.Model):
     do container já cria a tabela, sem migração manual necessária aqui.
     """
     __tablename__ = 'atlas_instrucao'
+    __table_args__ = {'schema': 'atlas'}
     id            = db.Column(db.Integer, primary_key=True)
-    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), unique=True, nullable=False)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), unique=True, nullable=False)
     conteudo      = db.Column(db.Text, nullable=False, default='')
     atualizada_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -267,8 +275,9 @@ class AtlasAcaoLog(db.Model):
     entrypoint.sh, que roda `alembic upgrade head` no boot).
     """
     __tablename__ = 'atlas_acao_log'
+    __table_args__ = {'schema': 'atlas'}
     id           = db.Column(db.Integer, primary_key=True)
-    usuario_id   = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=False)
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), nullable=False)
     tool         = db.Column(db.String(50), nullable=False)
     jti          = db.Column(db.String(36), nullable=False, unique=True)
     args_hash    = db.Column(db.String(64), nullable=False)
@@ -543,7 +552,7 @@ def purgar_rag_traces(dias: int = 90) -> int:
     """Apaga traces com mais de `dias`. Idempotente. Retorna nº de linhas."""
     from sqlalchemy import text
     res = db.session.execute(
-        text("DELETE FROM atlas_rag_trace WHERE criado_em < NOW() - (:d || ' days')::interval"),
+        text("DELETE FROM atlas.atlas_rag_trace WHERE criado_em < NOW() - (:d || ' days')::interval"),
         {'d': dias}
     )
     db.session.commit()
@@ -1018,8 +1027,9 @@ PERMISSOES_PADRAO = {
 
 class Permissao(db.Model):
     __tablename__ = 'permissoes'
+    __table_args__ = {'schema': 'identity'}
     id           = db.Column(db.Integer, primary_key=True)
-    usuario_id   = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), unique=True, nullable=False)
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), unique=True, nullable=False)
     hub_json     = db.Column(db.Text, nullable=False, default='[]')
     modulos_json = db.Column(db.Text, nullable=False, default='[]')
 
@@ -1042,6 +1052,7 @@ class Permissao(db.Model):
 
 class User(db.Model):
     __tablename__ = 'baia360_users'
+    __table_args__ = {'schema': 'identity'}
     id         = db.Column(db.Integer, primary_key=True)
     nome       = db.Column(db.String(100), nullable=False)
     email      = db.Column(db.String(120), unique=True, nullable=False)
@@ -1070,11 +1081,12 @@ class User(db.Model):
 
 class RelatorioGerado(db.Model):
     __tablename__ = 'relatorios_gerados'
+    __table_args__ = {'schema': 'central'}
 
     id         = db.Column(db.Integer, primary_key=True)
     modulo     = db.Column(db.String(50), nullable=False)
     mes_ref    = db.Column(db.String(10), nullable=True)
-    usuario_id = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), nullable=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), nullable=True)
     gerado_em  = db.Column(db.DateTime, default=datetime.utcnow)
     kpis_json  = db.Column(db.Text, nullable=True)  # KPIs em JSON
 
@@ -1093,7 +1105,8 @@ class RelatorioGerado(db.Model):
             'kpis':      self.kpis()
         }
 
-# db.create_all() é executado pelo entrypoint.sh antes do gunicorn subir
+# Schema gerenciado via Alembic — entrypoint.sh roda `alembic upgrade head`
+# antes do gunicorn subir (não usa mais db.create_all()).
 
 @app.errorhandler(413)
 def arquivo_muito_grande(e):
@@ -4011,8 +4024,9 @@ def base_conhecimento_deletar(file_id):
 class OutlookToken(db.Model):
     """Armazena tokens OAuth do Microsoft Graph por usuário."""
     __tablename__ = 'outlook_tokens'
+    __table_args__ = {'schema': 'atlas'}
     id            = db.Column(db.Integer, primary_key=True)
-    usuario_id    = db.Column(db.Integer, db.ForeignKey('baia360_users.id'), unique=True, nullable=False)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), unique=True, nullable=False)
     access_token  = db.Column(db.Text, nullable=False)
     refresh_token = db.Column(db.Text, nullable=True)
     expires_at    = db.Column(db.DateTime, nullable=False)
