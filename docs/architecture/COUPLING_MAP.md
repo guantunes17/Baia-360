@@ -1,0 +1,150 @@
+# Coupling Map — Atlas ↔ Central de Relatórios ↔ Identity
+
+**Status:** discovery only, no code changed. Produced for Prompt 1 of the Atlas/Central decoupling plan (`plan_atlas_central_decoupling_2026-07-13.md`).
+
+**Method:** every claim below is backed by a `file:line` the author actually opened and read (paths relative to `backend/` unless noted). No claim is inferred from naming conventions alone.
+
+---
+
+## 1. Table ownership
+
+All 13 `db.Model` subclasses live in `app.py` — `modules/central_relatorios.py` defines **zero** models (confirmed: no `class .*db.Model`, no `import` of `db`/`app` in that file — see §3).
+
+| # | Table | Model class | file:line | Domain | Justification |
+|---|-------|-------------|-----------|--------|----------------|
+| 1 | `atlas_logs` | `AtlasLog` | `app.py:104-110` | atlas | First-message log per Atlas chat session; FK to `baia360_users`. Written at `app.py:2911-2924` inside `/api/atlas/chat`. |
+| 2 | `atlas_rag_trace` | `AtlasRAGTrace` | `app.py:112-160` | atlas | RAG/retrieval observability (file_search telemetry, groundedness, judge scores). Written from `/api/atlas/chat` via `registrar_rag_trace` (`app.py:2887`). |
+| 3 | `atlas_golden_qa` | `AtlasGoldenQA` | `app.py:162-169` | atlas | Canonical Q&A set for RAG regression testing. |
+| 4 | `atlas_golden_run` | `AtlasGoldenRun` | `app.py:171-183` | atlas | One row per golden-set evaluation run (faithfulness/answer/context/groundedness means). |
+| 5 | `atlas_projetos` | `AtlasProjeto` | `app.py:185-203` | atlas | User-scoped Atlas "projects" (chat organization); FK to `baia360_users`; parent of `atlas_conversas`. |
+| 6 | `atlas_conversas` | `AtlasConversa` | `app.py:205-230` | atlas | Chat conversation storage (`msgs_json`, `history_json`); FK to `baia360_users` and to `atlas_projetos`. |
+| 7 | `atlas_memoria` | `AtlasMemoria` | `app.py:232-241` | atlas | Server-persisted "memories" injected into the Atlas system prompt (`app.py:2695-2716`). |
+| 8 | `atlas_instrucao` | `AtlasInstrucao` | `app.py:244-262` | atlas | Per-user custom instructions for Atlas, read server-side at `app.py:2692-2693`. |
+| 9 | `atlas_acao_log` | `AtlasAcaoLog` | `app.py:265-289` | atlas | Audit log for Atlas side-effectful tool actions (HMAC-gated "propose → confirm" flow, `/api/atlas/preparar_acao`). |
+| 10 | `permissoes` | `Permissao` | `app.py:1002-1024` | identity | Per-user hub/module ACL (`hub_json`, `modulos_json`); FK to `baia360_users`, unique. Gates access to both Atlas and Central hubs (see §5). |
+| 11 | `baia360_users` | `User` | `app.py:1026-1052` | identity | The single users/auth table (email, password hash, `perfil`, `ativo`, `status`). Every other domain's FKs point here. |
+| 12 | `relatorios_gerados` | `RelatorioGerado` | `app.py:1054-1077` | central | Metadata (`modulo`, `mes_ref`, `kpis_json`) of each Central report generation. Written exclusively by the 8 `/api/modulos/*` route handlers in `app.py` (e.g. `app.py:1588` Fretes, `app.py:2078` Estoque — full list in §4/§6). Read by Central's own `/api/dashboard*` routes (`app.py:2368-2444`) **and** by one Atlas route, `/api/atlas/dashboard_data` (`app.py:3083-3148`) — see §2. Classified `central` because it is Central-owned report metadata; the one Atlas read is the cross-domain coupling documented below, not evidence of Atlas ownership. |
+| 13 | `outlook_tokens` | `OutlookToken` | `app.py:3868-3888` | atlas | Per-user Microsoft Graph OAuth tokens. Used exclusively by `/api/oauth/outlook/*` and `/api/outlook/*` routes (`app.py:3913-4117` and neighboring routes) that back the Atlas "agenda" hub and the Atlas function-calling tools `get_agenda`, `criar_evento`, `deletar_evento`, `buscar_emails`, `enviar_email`, `teams_*` (declared `app.py:696-840`, described in the Atlas system prompt `app.py:633-646`). Never referenced by `modules/central_relatorios.py` or by any `/api/modulos/*` / `/api/dashboard*` route. Note: `PERMISSOES_PADRAO` (`app.py:982-1000`) treats `agenda` as a hub distinct from `atlas`, but both are gated identically per role and both are served by `app.py`, not by Central — so this table sits on the Atlas side of the future split. Out of scope per the plan doc: `mcp_outlook_server.py` (port 5002) is a separate MCP server for Outlook only and is explicitly not to expose Central data. |
+
+### Server_default mismatches — verified, not assumed
+
+The task brief flagged three tables as having known `server_default` mismatches. Reading `backend/migrations/versions/*.py` against the live model definitions shows **only one of the three is actually mismatched today**; the other two already match:
+
+| Table.column | Model default (`app.py`) | Baseline migration default (`ba7771d00ae9_baseline_schema_atual.py`) | Corrective migration | Current state |
+|---|---|---|---|---|
+| `baia360_users.status` | `server_default='pendente'` (`app.py:1034`) | `server_default='ativo'` (line 52 of baseline) | `2cc774672704_corrige_default_de_status_para_pendente.py:24-27` alters the column to `server_default='pendente'` | **Fixed.** Model and post-migration DB now agree on `'pendente'`. Before this migration, prod had the `'ativo'` trap referenced in commit `d0dfe41`. |
+| `atlas_conversas.pinada` | `default=False, server_default=text('false')` (`app.py:214`) | `server_default=sa.text('false')` (baseline line 189) | none needed | **Already aligned.** No mismatch found — the baseline was written to be a "foto fiel" (faithful photo) of real prod defaults per commit `ba7281a`. |
+| `atlas_memoria.origem` | `default='automatica', server_default='automatica'` (`app.py:237`) | `server_default='automatica'` (baseline line 95) | none needed | **Already aligned.** No mismatch found, same reasoning as above. |
+
+**Takeaway for later phases:** only `baia360_users.status` required (and received) a corrective migration; `pinada` and `origem` were never actually out of sync once the baseline migration was authored to reflect live prod defaults. Phase 4's task list (which references "the `pinada`/`origem` mismatches" as something still to resolve) should be corrected — there is nothing left to fix there.
+
+---
+
+## 2. Atlas → Central read sites
+
+Because `modules/central_relatorios.py` defines no models, there is **no direct Atlas import of a Central model** in the sense of `from modules.central_relatorios import X` — that file has no models to import. The real coupling is table-level, through the one model both domains touch:
+
+| file:line | What | Why |
+|---|---|---|
+| `app.py:3083-3148` (route `/api/atlas/dashboard_data`, `@jwt_required()`) | Queries `RelatorioGerado` directly (`db.session.query(RelatorioGerado...)`, subquery for latest-per-module, plus a 10-row recent history) and returns KPI JSON | Backs the Atlas function-calling tool `get_dashboard` (declared `app.py:696-708`, described `app.py:633-634`: "Use get_dashboard quando o usuário perguntar sobre KPIs..."). The frontend executes this tool client-side (`frontend/src/pages/Atlas.tsx:58-63`) by calling this exact endpoint. This is the **only** Atlas-namespaced route that queries a Central-owned table. |
+
+No other `/api/atlas/*` route references `RelatorioGerado`, `DB_ESTOQUE_PATH_WEB`/`estoque_db.json`, `DB_FAMILIAS_PATH_WEB`, `DB_PRECOS_ARM_PATH_WEB`, or imports `modules/central_relatorios.py` (verified via `grep -n "RelatorioGerado\|estoque_db\|DB_ESTOQUE\|central_relatorios" app.py` — all other hits are inside `/api/modulos/*` or `/api/dashboard*` handlers, which are Central's own routes, not Atlas's).
+
+**What coupling actually exists, if not model imports:**
+- **Shared table, single ORM class, single Flask process.** `RelatorioGerado` is defined once in `app.py` and used by both the 8 Central report-generation routes (writers) and one Atlas route (reader). There is no service boundary, no serialization contract, and no permission re-check specific to the "Central data" nature of the read — `/api/atlas/dashboard_data` only requires `@jwt_required()` (any logged-in user), not the per-module Central permission (`_verificar_permissao_modulo`) that gates the 8 report-generation endpoints themselves. This means a user without permission to the `estoque` module (say) can still see the latest Estoque KPIs through the Atlas chat's `get_dashboard` tool, because that read path bypasses `_verificar_permissao_modulo` entirely.
+- **Shared filesystem paths (not DB), for 3 of the 8 modules.** `estoque_db.json` (`app.py:1927`, `DB_ESTOQUE_PATH_WEB`), `fat_arm_familias.json`, and `fat_arm_precos.json` (`app.py:2172-2173`) are JSON files under `backend/data/` that Central treats as its own persistent "mini-DBs" for incremental stock/pricing state. These are Central-internal (Atlas never touches them), but they are a second, non-SQL persistence mechanism app.py has to know about and inject into the dynamically-loaded Central module (see below) — relevant to Phase 2's contract design since these three modules' "state" isn't in Postgres at all.
+- **Dynamic file-path module loading, not a Python import.** Every `/api/modulos/*` route loads `modules/central_relatorios.py` at *request time* via `importlib.util.spec_from_file_location(...)` / `spec.loader.exec_module(mod)` (11 call sites, e.g. `app.py:1571-1576`, `1965-1970`, `2053-2058`, `2325-2330`) rather than a top-of-file `import`. This means the module is re-executed (re-parsed, re-run at module scope) on every single report generation call — a real coupling/performance/consistency concern for the future split, not just a style choice.
+- **app.py monkey-patches the dynamically-loaded module's globals.** After loading, `app.py` directly overwrites attributes on the freshly-loaded module object before calling its functions: `mod.DB_ESTOQUE_PATH = DB_ESTOQUE_PATH_WEB` (`app.py:1972`, `2010`, `2060`), `mod._caminho_saida = lambda *args, **kwargs: tmp_saida.name` (`app.py:1817`, `1896`, `2332`, etc.), and `mod.DB_FAMILIAS_PATH` / `mod.DB_PRECOS_ARM_PATH` (`app.py:2181-2182`, `2333-2334`). `central_relatorios.py`'s own top-level default for `DB_ESTOQUE_PATH` is `~/central_relatorios_estoque_db.json` (`modules/central_relatorios.py:555`) — a home-directory path meant for CLI/standalone use — and the web app only works correctly because `app.py` reaches in and replaces it after each dynamic load. This is tight, implicit coupling on the *shape of the module's internal namespace*, not a documented interface.
+- **Blueprint registration:** there is none. `grep -n "Blueprint(\|register_blueprint" app.py modules/central_relatorios.py` returns no hits — all ~90+ routes (Atlas and Central alike) are registered directly on the single `app = Flask(__name__)` object in `app.py` via `@app.route`. There is no namespacing mechanism separating the two domains beyond URL prefix convention (`/api/atlas/*` vs `/api/modulos/*` + `/api/dashboard*`).
+
+---
+
+## 3. Shared SQLAlchemy models / cross-imports
+
+- **`modules/central_relatorios.py` imports nothing from `app.py`** and has no SQLAlchemy/`db` usage at all (verified: its only imports are `re`, `traceback`, `pandas`, `numpy`, `holidays`, `os`, `threading`, `datetime`/`calendar`, `openpyxl`, and `json, subprocess, shutil` — `modules/central_relatorios.py:2-24, 534`). It also has **zero occurrences** of `atlas`, `Atlas`, `rag`, `RAG`, `vector_store`, `openai`, or `Responses` (verified via case-insensitive grep across the whole file — zero hits). Central's report logic is fully self-contained: it reads an uploaded Excel/PDF file (or its own JSON "mini-DB" for estoque/fat_arm), computes with `pandas`/`openpyxl`, and writes an output `.xlsx`. It never touches Postgres.
+- **The only shared model is `RelatorioGerado`** (§1/§2), and it's shared by usage (both domains' route handlers in `app.py` touch it), not by import — there is nothing to import since everything lives in one file.
+- **`User` is used pervasively by both** — this is expected and correct: it's the identity table. Atlas reads it for the chat system prompt's `nome_usuario` (`app.py:2686-2687`) and for pending-approval counts in the admin briefing (`app.py:3324-3326`, `/api/atlas/briefing` reading `User.query.filter_by(status='pendente').count()`); Central-adjacent routes (`/api/auth/*`, `/api/dashboard*`) use it for permission checks. This is identity-domain data both other domains legitimately depend on, not a boundary violation.
+- **`Permissao`** is likewise shared infrastructure: `_verificar_permissao_modulo` (`app.py:1427-1438`) is called from all 8 `/api/modulos/*` routes to gate Central access, while the `hub`/`modulos` JSON it stores is also returned wholesale to the frontend for both the Atlas and Central hub tiles (`/api/auth/permissoes/me`, handler at `app.py:1356`).
+
+---
+
+## 4. Cross-boundary foreign keys
+
+All FKs in the schema point at `baia360_users.id`, except `atlas_conversas.projeto_id → atlas_projetos.id` (intra-Atlas) and none point at `relatorios_gerados` or any Central-only table. **No FK in the schema declares an `ondelete` rule** — `grep -n "ondelete" app.py` returns zero matches — so every FK below defaults to Postgres's `NO ACTION`/`RESTRICT` at the DB level.
+
+| FK | Direction (future schema) | `ondelete` | Nullable | Evidence |
+|---|---|---|---|---|
+| `atlas_logs.usuario_id → baia360_users.id` | atlas → identity | none (RESTRICT) | `nullable=False` | `app.py:107` |
+| `atlas_rag_trace.usuario_id → baia360_users.id` | atlas → identity | none (RESTRICT) | `nullable=True` | `app.py:127` |
+| `atlas_projetos.usuario_id → baia360_users.id` | atlas → identity | none (RESTRICT) | `nullable=False` | `app.py:188` |
+| `atlas_conversas.usuario_id → baia360_users.id` | atlas → identity | none (RESTRICT) | `nullable=False` | `app.py:208` |
+| `atlas_memoria.usuario_id → baia360_users.id` | atlas → identity | none (RESTRICT) | `nullable=False` | `app.py:235` |
+| `atlas_instrucao.usuario_id → baia360_users.id` | atlas → identity | none (RESTRICT) | `nullable=False`, unique | `app.py:258` |
+| `atlas_acao_log.usuario_id → baia360_users.id` | atlas → identity | none (RESTRICT) | `nullable=False` | `app.py:278` |
+| `outlook_tokens.usuario_id → baia360_users.id` | atlas → identity | none (RESTRICT) | `nullable=False`, unique | `app.py:3872` |
+| `relatorios_gerados.usuario_id → baia360_users.id` | central → identity | none (RESTRICT) | `nullable=True` | `app.py:1060` |
+| *(intra-domain, not boundary-crossing)* `atlas_conversas.projeto_id → atlas_projetos.id` | atlas → atlas | none (RESTRICT) | `nullable=True` | `app.py:216` |
+| *(intra-domain, not boundary-crossing)* `permissoes.usuario_id → baia360_users.id` | identity → identity | none (RESTRICT) | `nullable=False`, unique | `app.py:1005` |
+
+**9 FKs cross the future atlas/central/identity boundary** (8 atlas→identity, 1 central→identity); all point child→parent at `baia360_users`, none have DB-level cascade.
+
+**Operational consequence worth flagging for Phase 4:** `deletar_usuario` (`app.py:1284-1302`, the only place a `User` row is ever deleted) manually cleans up just 4 of the 9 dependent tables before `db.session.delete(user)` — it deletes `Permissao`, `AtlasConversa`, `AtlasLog`, `AtlasMemoria` rows and nullifies `RelatorioGerado.usuario_id`, but does **not** touch `AtlasRAGTrace`, `AtlasProjeto`, `AtlasInstrucao`, `AtlasAcaoLog`, or `OutlookToken`. Since none of those FKs have `ondelete` set, deleting a user who has any row in those 5 tables will raise a Postgres `IntegrityError` (FK violation) today, in the current monolith, independent of any future schema split — this is a pre-existing latent bug, not something introduced by decoupling, but Phase 4 (which is already re-deciding FK behavior per boundary) is the natural place to also fix the cleanup list.
+
+---
+
+## 5. Auth flow map
+
+- **Framework:** `flask_jwt_extended` (`app.py:21-24` imports; `JWTManager(app)` at `app.py:81`).
+- **Algorithm:** HS256 (symmetric). No `JWT_ALGORITHM` config key is set anywhere (`grep -n "JWT_ALGORITHM\|algorithm" app.py` → no hits), so flask-jwt-extended uses its default, which is HS256.
+- **Secret source:** `app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')` (`app.py:58`) — a single symmetric secret from the environment, used both to sign and to verify. There is currently one process, so signing and verifying happen in the same code with the same key.
+- **Token issuance:** `create_access_token(identity=str(user.id), expires_delta=timedelta(hours=8))` in `POST /api/auth/login` (`app.py:1108`). 8-hour expiry, identity = user id as string.
+- **Transport:** httpOnly cookie, not `Authorization` header. `JWT_TOKEN_LOCATION = ['cookies']` (`app.py:64`), cookie name `access_token_cookie` (`app.py:68`), `set_access_cookies(resp, token)` on login (`app.py:1110`), `unset_jwt_cookies(resp)` on logout (`app.py:1117`).
+- **Cookie flags:** `JWT_COOKIE_SECURE = _is_prod` (True in prod/HTTPS, False in dev/HTTP) (`app.py:65`); `JWT_COOKIE_SAMESITE = 'Lax'` (`app.py:66`); `JWT_COOKIE_DOMAIN = None` (uses current domain) (`app.py:69`).
+- **CSRF:** `JWT_COOKIE_CSRF_PROTECT = False` (`app.py:67`), with an inline Portuguese comment: `# CSRF desabilitado — SPA no mesmo domínio` ("CSRF disabled — same-domain SPA"). Stating this as a fact per the task brief, not editorializing on whether it's actually safe.
+- **Validation:** every protected route uses the `@jwt_required()` decorator (76 occurrences via `grep -n "jwt_required()" app.py`) followed by `get_jwt_identity()` to recover the user id string, almost always immediately turned into `User.query.get(int(get_jwt_identity()))`. All `/api/atlas/*` routes are behind `@jwt_required()` (verified per-route: chat `app.py:2661-2662`, rag_feedback `2935-2936`, preparar_acao `2960-2961`, recusar_acao `3018-3019`, upload_arquivo `3038-3039`, dashboard_data `3084-3085`, metricas `3151-3152`, briefing `3218-3219`, log_conversas `3350-3351`, observabilidade `3388-3389`, and the rest of the Atlas route block).
+- **Per-module permission checks (Central):** enforced by the standalone helper `_verificar_permissao_modulo(usuario_id, modulo)` (`app.py:1427-1438`) — admins (`perfil == 'admin'`) always pass; everyone else must have a `Permissao` row whose `modulos_json` list contains the requested module slug. Called at the top of every one of the 8 `/api/modulos/*` generation routes (`app.py:1543, 1641(approx.), 1722, 1793, 1872, 2034, 2117, 2301` — one call per module, using the module's slug: `fretes`, `armazenagem`, `pedidos`, `recebimentos`, `cap_operacional`, `estoque`, `fat_dist`, `fat_arm`).
+- **Hub-level gating:** `Permissao.hub_json` stores a list of hub slugs (`central`, `painel_controle`, `painel_resultados`, `atlas`, `agenda`) but there is **no server-side `_verificar_permissao_hub`-style check** anywhere in `app.py` (only `_verificar_permissao_modulo` exists) — hub visibility is enforced client-side only, by the frontend reading the `hub` array returned from `/api/auth/permissoes/me`. This matters for §2's finding that `/api/atlas/dashboard_data` doesn't re-check per-module Central permission: there is genuinely no hub-boundary enforcement server-side today, only module-boundary enforcement within Central's own routes.
+- **The 4 roles and their defaults** — `PERMISSOES_PADRAO` (`app.py:982-1000`):
+
+  | `perfil` | `hub` | `modulos` (Central modules gated) |
+  |---|---|---|
+  | `admin` | `central, painel_controle, painel_resultados, atlas, agenda` | all 8: `pedidos, fretes, armazenagem, estoque, cap_operacional, recebimentos, fat_dist, fat_arm` |
+  | `analista` | `central, atlas, agenda` | `pedidos, fretes, armazenagem, estoque, cap_operacional, recebimentos` (6 of 8 — no `fat_dist`/`fat_arm`) |
+  | `financeiro` | `central, atlas, agenda` | `fat_dist, fat_arm` only |
+  | `operacional` | `atlas, agenda` (no `central` hub at all) | `[]` (none) |
+
+  These are just *defaults* applied at account-approval time (`Permissao.criar_para`, `app.py:1017-1024`, called from `aprovar_usuario` `app.py:1307-1332`, specifically the `Permissao.criar_para` call at `app.py:1332`) and can be overridden per-user by an admin via `PUT /api/auth/usuarios/<id>/permissoes` (`app.py:1399-1425`), which overwrites `hub_json`/`modulos_json` directly — actual enforcement always reads the live `Permissao` row, not the `perfil` string, except for the `admin` bypass in `_verificar_permissao_modulo`.
+- **Registration/approval flow:** `POST /api/auth/cadastro` (public, `app.py:1132-1166`) always creates `perfil='operacional', ativo=False, status='pendente'`; login is blocked while `status == 'pendente'` (`app.py:1103-1104`) or `ativo == False` (`app.py:1105-1106`); an admin must call `POST /api/auth/usuarios/<id>/aprovar` (`app.py:1305+`) to set `perfil`, `ativo=True`, `status='ativo'`, and instantiate default `Permissao`.
+
+---
+
+## 6. Central report data surface
+
+For all 8 modules, the "database" that backs the report is either (a) the uploaded input file(s) processed in-memory with `pandas`/`openpyxl`/PDF parsing and never persisted beyond the generated output `.xlsx`, or (b) one of three JSON files under `backend/data/` that Central treats as its own incremental key-value store. **None of the 8 modules read from a SQL table for their source data** — the only SQL table involved anywhere in the Central surface is `relatorios_gerados`, and it stores post-hoc KPI *metadata*, not the report data itself.
+
+| Module | Route (`app.py`) | Central function (`modules/central_relatorios.py`) | Source data | Persisted state? | Atlas consumes it? |
+|---|---|---|---|---|---|
+| Fretes | `POST /api/modulos/fretes` (`app.py:1538-1603`) | `processar_fretes` (`modules/central_relatorios.py:321`) | Uploaded `.xlsx` (Consolidado sheet), in-memory only | No DB; output `.xlsx` is a temp file, deleted after download | Indirectly — only the KPI summary via `RelatorioGerado` (see below), not the treated data itself |
+| Pedidos | `POST /api/modulos/pedidos` (`app.py:1707-1774`) | `processar_pedidos` (`modules/central_relatorios.py:159`) | Uploaded `.xlsx` (Resumo Por Depositante) | No DB; temp output file | Same as above (KPI only) |
+| Armazenagem | `POST /api/modulos/armazenagem` (`app.py:1636-1706`) | `processar_armazenagem` (`modules/central_relatorios.py:452`) | Uploaded `.xlsx` (Armazenagem sheet) + `mes_filtro` param | No DB; temp output file | Same as above (KPI only) |
+| Estoque | `POST /api/modulos/estoque/gerar` (`app.py:2022-2096`) | `processar_estoque` (`modules/central_relatorios.py:1895`) | **JSON mini-DB** `backend/data/estoque_db.json` (`DB_ESTOQUE_PATH_WEB`, `app.py:1927`) as the running stock state, updated incrementally via `_carregar_estoque_xlsx`/`_atualizar_db_com_movimentacao` (routes `app.py:1950-2020`), plus an uploaded "pico" `.xlsx` per generation | **Yes — 2 MB JSON file** (`backend/data/estoque_db.json`, confirmed on disk, 2,043,866 bytes), separate from Postgres entirely | KPI only, via `RelatorioGerado`; Atlas never reads `estoque_db.json` directly (0 hits for `estoque_db`/`DB_ESTOQUE` in any `/api/atlas/*` handler) |
+| Cap. Operacional | `POST /api/modulos/cap_operacional` (`app.py:1846-1925`) | `run_cap_operacional_pdf` → `processar_cap_operacional` (`modules/central_relatorios.py:3065`) | Uploaded **PDF**, parsed in-memory, with `limiar_media`/`limiar_alta` thresholds | No DB; temp output file | KPI only |
+| Recebimentos | `POST /api/modulos/recebimentos` (`app.py:1775-1844`) | `run_recebimentos` → `processar_recebimentos` (`modules/central_relatorios.py:3327`) | Uploaded `.xlsx` (Resumo por Depositante) | No DB; temp output file | KPI only |
+| Fat. Distribuição | `POST /api/modulos/fat_dist` (`app.py:2099-2170`) | `run_faturamento_distribuicao` → `processar_financeiro` (`modules/central_relatorios.py:3676`) | Uploaded `.xlsx` (Fechamento sheet) | No DB; temp output file | KPI only |
+| Fat. Armazenagem | `POST /api/modulos/fat_arm` (`app.py:2286-2350`) | `run_faturamento_armazenagem` → `processar_faturamento_armazenagem` (`modules/central_relatorios.py:4226`) | Uploaded movimentação + volumes `.xlsx` pair, plus **two more JSON mini-DBs**: `backend/data/fat_arm_familias.json` and `backend/data/fat_arm_precos.json` (`DB_FAMILIAS_PATH_WEB`/`DB_PRECOS_ARM_PATH_WEB`, `app.py:2172-2173`), loaded via dedicated routes `/api/modulos/fat_arm/familias` and `/api/modulos/fat_arm/config` (`app.py:2219-2284`) | **Yes — 2 more JSON files**, same pattern as Estoque | KPI only |
+
+**KPI shape:** all 8 modules funnel through one of the `_extrair_kpis_*` functions in `app.py` (`app.py:1445-1526`), which re-open the *generated output* `.xlsx` with `pandas.read_excel` and pull a handful of scalar aggregates (totals, counts, percentages) into a small dict, e.g. `{'total_frete': ..., 'remetentes': ...}` for Fretes or `{'clientes': ..., 'maior_pico_m3': ..., 'maior_pico_cliente': ...}` for Estoque. That dict is what gets JSON-serialized into `RelatorioGerado.kpis_json` — this is the *only* Central data shape Atlas ever sees, via `/api/atlas/dashboard_data` → `get_dashboard` tool (§2). Atlas never sees the row-level "treated" report data (the actual per-client/per-order breakdown produced inside the output `.xlsx`) — only these small pre-aggregated KPI dicts, one snapshot per module (latest) plus a 10-row cross-module history.
+
+**Correction to the plan's framing:** the plan document's Prompt 1 overview states "Atlas reads Central's tables directly" (plural). Having read both files in full, this is only true for one table (`relatorios_gerados`), and even that access is KPI-metadata only, not the underlying report data — Central's actual report data never touches Postgres at all for 5 of 8 modules, and for the other 3 (Estoque, Fat. Armazenagem's two auxiliary stores) it lives in flat JSON files, not SQL. Phase 2's "read-only REST contract" design should account for the fact that the richest read Atlas could plausibly want (the row-level treated data, not just KPIs) currently has no persistence layer to read from at all — it exists only transiently in the generated `.xlsx` per job.
+
+---
+
+## Summary of surprises for the next phases
+
+1. **No Blueprint separation exists at all** — every route (Atlas and Central) is registered directly on one `Flask(__name__)` app object; the only separation today is URL-prefix convention.
+2. **Central is not imported, it's dynamically loaded by file path on every request** (`importlib.util.spec_from_file_location`, 11+ call sites) and then has its module-level globals (`DB_ESTOQUE_PATH`, `_caminho_saida`, `DB_FAMILIAS_PATH`, `DB_PRECOS_ARM_PATH`) monkey-patched by `app.py` after loading. This is a more unusual and more brittle coupling shape than a plain Python import would be, and Phase 2/5 should replace it with a real import or a proper service call rather than treating it as already-service-like.
+3. **Only one table is genuinely shared, and only one route reads across the boundary**: `/api/atlas/dashboard_data` (`app.py:3083`) is the sole Atlas→Central touchpoint, and it reads pre-aggregated KPI metadata (`RelatorioGerado`), never row-level report data — because row-level data isn't persisted anywhere for 5 of 8 modules.
+4. **That one cross-domain read bypasses Central's own permission model**: `/api/atlas/dashboard_data` only requires login, not `_verificar_permissao_modulo` — so a user with zero Central module permissions can still see all modules' latest KPIs through Atlas chat. Phase 2/3's authorization design should decide whether the new internal endpoint replicates or changes this behavior.
+5. **The three "known server_default mismatches" from the task brief are actually one mismatch** (`baia360_users.status`, already fixed by migration `2cc774672704`) plus two false positives (`atlas_conversas.pinada`, `atlas_memoria.origem` — already aligned in the baseline). Phase 4's task list references fixing all three; only the FK-cleanup gap in §4 and general schema-move work remain there.
+6. **9 FKs cross the future domain boundary, all pointing at `baia360_users.id`, none with `ondelete` set** — and the app-level cleanup on user deletion (`app.py:1284-1302`) only handles 4 of the 9 dependent tables, so deleting a user with rows in `AtlasRAGTrace`, `AtlasProjeto`, `AtlasInstrucao`, `AtlasAcaoLog`, or `OutlookToken` will currently raise a DB-level FK violation. Pre-existing bug, unrelated to decoupling, but Phase 4 is the natural place to also close this gap while it's already deciding FK behavior per boundary.
+7. **`OutlookToken` doesn't cleanly fit "atlas" or "central"** at first glance since it's a third integration (Microsoft Graph); reading its usage sites shows it's exclusively consumed by the Atlas/agenda hub's tools and routes, never by Central, so it's classified `atlas` here — flagging this as the one table whose domain assignment required usage-site evidence rather than being obvious from the name.
