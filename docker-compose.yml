@@ -6,6 +6,11 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
+    environment:
+      # Dev quer que o .env local vença qualquer env var pré-existente no
+      # shell/container — oposto do default seguro de produção (ver
+      # load_dotenv(..., override=...) em app.py/central_app.py).
+      DOTENV_OVERRIDE: "1"
     volumes:
       - ./backend:/app
       - /app/venv

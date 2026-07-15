@@ -51,7 +51,13 @@ def _deletar_temp(path: str):
 
 
 _env_path = Path(__file__).resolve().parent / '.env'
-load_dotenv(dotenv_path=_env_path, override=True)
+# override=True só em dev, via opt-in explícito (DOTENV_OVERRIDE=1, setado no
+# docker-compose.yml de dev). Em produção, env_file: já injeta os segredos
+# reais nas env vars do processo antes do Python rodar — um .env acidentalmente
+# presente no container (mesmo com .dockerignore) nunca deve conseguir
+# sobrescrever isso. Não depende de FLASK_ENV: mesmo se FLASK_ENV nunca for
+# setado (era o caso da produção real até agora), o default aqui é o seguro.
+load_dotenv(dotenv_path=_env_path, override=os.getenv('DOTENV_OVERRIDE', '0') == '1')
 
 app = Flask(__name__)
 _is_prod = os.getenv('FLASK_ENV', 'development') == 'production'

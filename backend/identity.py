@@ -40,6 +40,7 @@ internos da Central (/internal/relatorios/*) — hoje é uma chamada Python
 direta (mesmo processo), mas o endpoint HTTP já exige o header abaixo
 igual vai exigir quando os processos forem separados (Fase 5).
 """
+import base64
 import hmac
 import os
 from datetime import timedelta
@@ -49,17 +50,58 @@ from flask_jwt_extended import JWTManager, create_access_token
 CENTRAL_SERVICE_HEADER = 'X-Central-Service-Token'
 
 
+def _carregar_chave(nome_var: str, valor: str) -> str:
+    """Aceita a chave RS256 em três formatos, na ordem em que tenta:
+    (1) PEM cru (começa com '-----BEGIN'); (2) PEM com '\\n' escapado
+    literal em vez de quebra de linha real; (3) base64 do PEM — formato
+    padrão em produção, porque o parser de multi-linha do `env_file:` do
+    Docker Compose não é confiável para um valor com quebras de linha reais
+    (ao contrário de python-dotenv, que lida bem com isso). Falha alto e
+    com mensagem clara se nenhum formato produzir um PEM válido — silêncio
+    aqui vira uma chave truncada/vazia e um boot que parece ter dado certo."""
+    valor = valor.strip()
+    if not valor:
+        return valor
+    # Checar quebra de linha REAL, não só o prefixo — uma string com \n
+    # escapado literal também começa com "-----BEGIN" e cairia aqui por
+    # engano, devolvendo o valor sem nunca virar quebra de linha de verdade.
+    if valor.startswith('-----BEGIN') and '\n' in valor:
+        return valor
+    if '\\n' in valor:
+        sem_escape = valor.replace('\\n', '\n')
+        if sem_escape.startswith('-----BEGIN'):
+            return sem_escape
+    try:
+        decodificado = base64.b64decode(valor, validate=True).decode('utf-8')
+    except Exception as e:
+        raise RuntimeError(
+            f'{nome_var}: não é um PEM válido nem um base64 decodificável. '
+            f'Formatos aceitos: PEM cru, PEM com \\n escapado, ou base64 do PEM '
+            f'(padrão recomendado, evita o parser de multi-linha do env_file:). '
+            f'Erro original: {e}'
+        ) from e
+    if not decodificado.startswith('-----BEGIN'):
+        raise RuntimeError(
+            f'{nome_var}: decodificou de base64 mas o resultado não começa com '
+            f'"-----BEGIN" — não é um PEM válido.'
+        )
+    return decodificado
+
+
 def configurar_jwt(app) -> JWTManager:
     """RS256 + cookie httpOnly — chamado uma vez no boot do app, no lugar do
-    bloco antigo de app.config['JWT_SECRET_KEY'] (HS256/simétrico)."""
-    private_key = os.getenv('JWT_PRIVATE_KEY', '').strip()
-    public_key  = os.getenv('JWT_PUBLIC_KEY', '').strip()
+    bloco antigo de app.config['JWT_SECRET_KEY'] (HS256/simétrico).
+
+    Ainda um processo só (Wave A) — as duas chaves são obrigatórias."""
+    private_key = _carregar_chave('JWT_PRIVATE_KEY', os.getenv('JWT_PRIVATE_KEY', ''))
+    public_key  = _carregar_chave('JWT_PUBLIC_KEY', os.getenv('JWT_PUBLIC_KEY', ''))
     if not private_key or not public_key:
         raise RuntimeError(
             'JWT_PRIVATE_KEY e JWT_PUBLIC_KEY são obrigatórias (RS256). Gere um par com:\n'
             '  openssl genrsa -out private.pem 2048\n'
             '  openssl rsa -in private.pem -pubout -out public.pem\n'
-            'e cole o conteúdo de cada arquivo nas respectivas variáveis do .env.'
+            'e cole o conteúdo de cada arquivo (base64: `base64 -i public.pem`) '
+            'nas respectivas variáveis do .env.'
         )
 
     app.config['JWT_ALGORITHM']   = 'RS256'

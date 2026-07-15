@@ -33,15 +33,15 @@ the rebind and before db.create_all() ever touches it. Defense in depth, not a
 replacement for getting the rebind right.
 
 TEST DATABASE
-Prefer TEST_DATABASE_URL (a real, disposable Postgres) if set — this is required to
-actually exercise genuinely Postgres-only code paths (purgar_rag_traces' interval
-SQL). Otherwise falls back to a throwaway SQLite file under the OS temp dir (never
-tests/observabilidade/results/ — see the interlock below, which specifically
-recognizes tempfile.gettempdir() as isolated). GET /api/atlas/observabilidade's
-daily series used to be Postgres-only too (a raw date_trunc query that 500'd the
-whole route on SQLite) until that route was made dialect-portable; the interlock
-and the SQLite fallback predate that fix and remain useful for what's still
-genuinely Postgres-specific.
+TEST_DATABASE_URL (a real, disposable Postgres) is now effectively MANDATORY, not
+just preferred. Since the schema-separation migration (atlas/central/identity
+schemas, ea3c7e95f47e), every model carries __table_args__ = {'schema': ...} and
+the SQLite fallback below cannot create schema-qualified tables at all (SQLite has
+no CREATE SCHEMA — 'CREATE TABLE atlas.foo' fails with "unknown database atlas").
+The fallback path is kept only so a session without Docker running fails with a
+clear Postgres-specific error instead of an import crash; it will not pass a
+single test. Set TEST_DATABASE_URL to a throwaway `docker run postgres:16-alpine`
+before running this suite.
 """
 import os
 import sys
@@ -49,6 +49,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 
 OBS_DIR     = Path(__file__).resolve().parent
 BACKEND_DIR = OBS_DIR.parent.parent / 'backend'
@@ -138,6 +139,16 @@ def app():
 
     with flask_app.app_context():
         _assert_test_db_isolated(db.engine.url)   # interlock, must pass first
+        if db.engine.dialect.name == 'postgresql':
+            # Modelos carregam __table_args__ = {'schema': 'atlas'/'central'/
+            # 'identity'} desde a Fase 4 — db.create_all() emite CREATE TABLE
+            # schema.tabela mas nunca CREATE SCHEMA. Em produção quem cria os
+            # schemas é a migration ea3c7e95f47e; este fixture não roda
+            # Alembic, então precisa criar os schemas ele mesmo, ou todo
+            # create_all() aqui quebra com "schema does not exist".
+            for schema in ('atlas', 'central', 'identity'):
+                db.session.execute(text(f'CREATE SCHEMA IF NOT EXISTS {schema}'))
+            db.session.commit()
         db.create_all()
 
     yield flask_app
@@ -227,10 +238,21 @@ def make_client(app, models):
     as that user via the real JWT cookie (matches JWT_TOKEN_LOCATION=['cookies']).
     Takes a plain int id, not a model instance — a User object handed back across
     an app_context boundary would be a DetachedInstanceError waiting to happen the
-    moment a test touches an attribute that wasn't already loaded."""
+    moment a test touches an attribute that wasn't already loaded.
+
+    Mints via identity.emitir_token() — the single mint point since Phase 3 (see
+    backend/identity.py). This used to call models.create_access_token() directly
+    (flask_jwt_extended's own function, expected as an attribute of the `app`
+    module), which broke the day Phase 3 landed: app.py stopped importing
+    create_access_token at all, so `models.create_access_token` was an
+    AttributeError waiting to happen the moment any test exercised this fixture.
+    emitir_token() takes a user-like object (reads .id), not a raw id, hence the
+    throwaway SimpleNamespace."""
     def _make(user_id):
+        import identity
+        from types import SimpleNamespace
         with app.app_context():
-            token = models.create_access_token(identity=str(user_id))
+            token = identity.emitir_token(SimpleNamespace(id=user_id))
         client = app.test_client()
         client.set_cookie(app.config['JWT_ACCESS_COOKIE_NAME'], token)
         return client

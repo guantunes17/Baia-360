@@ -55,9 +55,11 @@ def test_interlock_aborts_on_unrecognized_url():
 
 
 def test_tables_exist(app, db):
+    # Fase 4: as tabelas moraram para o schema 'atlas' — get_table_names() sem
+    # schema= só enxerga 'public' (vazio agora) e sempre voltaria [] neste banco.
     with app.app_context():
         from sqlalchemy import inspect
-        tables = set(inspect(db.engine).get_table_names())
+        tables = set(inspect(db.engine).get_table_names(schema='atlas'))
     assert 'atlas_rag_trace' in tables
     assert 'atlas_golden_qa' in tables
     assert 'atlas_golden_run' in tables
@@ -66,7 +68,7 @@ def test_tables_exist(app, db):
 def test_atlas_rag_trace_key_columns(app, db):
     with app.app_context():
         from sqlalchemy import inspect
-        columns = {c['name'] for c in inspect(db.engine).get_columns('atlas_rag_trace')}
+        columns = {c['name'] for c in inspect(db.engine).get_columns('atlas_rag_trace', schema='atlas')}
     expected = {
         'id', 'usuario_id', 'conv_id', 'response_id', 'modelo',
         'pergunta', 'resposta', 'retrieval_query', 'retrieval_count',
