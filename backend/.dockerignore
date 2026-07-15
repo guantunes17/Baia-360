@@ -1,11 +1,28 @@
 # .env (dev) and any real secret files must never end up baked into the image —
-# app.py's load_dotenv(..., override=True) would let a locally-checked-out
-# dev .env silently override the real env_file:-injected production secrets
-# at container runtime. The image needs zero .env* files: env_file: in
-# docker-compose.*.yml already injects real environment variables directly.
+# even with load_dotenv(..., override=...) now safe-by-default, a stray .env
+# baked into the image is still a landmine (DOTENV_OVERRIDE could be set by
+# mistake, or the file could get read some other way). The image needs zero
+# .env* files: env_file: in docker-compose.*.yml already injects real
+# environment variables directly.
 .env
 .env.*
 !.env*.example
+
+# Chaves/segredos que nunca deveriam estar no build context de qualquer jeito
+# (defesa em profundidade — .gitignore já bloqueia isso de ser commitado, mas
+# COPY . . não sabe nada sobre git).
+*.pem
+*.key
+
+# estoque_db.json (committed, ~2MB) não deveria ser rebaked em toda imagem —
+# o estado real de produção vive no volume nomeado "backend_data" montado em
+# /app/data no serviço central (ver docker-compose.prod.yml), que já
+# sobrepõe qualquer coisa vinda da imagem. mkdir -p no Dockerfile garante que
+# o diretório existe mesmo sem isso.
+data/
+
+# Suíte de testes não precisa estar em nenhuma imagem de produção.
+tests/
 
 __pycache__/
 *.py[cod]

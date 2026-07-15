@@ -1,3 +1,4 @@
+import importlib
 import os
 import sys
 from logging.config import fileConfig
@@ -9,12 +10,24 @@ from sqlalchemy import text
 
 from alembic import context
 
-# backend/ holds app.py — make sure it's importable regardless of the CWD
-# alembic was invoked from (mirrors how tasks_observabilidade.py reaches app.py).
+# backend/ holds app.py/central_app.py — make sure it's importable regardless
+# of the CWD alembic was invoked from (mirrors how tasks_observabilidade.py
+# reaches app.py).
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
 
-from app import db  # noqa: E402 — also loads backend/.env as a side effect
+# Fase 5: dois entrypoints rodam "alembic upgrade head" (Atlas e Central,
+# coordenados pelo advisory lock abaixo) — mas só existe UM alembic_version
+# no banco (um schema history só, não um por processo). Importar sempre
+# app.py incondicionalmente quebrou o boot de Central no primeiro teste real
+# desta correção: Central nunca tem JWT_PRIVATE_KEY (por design) e app.py
+# agora falha alto no import se faltar essa chave (ver identity.py,
+# requer_emissao). entrypoint_central.sh seta ALEMBIC_APP_MODULE=central_app
+# para importar o módulo certo — nenhum dos dois módulos precisa do outro
+# só para rodar migração, e isso evita puxar OpenAI/MSAL/CORS/JWT-mint de um
+# processo que não precisa deles só pra aplicar DDL.
+_app_module_name = os.getenv('ALEMBIC_APP_MODULE', 'app')
+db = importlib.import_module(_app_module_name).db  # noqa: E402 — also loads backend/.env as a side effect
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

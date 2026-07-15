@@ -46,7 +46,9 @@ import identity
 
 
 _env_path = Path(__file__).resolve().parent / '.env'
-load_dotenv(dotenv_path=_env_path, override=True)
+# Mesmo raciocínio do Atlas (ver app.py) — override só opt-in via
+# DOTENV_OVERRIDE, nunca hardcoded True em produção.
+load_dotenv(dotenv_path=_env_path, override=os.getenv('DOTENV_OVERRIDE', '0') == '1')
 
 app = Flask(__name__)
 _is_prod = os.getenv('FLASK_ENV', 'development') == 'production'

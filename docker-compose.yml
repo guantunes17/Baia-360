@@ -19,6 +19,27 @@ services:
     networks:
       - baia360
 
+  # Espelha o serviço "central" de docker-compose.prod.yml — sem isso, /api/modulos
+  # e /api/dashboard 404iam em dev (tudo caía em "backend" antes desta correção).
+  # Copie backend/.env.central.example para backend/.env.central antes de subir.
+  central:
+    build: ./backend
+    container_name: baia360-central
+    restart: unless-stopped
+    command: ["./entrypoint_central.sh"]
+    env_file:
+      - ./backend/.env.central
+    environment:
+      DOTENV_OVERRIDE: "1"
+    volumes:
+      - ./backend:/app
+      - /app/venv
+      - backend_data:/app/data
+    ports:
+      - "5003:5003"
+    networks:
+      - baia360
+
   frontend:
     build:
       context: ./frontend
@@ -32,8 +53,12 @@ services:
       - "80:80"
     depends_on:
       - backend
+      - central
     networks:
       - baia360
+
+volumes:
+  backend_data:
 
 networks:
   baia360:

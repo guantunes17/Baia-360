@@ -39,8 +39,6 @@ services:
       # o cookie JWT não sai marcado Secure, sem header HSTS, CORS aceita
       # origins localhost mesmo em prod.
       FLASK_ENV: production
-    volumes:
-      - backend_data:/app/data
     ports:
       - "5001:5001"
     depends_on:
@@ -77,6 +75,13 @@ services:
       # Mesmo motivo do serviço backend acima — nunca depender só do arquivo
       # de secrets pra isso.
       FLASK_ENV: production
+    volumes:
+      # Movido do serviço backend: só central_app.py + modules/central_relatorios.py
+      # tocam /app/data (estoque_db.json, fat_arm_familias.json, fat_arm_precos.json)
+      # — Atlas nunca lê/escreve nada ali (grep confirmado). Volume nomeado, não
+      # ligado a um container específico: reanexa aqui sem precisar migrar dado
+      # nenhum, o que já estava na volume "backend_data" continua acessível.
+      - backend_data:/app/data
     depends_on:
       postgres:
         condition: service_healthy

@@ -91,13 +91,19 @@ def _carregar_chave(nome_var: str, valor: str) -> str:
     return decodificado
 
 
-def configurar_jwt(app) -> JWTManager:
+def configurar_jwt(app, requer_emissao: bool = False) -> JWTManager:
     """RS256 + cookie httpOnly — chamado uma vez no boot do app, no lugar do
     bloco antigo de app.config['JWT_SECRET_KEY'] (HS256/simétrico).
 
     JWT_PUBLIC_KEY é sempre obrigatória. JWT_PRIVATE_KEY é opcional — um
     processo que só valida tokens (Central) não precisa dela; um processo
-    que também faz login (Atlas) precisa das duas."""
+    que também faz login (Atlas) precisa das duas.
+
+    requer_emissao=True (Atlas) falha alto AQUI, no boot, se a chave privada
+    estiver ausente — em vez de deixar o processo subir "com sucesso" e só
+    quebrar no primeiro POST /api/auth/login. Default False (Central) porque
+    Central nunca deveria minter e realmente não tem a chave: exigir a
+    privada ali seria travar o único processo que está correto em não tê-la."""
     private_key = _carregar_chave('JWT_PRIVATE_KEY', os.getenv('JWT_PRIVATE_KEY', ''))
     public_key  = _carregar_chave('JWT_PUBLIC_KEY', os.getenv('JWT_PUBLIC_KEY', ''))
     if not public_key:
@@ -107,6 +113,11 @@ def configurar_jwt(app) -> JWTManager:
             '  openssl rsa -in private.pem -pubout -out public.pem\n'
             'e cole o conteúdo de cada arquivo (base64: `base64 -i public.pem`) '
             'nas respectivas variáveis do .env.'
+        )
+    if requer_emissao and not private_key:
+        raise RuntimeError(
+            'JWT_PRIVATE_KEY é obrigatória para este processo (ele precisa '
+            'emitir tokens, ex. Atlas em /api/auth/login) — ausente ou vazia.'
         )
 
     app.config['JWT_ALGORITHM']  = 'RS256'

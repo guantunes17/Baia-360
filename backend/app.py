@@ -75,7 +75,7 @@ else:
     _frontend_origins = ["http://localhost", "http://localhost:5173", "http://localhost:3000"]
 CORS(app, origins=_frontend_origins, supports_credentials=True)
 db      = SQLAlchemy(app)
-jwt     = identity.configurar_jwt(app)  # RS256 — autoridade de identidade única (ver identity.py)
+jwt     = identity.configurar_jwt(app, requer_emissao=True)  # RS256 — autoridade de identidade única (ver identity.py); Atlas precisa minter, falha alto no boot sem a chave privada
 limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
 
 

@@ -89,7 +89,8 @@ Copie `backend/.env.example` para `backend/.env` e preencha os valores:
 FLASK_ENV=development
 FLASK_DEBUG=1
 SECRET_KEY=sua-chave-secreta
-JWT_SECRET_KEY=sua-chave-jwt
+# JWT_SECRET_KEY (HS256) foi substituída por JWT_PRIVATE_KEY/JWT_PUBLIC_KEY
+# (RS256) — ver backend/.env.example e backend/identity.py.
 DATABASE_URL=sqlite:///baia360.db   # dev: SQLite | prod: postgresql://...
 SEED_KEY=chave-para-seed
 ADMIN_EMAIL=admin@exemplo.com
