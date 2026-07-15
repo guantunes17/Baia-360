@@ -2,8 +2,8 @@
 
 **Mecanismo: duas ondas.** O cherry-pick de Wave A (identity.py + fixes de dotenv/observabilidade) sobre o commit da Fase 4 aplicou limpo depois de resolver dois conflitos pequenos e esperados (um arquivo que ainda não existia, uma função que ainda não tinha `requer_emissao`) — não foi um cherry-pick sujo, então duas ondas reais fazem sentido aqui: Wave A isola o risco de **dado** (Alembic, schema move, ainda um processo só); Wave B isola o risco de **topologia** (split de processo, volume, nginx, DNS do Docker). Se a Wave A falhar, você não herda a complexidade do split. Se a Wave B falhar, você já sabe que o banco está saudável.
 
-- **Wave A** — branch `deploy/wave-a`, commit `8395732` (Fases 1–4: contrato interno, RS256, schema move, mais os fixes de chave-em-base64/dotenv/suíte de observabilidade). Ainda **um único processo** (`baia360-backend` servindo tudo).
-- **Wave B** — branch `main`, commit `ff19571` (Fase 5: split físico Atlas/Central, mais volume de dados, dev/prod parity, docs).
+- **Wave A** — branch `deploy/wave-a`, commit **fixo** `8395732` (Fases 1–4: contrato interno, RS256, schema move, mais os fixes de chave-em-base64/dotenv/suíte de observabilidade). Ainda **um único processo** (`baia360-backend` servindo tudo). Esta branch é congelada de propósito e não deve receber novos commits — ela também é o alvo de rollback da Wave B (ver §Wave B/Rollback), então precisa continuar apontando exatamente para o estado já verificado.
+- **Wave B** — branch `main`, **HEAD de `origin/main` no momento do deploy** (resolvido dinamicamente em §0.1, não fixado aqui). `main` é a branch de integração normal do projeto — qualquer commit escrito hoje sobre "o SHA de main" ficaria desatualizado assim que outro commit landasse nela (este próprio runbook vive em `main`, então fixar seu próprio SHA aqui seria uma referência circular). No momento em que este runbook foi revisado pela última vez, `origin/main` estava em `4108289`, mas **não confie nesse número** — resolva-o de novo em §0.1 antes de cada deploy.
 
 Todos os 5 usuários serão deslogados quando RS256 (Wave A) entrar no ar — os cookies antigos (se houver algum, o sistema atual é HS256 pré-Fase-1) não validam mais.
 
@@ -13,18 +13,22 @@ Todos os 5 usuários serão deslogados quando RS256 (Wave A) entrar no ar — os
 
 ## 0. Pré-requisitos únicos (antes de qualquer onda)
 
-### 0.1 Push — nem `main` nem `deploy/wave-a` estão em origin ainda
+### 0.1 Confirmar que as duas branches estão em origin, e resolver o SHA de Wave B
 
-Verificado agora mesmo: `git ls-remote origin deploy/wave-a` não retorna nada (branch nunca foi enviada), e `origin/main` ainda está em `c032823` (Fase 5, o commit ANTES das duas correções desta rodada) — ou seja, os commits `05f2299` e `ff19571` também não chegaram a origin. Sem isto, `git fetch origin && git reset --hard <sha>` no servidor falha com `unknown revision` no meio do procedimento, para as duas ondas.
+Sem isto, `git fetch origin && git reset --hard <ref>` no servidor falha com `unknown revision` no meio do procedimento. **No seu laptop, antes de ir para o servidor:**
 
-**No seu laptop, antes de ir para o servidor:**
+```bash
+git ls-remote origin main deploy/wave-a
+```
+
+- `refs/heads/deploy/wave-a` **precisa** mostrar `8395732...` exatamente — essa branch é fixa (ver nota no topo do documento). Se mostrar outro valor, ou não aparecer, PARE: algo mudou na branch congelada e o rollback da Wave B não é mais confiável até isso ser entendido.
+- `refs/heads/main` mostra o que está em origin **agora** — copie esse valor, é o seu `WAVE_B_TARGET_SHA` para a seção Wave B mais abaixo. Não existe um valor "certo" fixo aqui por design (ver nota no topo do documento); o que importa é que `main` esteja de fato em origin (comando acima não retorna vazio) e que o valor resolvido seja o que você de fato pretende deployar.
+
+Se algum push ainda estiver pendente (branches locais à frente de origin), resolva antes de continuar:
 
 ```bash
 git push origin main
-git push origin deploy/wave-a
-git ls-remote origin main deploy/wave-a   # confirme os dois SHAs abaixo antes de prosseguir
-# main          -> ff19571...
-# deploy/wave-a -> 8395732...
+git push origin deploy/wave-a   # só se você tiver certeza que precisa mover a branch congelada — normalmente não deveria
 ```
 
 ### 0.2 Estado atual do servidor
@@ -64,18 +68,20 @@ cp /opt/baia360/backend/.env.production /root/backups/env.production_pre_fase5_$
 
 Cadeia real de revisões (mais antiga → mais nova): `ba7771d00ae9` (baseline) → `2cc774672704` (corrige default de status) → `ea3c7e95f47e` (move tabelas para atlas/central/identity — **head**).
 
+**ANOTE o valor retornado pela consulta abaixo — ele é `PRE_WAVE_A_ALEMBIC_VERSION`, referenciado no rollback (§Wave A, Rollback) mais abaixo.**
+
+**A resposta esperada, verificada por código, é `2cc774672704` — a linha de "tabela vazia" abaixo é teoricamente inalcançável hoje, mas fica documentada por completude.** `git show 38156a3:backend/entrypoint.sh` mostra que o `entrypoint.sh` do código atualmente em produção **já** roda `alembic upgrade head` antes de subir o gunicorn, e `alembic==1.18.5` já está no `requirements.txt` daquele commit. Como o container de produção está de pé e servindo tráfego (não em crash loop), ele necessariamente já passou por um `alembic upgrade head` bem-sucedido — logo o banco não pode estar destampado. E como `38156a3` é anterior à Fase 4, seu diretório `migrations/versions/` só contém `ba7771d00ae9` e `2cc774672704` (`ea3c7e95f47e` ainda não existe nesse commit) — ou seja, o head daquele código é exatamente `2cc774672704`, e é isso que a consulta abaixo deve retornar. Rode a consulta mesmo assim — é a confirmação real, não a suposição:
+
 ```bash
 docker exec baia360-postgres psql -U baia360 -d baia360 -c "SELECT version_num FROM alembic_version;"
 ```
 
-**ANOTE o valor retornado — ele é `PRE_WAVE_A_ALEMBIC_VERSION`, referenciado no rollback (§Wave A, Rollback) mais abaixo.**
-
 | Saída de `alembic_version` | Significado | Ação |
 |---|---|---|
-| `ea3c7e95f47e` | Já no head — algo já rodou a migração antes | Nenhuma — `entrypoint.sh` vai confirmar e seguir quando a Wave A subir |
-| `2cc774672704` | Uma migração atrás do head | Normal — `alembic upgrade head` dentro do `entrypoint.sh` aplica `ea3c7e95f47e` quando a Wave A subir |
-| `ba7771d00ae9` | No baseline, duas migrações atrás | Normal — `entrypoint.sh` aplica as duas em sequência quando a Wave A subir |
-| *(tabela vazia / erro "no such table")* | Banco nunca foi stampado com Alembic | Antes de subir a Wave A: `docker exec baia360-backend alembic stamp ba7771d00ae9` (com o container **atual**, pré-Fase-1, ainda rodando) — sem isso, o `alembic upgrade head` da Wave A tenta `CREATE TABLE` em tabelas que já existem e crasha |
+| `2cc774672704` | **Esperado** — head do código pré-Fase-1 atualmente rodando | Normal — `alembic upgrade head` dentro do `entrypoint.sh` aplica `ea3c7e95f47e` quando a Wave A subir |
+| `ea3c7e95f47e` | Já no head da Wave A — indica que algo já rodou essa migração antes (não deveria acontecer partindo de pré-Fase-1, investigue por que) | Nenhuma ação de migração — `entrypoint.sh` vai confirmar e seguir quando a Wave A subir, mas entenda a causa antes |
+| `ba7771d00ae9` | No baseline — indica que a migração de correção de status nunca rodou (inesperado se o histórico do repositório está correto) | Investigue antes de prosseguir; se confirmado, `entrypoint.sh` aplica as duas migrações em sequência quando a Wave A subir |
+| *(tabela vazia / erro "no such table")* | Teoricamente inalcançável (ver acima) — se acontecer mesmo assim, o container de produção pode não ser o `38156a3` que este runbook assume | **PARE.** Não presuma que é seguro stampar sem entender por que o pressuposto acima falhou. |
 | Qualquer outro valor | Estado desconhecido — **PARE**, não prossiga sem entender por que | Investigue manualmente antes de continuar |
 
 Wave B não adiciona nenhuma migração nova — não repita esta árvore de decisão nela, mas confirme rapidamente antes de seguir (§Wave B, Verificação) que o valor continua `ea3c7e95f47e`, como checagem de sanidade, não como decisão.
@@ -142,9 +148,15 @@ grep -q '^FLASK_ENV=' .env.central.production || echo 'FLASK_ENV=production' >> 
 | `OPENAI_API_KEY`, `OPENAI_VECTOR_STORE_ID` | Atlas | Sim (para IA funcionar) | Chamadas OpenAI falham, chat quebra |
 | `AZURE_CLIENT_ID/SECRET/TENANT_ID/REDIRECT_URI` | Atlas | Sim (para Outlook funcionar) | Fluxo OAuth Outlook quebra |
 | `MCP_OUTLOOK_URL` | Atlas | Não (default localhost) | Em prod, sem isso Atlas não alcança o MCP Outlook |
+| `ATLAS_EGRESSO_DOMINIOS_INTERNOS` | Atlas | Não — **hoje ausente, ver aviso abaixo** | Ver aviso ATLAS_BLOQUEAR_EXTERNO abaixo |
+| `ATLAS_BLOQUEAR_EXTERNO` | Atlas | Não — **hoje ausente, ver aviso abaixo** | Ver aviso abaixo |
 | `JWT_SECRET_KEY` | — | **Não usada por nenhum código novo** | Ver aviso de remoção abaixo |
 
 **⚠️ Aviso SEED_KEY / ADMIN_SENHA:** nunca configure `ADMIN_SENHA` sem também configurar `SEED_KEY`. Sem `SEED_KEY`, uma requisição `{"seed_key": ""}` (string vazia, não omitida) passa no comparador de `POST /api/auth/seed`. Hoje isso é inofensivo só porque `ADMIN_SENHA` também está vazio (a rota falha um passo depois com 500) — não dependa disso continuar assim.
+
+**⚠️ Aviso `ATLAS_BLOQUEAR_EXTERNO` / `ATLAS_EGRESSO_DOMINIOS_INTERNOS` — o controle de egresso está INERTE hoje, confirmado no código (`app.py:924-955`, `avaliar_egresso`), não hipotético.** Com as duas variáveis ausentes: `ATLAS_EGRESSO_DOMINIOS_INTERNOS` vazio faz `dominios_internos` ser um conjunto vazio, o que marca **todo** destinatário como `externo: True` — mas `ATLAS_BLOQUEAR_EXTERNO` ausente faz `bloquear_externo` ser `False` por padrão, então `bloqueado` fica sempre `False`. Resultado: nenhuma ação de e-mail/Teams é bloqueada por este mecanismo hoje — só gera um aviso ⚠️ no card de confirmação, que já é exigido para toda ação side-effectful (Fase 2). Não é uma regressão desta rodada — é assim desde que o mecanismo foi escrito, e a contenção real hoje é o gate de confirmação humana, não este allow-list.
+
+**Não ative isso nesta rodada de deploy.** Ligar só `ATLAS_BLOQUEAR_EXTERNO=true` sem também popular `ATLAS_EGRESSO_DOMINIOS_INTERNOS` bloquearia **todo** destinatário, incluindo os internos (o allow-list continuaria vazio, então tudo continua marcado como `externo`) — na prática desativaria `enviar_email`/`teams_chat_enviar` por completo. Ativar esse controle corretamente precisa de uma mudança própria: levantar a lista real de domínios internos da empresa junto ao negócio, configurar `ATLAS_EGRESSO_DOMINIOS_INTERNOS` com ela, e só então considerar `ATLAS_BLOQUEAR_EXTERNO=true`. Fora do escopo deste deploy.
 
 **⚠️ `JWT_SECRET_KEY` fica em `.env.production` durante todo o deploy.** O código novo nunca lê essa variável, mas produção roda `restart: unless-stopped` — se o container reiniciar por qualquer motivo antes da Wave A estar no ar, ele ainda executa código HS256 antigo, que precisa dela. Remover cedo demais = uma reinicialização incidental quebra login silenciosamente. **Remoção é um passo pós-deploy explícito (§Pós-deploy), só depois de verificar a Wave A no ar.**
 
@@ -209,7 +221,7 @@ Não adiciona nenhuma migração nova (`ea3c7e95f47e` continua sendo o head) —
 ```bash
 cd /opt/baia360
 git fetch origin
-git reset --hard ff19571   # main
+git reset --hard origin/main   # o WAVE_B_TARGET_SHA resolvido em §0.1 — não um SHA fixo neste documento
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
@@ -280,7 +292,7 @@ docker compose -f docker-compose.prod.yml up -d --build --remove-orphans backend
 | Onda | Branch | Commit | Contém |
 |---|---|---|---|
 | — | `main` (pré-Fase-1) | `38156a3` | Piso de rollback total — anote o valor real do servidor no §0.2, este é o valor esperado |
-| A | `deploy/wave-a` | `8395732` | Fases 1–4 + fixes de chave/dotenv/observabilidade, um processo só |
-| B | `main` | `ff19571` | Fase 5 completa (split físico) + fixes de volume/topologia/docs |
+| A | `deploy/wave-a` | `8395732` **(fixo — ver nota no topo do documento)** | Fases 1–4 + fixes de chave/dotenv/observabilidade, um processo só |
+| B | `main` | **dinâmico — resolva via `git ls-remote origin main` em §0.1** | Fase 5 completa (split físico) + fixes de volume/topologia/docs, mais qualquer commit que tenha landado em `main` desde então |
 
-**Antes de ir para o servidor:** confirme que `main` e `deploy/wave-a` estão em `origin` (§0.1) — nenhuma das duas branches estava lá no momento em que este runbook foi escrito.
+**Antes de ir para o servidor:** confirme os dois refs em `origin` e resolva o SHA de Wave B (§0.1) — não copie um número deste documento para a Wave B.
