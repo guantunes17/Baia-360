@@ -29,6 +29,16 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env.production
+    environment:
+      # Fase 5: topologia interna do compose, não um segredo — vive aqui em
+      # vez do .env.production. DNS do Docker resolve "central" para o
+      # container abaixo, na mesma rede.
+      CENTRAL_BASE_URL: http://central:5003
+      # Hardcoded aqui (não só no .env.production) para nunca mais ficar
+      # faltando silenciosamente — sem isso, app.py assume 'development' e
+      # o cookie JWT não sai marcado Secure, sem header HSTS, CORS aceita
+      # origins localhost mesmo em prod.
+      FLASK_ENV: production
     volumes:
       - backend_data:/app/data
     ports:
@@ -40,6 +50,40 @@ services:
       - baia360
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Fase 5 do desacoplamento Atlas/Central: processo/container próprio,
+  # schema `central` (+ leitura de `identity`) no mesmo Postgres. SEM
+  # "ports:" — isso é o isolamento de rede de verdade: nenhuma porta
+  # publicada no host significa que não há nada pra alcançar de fora do
+  # Docker, independente de qualquer regra de firewall externo. Só é
+  # alcançável via DNS interno do Docker (http://central:5003), pelo
+  # backend (Atlas, via central_client.py) ou pelo nginx (proxy_pass, ver
+  # frontend/nginx.conf) para /api/modulos e /api/dashboard.
+  central:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: baia360-central
+    container_name: baia360-central
+    restart: unless-stopped
+    command: ["./entrypoint_central.sh"]
+    env_file:
+      - ./backend/.env.central.production
+    environment:
+      # Mesmo motivo do serviço backend acima — nunca depender só do arquivo
+      # de secrets pra isso.
+      FLASK_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - baia360
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -73,6 +117,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
+      - central
       - mcp-outlook
     networks:
       - baia360

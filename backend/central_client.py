@@ -2,28 +2,23 @@
 """
 Internal read-only client Atlas uses to reach Central de Relatórios data.
 
-Phase 2 of the Atlas/Central decoupling (see
-plan_atlas_central_decoupling_2026-07-13.md and
-docs/architecture/COUPLING_MAP.md). Same Flask process today — this module
-is the seam Phase 5 will cut along: its call sites in app.py (the
-/internal/relatorios/* routes and the Atlas tool-resolution loop) won't
-change, only register()'s implementation will start making a real network
-call to a separate Central service instead of a local function call.
+Fase 5 do desacoplamento Atlas/Central: Atlas e Central agora são processos
+separados (containers separados — ver central_app.py e
+docker-compose.prod.yml), então esta chamada precisa mesmo ir pela rede.
 
-`app.py` owns the SQLAlchemy models and the DB session (it's still one
-monolith), so the actual query/permission/serialization logic lives there
-as `_dashboard_service`. This module deliberately avoids `from app import
-...` (even deferred to call time): app.py can run either as the `__main__`
-module (`python app.py`, the documented local dev entrypoint) or as the
-`app` module (`gunicorn app:app` in production) — importing it back by name
-from here would, in the `__main__` case, re-execute app.py as a *second*,
-differently-named module, creating a second Flask app / SQLAlchemy(db)
-instance that was never registered via init_app. Instead, app.py calls
-register() once at import time to hand this module a direct reference to
-its own `_dashboard_service`, regardless of which name it was loaded under.
+Recebe o token bruto (string), não um usuario_id — Central revalida esse
+token com a chave pública dele mesma, de forma independente. Isso é
+deliberado: um Atlas comprometido (a "lethal trifecta" que motivou todo
+esse desacoplamento) não pode simplesmente afirmar "esse usuário é o 42";
+o JWT precisa ser válido de verdade para a identidade que a Central vai
+usar nas checagens de permissão.
 """
+import os
 
-_dashboard_service_impl = None
+import requests
+
+CENTRAL_SERVICE_HEADER = 'X-Central-Service-Token'
+JWT_ACCESS_COOKIE_NAME = 'access_token_cookie'
 
 
 class ModuloInvalidoError(ValueError):
@@ -34,21 +29,61 @@ class PermissaoNegadaError(Exception):
     """Raised when the current user lacks permission for the requested module."""
 
 
-def register(dashboard_service_fn) -> None:
-    """Called once by app.py at import time to wire up the real implementation."""
-    global _dashboard_service_impl
-    _dashboard_service_impl = dashboard_service_fn
+def _central_base_url() -> str:
+    # Default é o cenário de dev local (python central_app.py rodando à parte,
+    # porta 5003) — não um hostname só resolvível dentro da rede Docker.
+    # docker-compose.prod.yml define CENTRAL_BASE_URL=http://central:5003
+    # explicitamente para o container do Atlas.
+    return os.getenv('CENTRAL_BASE_URL', 'http://localhost:5003').rstrip('/')
 
 
-def obter_dashboard(usuario_id: int, modulo: str | None = None) -> dict:
+def _service_token() -> str:
+    return os.getenv('CENTRAL_SERVICE_TOKEN', '')
+
+
+def obter_dashboard(token: str, modulo: str | None = None) -> dict:
     """Latest KPIs per module plus recent history, filtered to the modules
-    `usuario_id` is allowed to see.
+    the token's user is allowed to see.
+
+    `token` is the raw JWT string from the current request's cookie — never
+    a bare user id — because Central independently re-validates it rather
+    than trusting whatever Atlas's own code hands over.
 
     modulo=None returns every module the user has permission for.
     modulo='<slug>' returns just that module, or raises:
       - ModuloInvalidoError if the slug isn't one of the known report modules
       - PermissaoNegadaError if the user isn't allowed to see that module
     """
-    if _dashboard_service_impl is None:
-        raise RuntimeError('central_client não inicializado — app.py deve chamar central_client.register(...) no boot.')
-    return _dashboard_service_impl(usuario_id, modulo)
+    params = {'modulo': modulo} if modulo else {}
+    try:
+        resp = requests.get(
+            f'{_central_base_url()}/internal/relatorios/dashboard',
+            params=params,
+            cookies={JWT_ACCESS_COOKIE_NAME: token or ''},
+            headers={CENTRAL_SERVICE_HEADER: _service_token()},
+            timeout=10,
+        )
+    except requests.RequestException as e:
+        raise RuntimeError(f'Central indisponível: {e}') from e
+
+    if resp.status_code == 200:
+        return resp.json()
+
+    corpo = {}
+    try:
+        corpo = resp.json()
+    except ValueError:
+        pass
+    mensagem = corpo.get('erro', f'Erro HTTP {resp.status_code}')
+
+    if resp.status_code == 400:
+        raise ModuloInvalidoError(mensagem)
+    if resp.status_code == 403:
+        raise PermissaoNegadaError(mensagem)
+    # 401 não deveria acontecer em uso normal — Atlas só chega aqui com um
+    # cookie que já passou pela própria checagem @jwt_required(); se
+    # Central mesmo assim rejeitar (token expirou entre as duas checagens,
+    # relógio dessincronizado, bug de encaminhamento), é um erro genérico,
+    # não "usuário sem permissão" — a mensagem pro usuário não deve confundir
+    # sessão expirada com acesso negado.
+    raise RuntimeError(f'Central retornou {resp.status_code}: {mensagem}')

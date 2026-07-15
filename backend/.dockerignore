@@ -1,0 +1,15 @@
+# .env (dev) and any real secret files must never end up baked into the image —
+# app.py's load_dotenv(..., override=True) would let a locally-checked-out
+# dev .env silently override the real env_file:-injected production secrets
+# at container runtime. The image needs zero .env* files: env_file: in
+# docker-compose.*.yml already injects real environment variables directly.
+.env
+.env.*
+!.env*.example
+
+__pycache__/
+*.py[cod]
+venv/
+instance/
+*.db
+*.sqlite3

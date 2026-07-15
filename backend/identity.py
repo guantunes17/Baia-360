@@ -14,11 +14,12 @@ request, sem estado — isso já é "revalidação", não precisa de um segundo
 mecanismo paralelo.
 
 Chaves — RS256 assimétrico: a autoridade assina com a chave PRIVADA; o
-resto do processo só precisaria da chave PÚBLICA para verificar. Hoje as
-duas moram no mesmo .env porque é um processo só; a separação é
-deliberada para a Fase 5 (Atlas e Central em containers separados), quando
-só a autoridade de identidade carrega JWT_PRIVATE_KEY e Central passa a
-carregar apenas JWT_PUBLIC_KEY.
+resto do processo só precisa da chave PÚBLICA para verificar.
+JWT_PRIVATE_KEY é opcional em configurar_jwt(): o processo Atlas (que
+mint) carrega as duas; o processo Central (Fase 5 — container separado,
+ver central_app.py) carrega só JWT_PUBLIC_KEY. Se algum código rodando em
+Central tentar chamar emitir_token(), falha alto (sem chave privada) —
+isso é a garantia real de "Central nunca minta", não só documentação.
 
 Gerar um par novo (nunca commitar as chaves):
     openssl genrsa -out private.pem 2048
@@ -36,9 +37,10 @@ o usuário para o login de novo. Gire fora do horário de pico; não há downtim
 de serviço, só um re-login forçado para quem estava logado.
 
 Credencial de serviço: identifica o backend Atlas para os endpoints
-internos da Central (/internal/relatorios/*) — hoje é uma chamada Python
-direta (mesmo processo), mas o endpoint HTTP já exige o header abaixo
-igual vai exigir quando os processos forem separados (Fase 5).
+internos da Central (/internal/relatorios/*) — em processos separados
+(Fase 5), central_client.py anexa este header numa chamada HTTP real;
+Central confere via verificar_credencial_servico() abaixo, junto com
+@jwt_required() (o JWT do usuário, revalidado com a chave pública).
 """
 import hmac
 import os
@@ -47,31 +49,37 @@ from datetime import timedelta
 from flask_jwt_extended import JWTManager, create_access_token
 
 CENTRAL_SERVICE_HEADER = 'X-Central-Service-Token'
+JWT_ACCESS_COOKIE_NAME = 'access_token_cookie'
 
 
 def configurar_jwt(app) -> JWTManager:
     """RS256 + cookie httpOnly — chamado uma vez no boot do app, no lugar do
-    bloco antigo de app.config['JWT_SECRET_KEY'] (HS256/simétrico)."""
+    bloco antigo de app.config['JWT_SECRET_KEY'] (HS256/simétrico).
+
+    JWT_PUBLIC_KEY é sempre obrigatória. JWT_PRIVATE_KEY é opcional — um
+    processo que só valida tokens (Central) não precisa dela; um processo
+    que também faz login (Atlas) precisa das duas."""
     private_key = os.getenv('JWT_PRIVATE_KEY', '').strip()
     public_key  = os.getenv('JWT_PUBLIC_KEY', '').strip()
-    if not private_key or not public_key:
+    if not public_key:
         raise RuntimeError(
-            'JWT_PRIVATE_KEY e JWT_PUBLIC_KEY são obrigatórias (RS256). Gere um par com:\n'
+            'JWT_PUBLIC_KEY é obrigatória (RS256). Gere um par com:\n'
             '  openssl genrsa -out private.pem 2048\n'
             '  openssl rsa -in private.pem -pubout -out public.pem\n'
             'e cole o conteúdo de cada arquivo nas respectivas variáveis do .env.'
         )
 
-    app.config['JWT_ALGORITHM']   = 'RS256'
-    app.config['JWT_PRIVATE_KEY'] = private_key
-    app.config['JWT_PUBLIC_KEY']  = public_key
+    app.config['JWT_ALGORITHM']  = 'RS256'
+    app.config['JWT_PUBLIC_KEY'] = public_key
+    if private_key:
+        app.config['JWT_PRIVATE_KEY'] = private_key
 
     # Cookie httpOnly — comportamento preservado da Fase 2 (HS256 antes, RS256 agora).
     app.config['JWT_TOKEN_LOCATION']      = ['cookies']
     app.config['JWT_COOKIE_SECURE']       = os.getenv('FLASK_ENV', 'development') == 'production'
     app.config['JWT_COOKIE_SAMESITE']     = 'Lax'
     app.config['JWT_COOKIE_CSRF_PROTECT'] = False
-    app.config['JWT_ACCESS_COOKIE_NAME']  = 'access_token_cookie'
+    app.config['JWT_ACCESS_COOKIE_NAME']  = JWT_ACCESS_COOKIE_NAME
     app.config['JWT_COOKIE_DOMAIN']       = None
 
     return JWTManager(app)
