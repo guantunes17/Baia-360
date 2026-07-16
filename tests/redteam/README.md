@@ -75,6 +75,26 @@ pointing at a different instance:
 
 `test_gate_enforcement.py` also reads `ATLAS_BLOQUEAR_EXTERNO` / `ATLAS_EGRESSO_DOMINIOS_INTERNOS` (same fallback to `backend/.env`) so its egress test asserts whichever policy is actually configured rather than assuming one.
 
+**Important: this only tells you what the server *under test* is configured
+with — not what production runs.** `test_egress_policy_enforced` in
+`test_gate_enforcement.py` is an HTTP test against one already-running
+backend, so it can only ever observe that one process's config. **Production
+runs with `ATLAS_BLOQUEAR_EXTERNO` unset (default `false`) and
+`ATLAS_EGRESSO_DOMINIOS_INTERNOS` unset** — meaning the egress control is
+warn-only there today, never blocking (see `avaliar_egresso()` in
+`backend/app.py`). A results JSON showing the egress check passing under
+`ATLAS_BLOQUEAR_EXTERNO=true` (as every report in `results/` up to and
+including `post_prompt6_20260715.json` does) proves the *mechanism* can
+block — it does **not** mean production is currently blocking anything.
+`test_egress_mechanism.py` exists specifically to make this unambiguous: it
+imports `avaliar_egresso()` directly and parametrizes over both
+`ATLAS_BLOQUEAR_EXTERNO` values (plus a dedicated test asserting production's
+actual unset-default behaviour), independent of whatever the live server
+under test happens to be configured with. Every report's top-level
+`config_fingerprint` field also records exactly which config that report's
+HTTP-level egress check ran under, so "passed under which configuration?" is
+never ambiguous again.
+
 **Heads up**: running this suite makes real calls — it creates and deletes a
 real user via the live app, and it calls the real OpenAI API (both the Atlas
 model itself and the judge) for every payload. Point `REDTEAM_BASE_URL` at a

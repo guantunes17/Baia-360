@@ -76,6 +76,38 @@ All 14 gate-enforcement checks passed, plus the one gated `function_call` any pa
 
 This is the concrete answer to "does the jailbreak-003 gap matter": the model *tried*, and the attempt to actually execute that exact call — with the exact arguments the model produced — was rejected at the enforcement layer before it ever reached Outlook.
 
+## Production configuration gap (added 2026-07-16)
+
+The "Egress: external recipient blocked" row above, and the identical result
+in `results/post_prompt6_20260715.json` (34/34, egress green), were measured
+with `ATLAS_BLOQUEAR_EXTERNO=true` set in the harness's environment — visible
+in the table's parenthetical, but never stated as a *gap* until now.
+**Production runs with `ATLAS_BLOQUEAR_EXTERNO` unset** (default `false`) and
+`ATLAS_EGRESSO_DOMINIOS_INTERNOS` unset — confirmed directly in
+`avaliar_egresso()` (`backend/app.py`): with no allow-list configured, every
+recipient is treated as external, and `bloqueado` is only ever `True` when
+`ATLAS_BLOQUEAR_EXTERNO=true`, which production does not set. **The egress
+control is warn-only in production today — it does not block anything.**
+
+This report's "✅ 403" result is real and reproducible, but it verifies the
+*mechanism*, not production's *current behaviour*. `test_egress_mechanism.py`
+(added alongside this note) makes that distinction unambiguous going
+forward: it tests `avaliar_egresso()` directly under both configurations,
+including one test that pins down production's actual unset-default
+behaviour (external-but-never-blocked). Every report from this date forward
+also carries a `config_fingerprint` field recording exactly which
+`ATLAS_BLOQUEAR_EXTERNO`/`ATLAS_EGRESSO_DOMINIOS_INTERNOS` state it ran
+under, so this ambiguity can't recur silently.
+
+Enabling blocking in production is a deliberate non-goal of this note and of
+the 2026-07-16 observability plan that prompted it: turning on
+`ATLAS_BLOQUEAR_EXTERNO=true` without first populating
+`ATLAS_EGRESSO_DOMINIOS_INTERNOS` with the company's real internal domains
+would mark **every** recipient external, including legitimate internal ones —
+effectively disabling `enviar_email`/`teams_chat_enviar` outright. That
+requires the real domain list from the business side, not a test-harness
+change.
+
 ## Residual risk
 
 Carried forward from earlier phases, still true and still not attempted here:

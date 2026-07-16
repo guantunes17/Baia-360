@@ -14,6 +14,7 @@ Uso:
   docker exec baia360-backend python tasks_observabilidade.py regressao --motivo deploy
   docker exec baia360-backend python tasks_observabilidade.py regressao --motivo floor
   docker exec baia360-backend python tasks_observabilidade.py retencao
+  docker exec baia360-backend python tasks_observabilidade.py heartbeat
   docker exec baia360-backend python tasks_observabilidade.py export_traces --since 2026-07-01T00:00:00
 
 Cron sugerido (host, fora do container):
@@ -21,6 +22,10 @@ Cron sugerido (host, fora do container):
   0 3 1 * * docker exec baia360-backend python tasks_observabilidade.py regressao --motivo floor
   # todo dia, 03:30 — purga de traces com mais de 90 dias
   30 3 * * * docker exec baia360-backend python tasks_observabilidade.py retencao
+  # a cada 6h — alerta se o writer de traces parou silenciosamente (ver §7 do
+  # plano de observabilidade 2026-07-16); a saída vai para o log do cron, que
+  # já é monitorado — nenhum canal de alerta novo criado aqui.
+  0 */6 * * * docker exec baia360-backend python tasks_observabilidade.py heartbeat
 
 'export_traces' é read-only (só SELECT) e emite NDJSON no stdout — usado por
 scripts/phoenix_replay.py (roda no Mac do dev, fora de qualquer container) para
@@ -28,6 +33,7 @@ puxar traces via SSH e visualizá-las num Phoenix local, sob demanda.
 """
 import sys
 import json
+from datetime import datetime
 from app import app, db, AtlasGoldenQA, AtlasGoldenRun, AtlasRAGTrace, purgar_rag_traces, \
                 avaliar_judge, avaliar_groundedness, responder_atlas
 from openai import OpenAI
@@ -78,6 +84,33 @@ def retencao():
         print(f'[retencao] {n} traces apagadas')
 
 
+# Plano de observabilidade 2026-07-16 §7: a suíte de 54 testes ficou 7 dias
+# sem coletar uma linha sequer e ninguém percebeu, porque ela falha em
+# silêncio e uma suíte diferente (run_api_tests.py) era a que rodava. O
+# writer de traces (registrar_rag_trace) é código de background com o mesmo
+# modo de falha: se quebrar, as traces simplesmente param de chegar, sem
+# erro visível, e o buraco só aparece semanas depois quando alguém for
+# reprocessar o corpus. 48h (não 24h) porque este é um app de ~5 usuários
+# internos — 24h dispararia alarme falso em todo fim de semana sem tráfego
+# legítimo e viraria ruído ignorado (o mesmo destino do eval_flagged antigo);
+# 48h ainda pega uma segunda-feira inteira sem nenhum trace.
+HEARTBEAT_LIMITE_HORAS = 48
+
+
+def heartbeat(limite_horas: int = HEARTBEAT_LIMITE_HORAS):
+    with app.app_context():
+        ultimo = db.session.query(db.func.max(AtlasRAGTrace.criado_em)).scalar()
+        if ultimo is None:
+            print('[heartbeat] ALERTA: nenhuma trace registrada ainda.')
+            return
+        idade_h = (datetime.utcnow() - ultimo).total_seconds() / 3600
+        if idade_h > limite_horas:
+            print(f'[heartbeat] ALERTA: última trace há {idade_h:.1f}h (limite {limite_horas}h) — '
+                  f'o writer de traces pode ter parado silenciosamente.')
+        else:
+            print(f'[heartbeat] ok — última trace há {idade_h:.1f}h.')
+
+
 def export_traces(since_iso=None, limite=2000):
     """Emite AtlasRAGTrace como NDJSON (uma linha JSON por trace), ordenado
     por criado_em asc. Read-only. Usado pelo phoenix_replay.py no Mac."""
@@ -105,6 +138,9 @@ def export_traces(since_iso=None, limite=2000):
                 'eval_faithfulness': r.eval_faithfulness,
                 'eval_answer_rel': r.eval_answer_rel,
                 'eval_context_rel': r.eval_context_rel,
+                'eval_flagged': r.eval_flagged,
+                'eval_versao': r.eval_versao,
+                'tools_usadas': json.loads(r.tools_usadas) if r.tools_usadas else None,
                 'latencia_ms': r.latencia_ms,
                 'tokens_in': r.tokens_in, 'tokens_out': r.tokens_out,
             }
@@ -115,6 +151,8 @@ if __name__ == '__main__':
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'regressao'
     if cmd == 'retencao':
         retencao()
+    elif cmd == 'heartbeat':
+        heartbeat()
     elif cmd == 'export_traces':
         since = None
         if '--since' in sys.argv:

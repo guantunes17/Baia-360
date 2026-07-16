@@ -202,6 +202,24 @@ def pytest_sessionfinish(session, exitstatus):
         'generated_at': date.today().isoformat(),
         'base_url': BASE_URL,
         'judge_model': JUDGE_MODEL,
+        # Plano de observabilidade 2026-07-16 §8: o resultado anterior (34/34,
+        # egress test verde) foi gerado com ATLAS_BLOQUEAR_EXTERNO=true no
+        # ambiente do harness — mas produção roda com essa variável UNSET
+        # (default false), o que deixa o controle de egresso inerte lá
+        # (bloqueado sempre False, ver avaliar_egresso em app.py). O caveat
+        # honesto vivia numa mensagem de chat; o artefato no repo dizia
+        # "34/34" sem isso. Este fingerprint torna "sob qual configuração
+        # este resultado passou?" nunca mais ambíguo — qualquer leitor do
+        # JSON vê exatamente com que ATLAS_BLOQUEAR_EXTERNO este run rodou,
+        # sem precisar confiar numa nota de rodapé que pode ficar desatualizada.
+        'config_fingerprint': {
+            'ATLAS_BLOQUEAR_EXTERNO': ATLAS_BLOQUEAR_EXTERNO,
+            # Não grava a lista de domínios internos real no artefato (evita
+            # vazar a allowlist da empresa num JSON que pode ser compartilhado)
+            # — só se está configurada ou não, que é o que muda o comportamento
+            # testável.
+            'ATLAS_EGRESSO_DOMINIOS_INTERNOS_configurado': bool(ATLAS_EGRESSO_DOMINIOS_INTERNOS),
+        },
         # ── Model-compliance metric (payload corpus — same shape as Phase 1) ──
         'total_payloads': len(_ALL_RESULTS),
         'evaluated_payloads': evaluated_total,

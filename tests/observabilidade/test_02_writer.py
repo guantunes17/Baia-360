@@ -41,10 +41,21 @@ def test_persists_row_with_correct_aggregates(app, db, models, monkeypatch):
         # groundedness=0.5 < 0.75 deterministically trips _deve_julgar, so the
         # judge fields must have been filled in from the mocked avaliar_judge.
         assert row.groundedness == 0.5
-        assert row.eval_flagged is True
         assert row.eval_faithfulness == 0.9
         assert row.eval_answer_rel == 0.8
         assert row.eval_context_rel == 0.7
+        # eval_flagged redefined 2026-07-16: means "the judge ran AND found a
+        # real problem" (faithfulness/answer_rel <= 0.5), never "this row was
+        # merely selected for judging" (the old, dead definition — selection
+        # is driven by groundedness/top_score, not by the judge's own output,
+        # which is why it used to fire on perfect scores too). 0.9/0.8 are
+        # both above the threshold, so this clean judge result must NOT flag.
+        assert row.eval_flagged is False
+        # Provenance: no tools ran this turn (a pure RAG turn) — the empty
+        # array is the "measured, no tools" signal, distinct from NULL
+        # ("never captured", historical rows only).
+        assert row.tools_usadas == '[]'
+        assert row.eval_versao == models.EVAL_PIPELINE_VERSION
 
 
 def test_zero_retrieval_when_file_search_ran_but_empty(app, db, models, monkeypatch):
@@ -66,8 +77,13 @@ def test_zero_retrieval_when_file_search_ran_but_empty(app, db, models, monkeypa
         assert row.mean_score is None
         assert row.zero_retrieval is True
         assert row.citation_coverage is False
-        # zero_retrieval is one of _deve_julgar's deterministic triggers.
-        assert row.eval_flagged is True
+        # zero_retrieval is one of _deve_julgar's deterministic triggers, so the
+        # judge WAS attempted — but the mocked avaliar_judge returns None here
+        # (simulating an API failure), so there's no score to flag on.
+        # eval_flagged must be NULL ("not measured"), never True (there was no
+        # judge output to base an alarm on) nor False (that would claim "judge
+        # ran clean", which isn't true either — it simply didn't produce output).
+        assert row.eval_flagged is None
 
 
 def test_not_flagged_when_no_file_search_at_all(app, db, models, monkeypatch):

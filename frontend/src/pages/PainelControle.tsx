@@ -112,30 +112,44 @@ function fmtScore(v: number | null | undefined) {
   return v == null ? '—' : v.toFixed(2)
 }
 
+const SEGMENTO_LABEL: Record<string, string> = {
+  rag_only: 'RAG only', tool_only: 'Tool only', hybrid: 'Híbrido', no_retrieval: 'Sem retrieval',
+  // Linhas anteriores a este plano (tools_usadas nunca capturado) — NÃO é o
+  // mesmo que "sem tools" (no_retrieval/rag_only): significa "não sabemos".
+  legacy_unknown: 'Legado (proveniência desconhecida)',
+}
+
 function AtlasObservabilidadeCard() {
-  const [dados,   setDados]   = useState<any>(null)
-  const [dias,    setDias]    = useState(30)
-  const [loading, setLoading] = useState(true)
+  const [dados,       setDados]       = useState<any>(null)
+  const [dias,        setDias]        = useState(30)
+  const [evalVersao,  setEvalVersao]  = useState<string>('')
+  const [loading,     setLoading]     = useState(true)
 
   useEffect(() => {
     setLoading(true)
-    axios.get(`${API}/api/atlas/observabilidade`, { headers: headers(), params: { dias } })
+    const params: any = { dias }
+    if (evalVersao) params.eval_versao = evalVersao
+    axios.get(`${API}/api/atlas/observabilidade`, { headers: headers(), params })
       .then(r => setDados(r.data))
       .catch(() => setDados(null))
       .finally(() => setLoading(false))
-  }, [dias])
+  }, [dias, evalVersao])
 
   if (!loading && !dados) return null
 
+  // Toda média vem com o N ao lado — um card sem N foi o que fez a
+  // investigação de 2026-07-16 começar de uma hipótese errada (achava que
+  // era diluição de amostra; era 1 trace de 4). N omitido = métrica sem
+  // amostra associada (contagens brutas, taxas, latência).
   const cards = dados ? [
     { label: 'Interações c/ retrieval', valor: dados.total,                         cor: T.accentBlue   },
     { label: 'Retrieval hit rate',      valor: fmtPct(dados.retrieval_hit_rate),     cor: T.accentGreen  },
     { label: 'Zero retrieval',          valor: fmtPct(dados.zero_retrieval_rate),    cor: T.accentRed    },
-    { label: 'Top score médio',         valor: fmtScore(dados.mean_top_score),       cor: T.accentCyan   },
-    { label: 'Groundedness médio',      valor: fmtScore(dados.mean_groundedness),    cor: T.accentPurple },
-    { label: 'Faithfulness (judge)',    valor: fmtScore(dados.mean_faithfulness),    cor: T.accentAmber  },
-    { label: 'Answer relevancy',        valor: fmtScore(dados.mean_answer_rel),      cor: T.accentAmber  },
-    { label: 'Context relevancy',       valor: fmtScore(dados.mean_context_rel),     cor: T.accentAmber  },
+    { label: 'Top score médio',         valor: fmtScore(dados.mean_top_score),       cor: T.accentCyan,   n: dados.mean_top_score_n   },
+    { label: 'Groundedness médio',      valor: fmtScore(dados.mean_groundedness),    cor: T.accentPurple, n: dados.mean_groundedness_n },
+    { label: 'Faithfulness (judge)',    valor: fmtScore(dados.mean_faithfulness),    cor: T.accentAmber,  n: dados.mean_faithfulness_n },
+    { label: 'Answer relevancy',        valor: fmtScore(dados.mean_answer_rel),      cor: T.accentAmber,  n: dados.mean_answer_rel_n   },
+    { label: 'Context relevancy',       valor: fmtScore(dados.mean_context_rel),     cor: T.accentAmber,  n: dados.mean_context_rel_n  },
     { label: 'Feedback (👍/👎)',         valor: `${dados.feedback?.up ?? 0} / ${dados.feedback?.down ?? 0}`, cor: T.accentGreen },
     { label: 'Latência P95',            valor: dados.latencia_p95_ms != null ? `${dados.latencia_p95_ms} ms` : '—', cor: T.accentBlue },
   ] : []
@@ -143,35 +157,88 @@ function AtlasObservabilidadeCard() {
   const serie = dados?.serie_top_score || []
   const maxN  = Math.max(...serie.map((s: any) => s.n), 1)
 
+  const heartbeat = dados?.heartbeat
+  const idadeH = heartbeat?.ultimo_trace_h_atras
+  // Mesmo threshold do heartbeat do cron (ver tasks_observabilidade.py) —
+  // 48h, não 24h, porque ~5 usuários internos podem legitimamente não gerar
+  // tráfego num fim de semana.
+  const heartbeatStale = idadeH != null && idadeH > 48
+
   return (
     <div style={{ marginTop: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: T.text, paddingLeft: 10, borderLeft: `2px solid ${T.accentCyan}`, margin: 0 }}>
           Observabilidade RAG (Atlas)
         </h2>
-        <select
-          value={dias}
-          onChange={e => setDias(Number(e.target.value))}
-          style={{ fontSize: 12, color: T.text, background: 'rgba(14,22,45,0.8)', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 8px' }}
-        >
-          <option value={7}>Últimos 7 dias</option>
-          <option value={30}>Últimos 30 dias</option>
-          <option value={90}>Últimos 90 dias</option>
-        </select>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {dados?.versoes_disponiveis?.length > 0 && (
+            <select
+              value={evalVersao}
+              onChange={e => setEvalVersao(e.target.value)}
+              style={{ fontSize: 12, color: T.text, background: 'rgba(14,22,45,0.8)', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 8px' }}
+            >
+              <option value="">Todas as versões de eval</option>
+              {dados.versoes_disponiveis.map((v: number) => (
+                <option key={v} value={v}>eval_versao {v}</option>
+              ))}
+            </select>
+          )}
+          <select
+            value={dias}
+            onChange={e => setDias(Number(e.target.value))}
+            style={{ fontSize: 12, color: T.text, background: 'rgba(14,22,45,0.8)', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 8px' }}
+          >
+            <option value={7}>Últimos 7 dias</option>
+            <option value={30}>Últimos 30 dias</option>
+            <option value={90}>Últimos 90 dias</option>
+          </select>
+        </div>
       </div>
 
       {loading && <p style={{ fontSize: 13, color: T.textMuted }}>Carregando...</p>}
 
       {!loading && dados && (
         <>
+          {heartbeat && (
+            <div style={{
+              display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, padding: '8px 14px',
+              borderRadius: 8, fontSize: 12, color: heartbeatStale ? T.accentRed : T.textMuted,
+              background: heartbeatStale ? `${T.accentRed}15` : 'rgba(14,22,45,0.5)',
+              border: `1px solid ${heartbeatStale ? T.accentRed : T.border}`,
+            }}>
+              <span>
+                {heartbeatStale ? '⚠️ ' : ''}
+                Último trace: {idadeH != null ? `${idadeH.toFixed(1)}h atrás` : 'nunca'}
+              </span>
+              <span>Traces (24h): {heartbeat.traces_24h}</span>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
             {cards.map(card => (
               <div key={card.label} style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 10, padding: '14px 16px' }}>
                 <p style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{card.label}</p>
                 <p style={{ fontSize: 24, fontWeight: 700, color: card.cor, lineHeight: 1 }}>{card.valor}</p>
+                {card.n != null && <p style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>n={card.n}</p>}
               </div>
             ))}
           </div>
+
+          {dados.segmentos && (
+            <div style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Segmentação por proveniência
+              </p>
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                {Object.entries(dados.segmentos).map(([seg, n]) => (
+                  <div key={seg}>
+                    <p style={{ fontSize: 20, fontWeight: 700, color: T.text, lineHeight: 1 }}>{n as number}</p>
+                    <p style={{ fontSize: 11, color: T.textMuted }}>{SEGMENTO_LABEL[seg] || seg}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 10, padding: 16 }}>
             <p style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>

@@ -150,8 +150,30 @@ class AtlasRAGTrace(db.Model):
     eval_faithfulness  = db.Column(db.Float, nullable=True)
     eval_answer_rel    = db.Column(db.Float, nullable=True)
     eval_context_rel   = db.Column(db.Float, nullable=True)
-    eval_flagged       = db.Column(db.Boolean, default=False, index=True)  # entrou na triagem do judge
+    # Redefinido no plano de observabilidade 2026-07-16: agora significa "o
+    # judge rodou E encontrou um problema real" (faithfulness/answer_rel
+    # baixos), nunca "esta linha foi selecionada para julgamento" (definição
+    # antiga — um sinal morto que disparava em 4/4 traces mesmo com scores
+    # perfeitos, porque _deve_julgar seleciona por groundedness/top_score,
+    # não pelo resultado do judge). NULL = judge não rodou (tool_only/hybrid,
+    # ou não selecionado, ou selecionado mas a chamada falhou) — nunca False
+    # nesses casos, para não confundir "não medido" com "medido e limpo".
+    eval_flagged       = db.Column(db.Boolean, nullable=True, index=True)
     eval_modelo        = db.Column(db.String(50), nullable=True)
+
+    # Proveniência (Fase de observabilidade 2026-07-16): nomes das tools
+    # resolvidas neste turno (JSON array-as-text, mesma convenção de
+    # chunks_json). NUNCA um booleano derivado — o segmento (rag_only /
+    # tool_only / hybrid / no_retrieval) é derivado em tempo de leitura a
+    # partir deste campo cru, ver derivar_segmento_rag(). NULL em linhas
+    # antigas (a informação nunca foi capturada, não pode ser reconstruída);
+    # '[]' (nunca NULL) em linhas novas sem nenhuma tool.
+    tools_usadas       = db.Column(db.Text, nullable=True)
+    # Versão do pipeline de eval que escreveu/reprocessou esta linha — existe
+    # porque linhas antigas (v1, implícito/NULL) e novas (v2+) coexistem no
+    # mesmo corpus após reprocessamento parcial; sem isso não dá pra saber
+    # qual lógica gerou qual score.
+    eval_versao        = db.Column(db.Integer, nullable=True)
 
     latencia_ms   = db.Column(db.Integer, nullable=True)
     tokens_in     = db.Column(db.Integer, nullable=True)
@@ -301,6 +323,14 @@ RAG_JUDGE_MODEL = os.getenv('RAG_JUDGE_MODEL', 'gpt-4o-mini')
 RAG_EMBED_MODEL = os.getenv('RAG_EMBED_MODEL', 'text-embedding-3-small')
 PHOENIX_OTLP_ENABLED = os.getenv('PHOENIX_OTLP_ENABLED', '0') == '1'
 
+# v1 = traces anteriores ao plano de observabilidade 2026-07-16 (eval_versao
+# NULL — sem segmentação por proveniência, eval_flagged com a semântica
+# antiga). v2 = segmentação rag_only/tool_only/hybrid/no_retrieval +
+# eval_flagged redefinido (judge rodou E encontrou problema). Bump isto a
+# cada mudança de lógica de scoring/segmentação, para o corpus continuar
+# auditável sobre qual linha foi escrita/reprocessada por qual pipeline.
+EVAL_PIPELINE_VERSION = 2
+
 # Citações de file_search no texto de resposta do gpt-5.4-mini (Responses API)
 # vêm como spans delimitados por caracteres da Private Use Area do Unicode, não
 # como texto normal — só aparecem com repr(), um print() comum não mostra nada:
@@ -398,6 +428,77 @@ def extrair_rag_do_output(output) -> dict:
         'file_citations': file_citations,
     }
 
+
+def extrair_tools_do_turno(hist: list) -> list:
+    """Varre `history` (formato interno, estilo Gemini — parts com
+    'functionCall'/'functionResponse') de trás para frente, coletando nomes de
+    tool a partir de mensagens 'functionCall', e para no primeiro texto real
+    de usuário — o mesmo limite de turno já usado para extrair `_rag_pergunta`
+    em atlas_chat. Isso existe porque `history` acumula a conversa inteira
+    (todas as trocas anteriores), não só o turno atual: sem esse corte, tool
+    calls de turnos passados vazariam para `tools_usadas` do turno de agora.
+
+    Cobre tools resolvidas pelo FRONTEND (Outlook/Teams) — cuja functionCall
+    só existe em `history` porque o frontend reenvia o histórico atualizado
+    numa segunda requisição a /api/atlas/chat depois de executar a tool (ver
+    Atlas.tsx). Tools resolvidas pelo BACKEND dentro desta própria requisição
+    (get_dashboard) não aparecem aqui — essas vêm de `tools_resolvidos`, no
+    chamador. Função pura, sem efeitos colaterais — testável isoladamente."""
+    # Grupos (um por mensagem) coletados na ordem reversa da mensagem, mas
+    # cada grupo preserva a ordem interna das calls DENTRO da mensagem — só o
+    # `reversed(grupos)` no final devolve a ordem cronológica correta.
+    # Inverter a lista nomes achatada inteira (em vez dos grupos) trocaria a
+    # ordem de duas calls que vieram na MESMA mensagem.
+    grupos = []
+    for m in reversed(hist or []):
+        parts = m.get('parts', []) if isinstance(m, dict) else []
+        fn_calls = [p.get('functionCall', {}).get('name') for p in parts if 'functionCall' in p]
+        if fn_calls:
+            grupos.append([nome for nome in fn_calls if nome])
+            continue
+        if m.get('role') == 'user' and any('text' in p for p in parts):
+            break
+    nomes = []
+    for grupo in reversed(grupos):
+        nomes.extend(grupo)
+    return nomes
+
+
+def derivar_segmento_rag(usou_file_search: bool, tools_usadas, n_file_citations: int) -> str:
+    """Deriva o segmento de proveniência de uma trace a partir de sinais crus
+    já persistidos — NUNCA armazenado como coluna própria (ver plano de
+    observabilidade 2026-07-16, princípio 'sinal cru na escrita, interpretação
+    na leitura'). Reusada tanto na escrita (para decidir se pula o judge)
+    quanto na leitura (dashboard).
+
+    `tools_usadas` é `list[str] | None` — a distinção importa e não pode ser
+    colapsada pelo chamador antes de chegar aqui. `None` significa "não
+    sabemos se uma tool rodou" (linhas anteriores a este plano, coluna nunca
+    escrita) e tem que virar seu próprio segmento ('legacy_unknown'), nunca
+    'rag_only'/'no_retrieval' — essas duas são afirmações positivas de "sem
+    tool", só corretas quando `tools_usadas` é uma lista de verdade (mesmo
+    vazia). Bug real encontrado em code review: uma versão anterior deste
+    reprocessamento gravava tools_usadas='[]' em linhas cuja proveniência
+    era desconhecida (pré-Fase-2, quando get_dashboard/Outlook já existiam),
+    fabricando certeza que os dados não sustentam — a mesma confusão
+    NULL-vs-[] que este plano existe para eliminar. `[]` (lista vazia, não
+    None) SIGNIFICA "sabemos que nenhuma tool rodou" — só é válido quando
+    isso foi de fato observado/capturado.
+
+    Mutuamente exclusivo (entre os 4 segmentos conhecidos), tool tem
+    prioridade sobre file_search: uma tool ter rodado é o sinal mais forte de
+    que a resposta pode não depender só do retrieval, então precisa da sua
+    própria segmentação mesmo quando file_search também disparou.
+    """
+    if tools_usadas is None:
+        return 'legacy_unknown'
+    if tools_usadas:
+        return 'hybrid' if (n_file_citations or 0) > 0 else 'tool_only'
+    if usou_file_search:
+        return 'rag_only'
+    return 'no_retrieval'
+
+
 def _emit_otel_span(trace_dict: dict):
     """Emite um span OTLP para o Phoenix APENAS se PHOENIX_OTLP_ENABLED=1.
     Em produção fica desligado (no-op). Em falha, engole a exceção — nunca
@@ -423,8 +524,23 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
     que já roda dentro de um app_context com sessão de DB ativa; erros de
     avaliação são engolidos (best-effort), mas erros na gravação inicial da
     linha propagam para o chamador."""
-    chunks = trace_dict.get('chunks') or []
-    scores = [c['score'] for c in chunks if c.get('score') is not None]
+    chunks           = trace_dict.get('chunks') or []
+    scores           = [c['score'] for c in chunks if c.get('score') is not None]
+    usou_file_search = trace_dict.get('usou_file_search', False)
+    n_file_citations = trace_dict.get('n_file_citations', 0)
+    # Nunca None: '[]' distingue "sem tools" (medido) de NULL ("não capturado
+    # ainda" — só ocorre em linhas antigas, pré-plano 2026-07-16, escritas
+    # antes desta coluna existir; nenhuma linha NOVA passa por aqui sem
+    # `tools_usadas` no trace_dict). Esta coerção só é segura porque o único
+    # chamador real (o loop SSE de atlas_chat) sempre calcula uma lista de
+    # verdade — nunca chame _persistir_rag_trace com um trace_dict que
+    # OMITE 'tools_usadas' quando a proveniência é realmente desconhecida;
+    # isso gravaria a mesma fabricação que este plano corrigiu na
+    # reprocessagem (ver data_2026-07-16_reprocess_rag_traces.sql).
+    tools_usadas     = trace_dict.get('tools_usadas') or []
+    segmento         = derivar_segmento_rag(usou_file_search, tools_usadas, n_file_citations)
+    pula_judge       = segmento in ('tool_only', 'hybrid')
+
     row = AtlasRAGTrace(
         usuario_id       = trace_dict.get('usuario_id'),
         conv_id          = trace_dict.get('conv_id'),
@@ -432,15 +548,17 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
         modelo           = trace_dict.get('modelo'),
         pergunta         = (trace_dict.get('pergunta') or '')[:4000],
         resposta         = (trace_dict.get('resposta') or '')[:8000],
-        usou_file_search = trace_dict.get('usou_file_search', False),
+        usou_file_search = usou_file_search,
         retrieval_query  = (trace_dict.get('retrieval_query') or '')[:2000],
         retrieval_count  = len(chunks),
         top_score        = max(scores) if scores else None,
         mean_score       = (sum(scores) / len(scores)) if scores else None,
-        zero_retrieval   = trace_dict.get('usou_file_search', False) and len(chunks) == 0,
+        zero_retrieval   = usou_file_search and len(chunks) == 0,
         chunks_json      = json.dumps(chunks, ensure_ascii=False)[:200000],
-        n_file_citations = trace_dict.get('n_file_citations', 0),
-        citation_coverage= trace_dict.get('n_file_citations', 0) > 0,
+        n_file_citations = n_file_citations,
+        citation_coverage= n_file_citations > 0,
+        tools_usadas     = json.dumps(tools_usadas, ensure_ascii=False),
+        eval_versao      = EVAL_PIPELINE_VERSION,
         latencia_ms      = trace_dict.get('latencia_ms'),
         tokens_in        = trace_dict.get('tokens_in'),
         tokens_out       = trace_dict.get('tokens_out'),
@@ -449,19 +567,35 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
     db.session.commit()
     _emit_otel_span(trace_dict)
 
+    # tool_only/hybrid: a resposta não dependeu (só) do retrieval, então
+    # pontuar faithfulness/context_rel contra os chunks seria comparar a
+    # resposta com um contexto que não é a fonte real do seu conteúdo —
+    # tecnicamente correto de calcular, semanticamente sem sentido (foi
+    # exatamente o caso da trace #15 que motivou este plano). groundedness/
+    # eval_* ficam NULL — "não avaliável", nunca 0 ("avaliado, ruim").
+    if pula_judge:
+        return row.id
+
     try:
         _client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', '').strip())
         g = avaliar_groundedness(_client, row.resposta or '', chunks)
         if g is not None:
             row.groundedness = g
         if _deve_julgar(row):
-            row.eval_flagged = True
             row.eval_modelo  = RAG_JUDGE_MODEL
             j = avaliar_judge(_client, row.pergunta or '', row.resposta or '', chunks)
             if j:
                 row.eval_faithfulness = j['faithfulness']
                 row.eval_answer_rel   = j['answer_relevancy']
                 row.eval_context_rel  = j['context_relevancy']
+                # Redefinido 2026-07-16: flagged = o judge rodou E encontrou
+                # um problema real, não "foi selecionado para julgamento".
+                # Escala do judge é contínua (ver avaliar_judge/_JUDGE_PROMPT
+                # — nenhum arredondamento/discretização em código), por isso
+                # o limiar é 0.5 (meio da escala), não < 1 (que alarmaria
+                # ruído normal do judge, ex. 0.9). Se a chamada falhar (j é
+                # None), eval_flagged fica NULL — "não medido", não False.
+                row.eval_flagged = (j['faithfulness'] <= 0.5) or (j['answer_relevancy'] <= 0.5)
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -1927,6 +2061,16 @@ def atlas_chat():
                             # ── RAG observability: dispatch assíncrono (não bloqueia) ──
                             try:
                                 usage = getattr(event.response, 'usage', None)
+                                # União, preservando ordem e sem duplicatas: tools
+                                # resolvidas pelo backend NESTA requisição
+                                # (tools_resolvidos, ex. get_dashboard) + tools
+                                # resolvidas pelo FRONTEND num hop anterior deste
+                                # mesmo turno (sobrevivem em `history`, ver
+                                # extrair_tools_do_turno). Nenhuma das duas fontes
+                                # sozinha cobre os dois casos.
+                                _tools_usadas = list(dict.fromkeys(
+                                    extrair_tools_do_turno(history) + tools_resolvidos
+                                ))
                                 trace_dict = {
                                     'usuario_id':       usuario_id,
                                     'conv_id':          conv_id,
@@ -1938,6 +2082,7 @@ def atlas_chat():
                                     'retrieval_query':  rag_query,
                                     'chunks':           rag_chunks,
                                     'n_file_citations': n_file_cit,
+                                    'tools_usadas':     _tools_usadas,
                                     'latencia_ms':      int((time.time() - _rag_t0) * 1000),
                                     'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
                                     'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
@@ -2383,35 +2528,50 @@ def atlas_log_conversas():
 @app.route('/api/atlas/observabilidade', methods=['GET'])
 @jwt_required()
 def atlas_observabilidade():
-    """Métricas agregadas de RAG observability — apenas admins."""
+    """Métricas agregadas de RAG observability — apenas admins.
+
+    Toda média vem acompanhada do seu N (ver plano de observabilidade
+    2026-07-16 §6) — um "0.75" sozinho na tela foi o que fez a investigação
+    daquele plano começar de uma hipótese errada (era 3 de 4, e nada na tela
+    dizia isso). `eval_versao` é filtrável para o corpus não misturar
+    silenciosamente linhas escritas por pipelines de scoring diferentes."""
     usuario = User.query.get(int(get_jwt_identity()))
     if not usuario or usuario.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
     dias = request.args.get('dias', default=30, type=int)
+    eval_versao_filtro = request.args.get('eval_versao', default=None, type=int)
     since = datetime.utcnow() - timedelta(days=dias)
-    base = AtlasRAGTrace.query.filter(AtlasRAGTrace.criado_em >= since)
+
+    def _janela(query):
+        query = query.filter(AtlasRAGTrace.criado_em >= since)
+        if eval_versao_filtro is not None:
+            query = query.filter(AtlasRAGTrace.eval_versao == eval_versao_filtro)
+        return query
+
+    base = _janela(AtlasRAGTrace.query)
     total = base.count()
     com_fs = base.filter_by(usou_file_search=True).count()
     zero   = base.filter_by(zero_retrieval=True).count()
 
     def _avg(col):
-        v = db.session.query(func.avg(col)).filter(AtlasRAGTrace.criado_em >= since).scalar()
+        v = _janela(db.session.query(func.avg(col))).scalar()
         return round(float(v), 4) if v is not None else None
+
+    def _n(col):
+        return _janela(AtlasRAGTrace.query).filter(col.isnot(None)).count()
 
     up   = base.filter_by(feedback='up').count()
     down = base.filter_by(feedback='down').count()
 
     # P95 latência (portável: ordena e pega o índice)
-    lats = [r[0] for r in db.session.query(AtlasRAGTrace.latencia_ms)
-            .filter(AtlasRAGTrace.criado_em >= since, AtlasRAGTrace.latencia_ms.isnot(None))
+    lats = [r[0] for r in _janela(db.session.query(AtlasRAGTrace.latencia_ms))
+            .filter(AtlasRAGTrace.latencia_ms.isnot(None))
             .order_by(AtlasRAGTrace.latencia_ms.asc()).all()]
     p95 = lats[int(len(lats) * 0.95)] if lats else None
 
     # série diária de mean top_score (portável — bucketing em Python, sem date_trunc)
     from collections import defaultdict
-    _serie_rows = db.session.query(
-        AtlasRAGTrace.criado_em, AtlasRAGTrace.top_score
-    ).filter(AtlasRAGTrace.criado_em >= since).all()
+    _serie_rows = _janela(db.session.query(AtlasRAGTrace.criado_em, AtlasRAGTrace.top_score)).all()
     _serie_scores = defaultdict(list)
     _serie_counts = defaultdict(int)
     for _dt, _sc in _serie_rows:
@@ -2427,17 +2587,62 @@ def atlas_observabilidade():
         for _dia in sorted(_serie_counts)
     ]
 
+    # ── Segmentação de proveniência (rag_only/tool_only/hybrid/no_retrieval/
+    # legacy_unknown) — derivada em Python a partir de sinais crus, nunca
+    # persistida (ver derivar_segmento_rag/§3 do plano). Sempre soma para
+    # `total`. ─────────────────────────────────────────────────────────────
+    _seg_rows = _janela(db.session.query(
+        AtlasRAGTrace.usou_file_search, AtlasRAGTrace.tools_usadas, AtlasRAGTrace.n_file_citations
+    )).all()
+    segmentos = {'rag_only': 0, 'tool_only': 0, 'hybrid': 0, 'no_retrieval': 0, 'legacy_unknown': 0}
+    for _fs, _tools_json, _n_cit in _seg_rows:
+        # CUIDADO: `_tools_json is None` (coluna NULL — proveniência nunca
+        # capturada) tem que chegar em derivar_segmento_rag como None, não
+        # como '[]'. Colapsar os dois aqui reintroduziria, na leitura, a
+        # mesma fabricação de certeza que o reprocessamento (ver
+        # backend/migrations/data_2026-07-16_reprocess_rag_traces.sql)
+        # corrigiu na escrita: linhas antigas virariam 'rag_only' silenciosamente.
+        _tools = json.loads(_tools_json) if _tools_json is not None else None
+        segmentos[derivar_segmento_rag(_fs, _tools, _n_cit or 0)] += 1
+
+    # ── Heartbeat: idade do último trace + volume nas últimas 24h. Sempre
+    # relativo a "agora" — independente da janela `dias` escolhida acima,
+    # porque o objetivo é detectar "o writer parou", não descrever o passado.
+    ultimo_trace = db.session.query(func.max(AtlasRAGTrace.criado_em)).scalar()
+    idade_ultimo_h = ((datetime.utcnow() - ultimo_trace).total_seconds() / 3600) if ultimo_trace else None
+    traces_24h = AtlasRAGTrace.query.filter(
+        AtlasRAGTrace.criado_em >= datetime.utcnow() - timedelta(hours=24)
+    ).count()
+
+    versoes_disponiveis = sorted(
+        v for (v,) in db.session.query(AtlasRAGTrace.eval_versao)
+            .filter(AtlasRAGTrace.criado_em >= since).distinct().all()
+        if v is not None
+    )
+
     return jsonify({
-        'janela_dias':        dias,
-        'total':              total,
-        'com_file_search':    com_fs,
-        'retrieval_hit_rate': round(1 - (zero / com_fs), 4) if com_fs else None,
-        'zero_retrieval_rate':round(zero / com_fs, 4) if com_fs else None,
-        'mean_top_score':     _avg(AtlasRAGTrace.top_score),
-        'mean_groundedness':  _avg(AtlasRAGTrace.groundedness),
-        'mean_faithfulness':  _avg(AtlasRAGTrace.eval_faithfulness),
-        'mean_answer_rel':    _avg(AtlasRAGTrace.eval_answer_rel),
-        'mean_context_rel':   _avg(AtlasRAGTrace.eval_context_rel),
+        'janela_dias':          dias,
+        'eval_versao_filtro':   eval_versao_filtro,
+        'versoes_disponiveis':  versoes_disponiveis,
+        'total':                total,
+        'com_file_search':      com_fs,
+        'retrieval_hit_rate':   round(1 - (zero / com_fs), 4) if com_fs else None,
+        'zero_retrieval_rate':  round(zero / com_fs, 4) if com_fs else None,
+        'mean_top_score':       _avg(AtlasRAGTrace.top_score),
+        'mean_top_score_n':     _n(AtlasRAGTrace.top_score),
+        'mean_groundedness':    _avg(AtlasRAGTrace.groundedness),
+        'mean_groundedness_n':  _n(AtlasRAGTrace.groundedness),
+        'mean_faithfulness':    _avg(AtlasRAGTrace.eval_faithfulness),
+        'mean_faithfulness_n':  _n(AtlasRAGTrace.eval_faithfulness),
+        'mean_answer_rel':      _avg(AtlasRAGTrace.eval_answer_rel),
+        'mean_answer_rel_n':    _n(AtlasRAGTrace.eval_answer_rel),
+        'mean_context_rel':     _avg(AtlasRAGTrace.eval_context_rel),
+        'mean_context_rel_n':   _n(AtlasRAGTrace.eval_context_rel),
+        'segmentos':            segmentos,
+        'heartbeat': {
+            'ultimo_trace_h_atras': round(idade_ultimo_h, 2) if idade_ultimo_h is not None else None,
+            'traces_24h':           traces_24h,
+        },
         'feedback':           {'up': up, 'down': down,
                                'ratio': round(up / (up + down), 4) if (up + down) else None},
         'latencia_p95_ms':    p95,
