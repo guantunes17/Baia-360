@@ -726,9 +726,39 @@ ATLAS_MODEL            = 'gpt-5.4-mini'
 ATLAS_TEMPERATURE      = 1.0
 ATLAS_REASONING_EFFORT = 'medium'
 
-# Tamanho máximo de texto por mensagem projetada em buscar_conversas — plano
-# de integridade 2026-07-16, §1. Ver atlas_buscar_conversas().
+# Tamanho máximo de texto por mensagem projetada em buscar_conversas (lista/
+# busca) — plano de integridade 2026-07-16, §1. Ver atlas_buscar_conversas().
+#
+# De onde vem 300: por paridade com RESUMO_EMAIL_MAX_CHARS (mcp_outlook_
+# server.py), que por sua vez segue o próprio bodyPreview do Microsoft Graph
+# (documentado como "os primeiros 255 caracteres"). Não é uma medição de
+# "quanto o modelo precisa para compreender" — é a MESMA convenção de
+# tamanho de trecho-de-lista aplicada às duas tools search-shaped deste
+# código, para não ter dois números arbitrários e não relacionados fazendo o
+# mesmo trabalho. O motivo pelo qual não precisa ser "o número perfeito":
+# ao contrário da primeira versão desta projeção (que não tinha nenhuma
+# saída — snippet curto demais era permanente), agora existe ler_conversa
+# (ver abaixo) — um trecho pequeno demais é um inconveniente recuperável (uma
+# chamada de tool a mais), não uma perda de capacidade. Isso desloca o custo
+# de errar esse número de "o modelo fica cego" para "o modelo pede mais".
 CONVERSA_SNIPPET_MAX_CHARS = 300
+
+# ler_conversa (detalhe — plano de integridade 2026-07-16, correção de code
+# review: a primeira versão deste plano corrigiu buscar_emails com exatamente
+# este split lista/detalhe, mas projetou buscar_conversas SEM o lado
+# 'detalhe' — o modelo descobria que uma conversa existia e não tinha como
+# lê-la, uma regressão de funcionalidade, não só contenção). Orçamento de
+# caracteres TOTAL (não por mensagem × contagem, que multiplicaria o risco)
+# — itera mensagens mais recentes até estourar o orçamento, trunca a última
+# se necessário. 12000 caracteres ≈ 3000 tokens: por volta de 2x o tamanho de
+# um relatório rico medido no relatório deste prompt (~5000 chars), uma
+# ordem de grandeza abaixo do incidente (107k tokens), e ainda assim ~40x
+# mais generoso que o snippet de lista — dá pra realmente reler uma conversa,
+# não só confirmar que ela existe. CONVERSA_DETALHE_MAX_MSGS é só um teto de
+# iteração (evita examinar uma conversa com milhares de mensagens
+# inteiras) — quem realmente limita o payload é o orçamento de caracteres.
+CONVERSA_DETALHE_TOTAL_CHARS = 12000
+CONVERSA_DETALHE_MAX_MSGS    = 40
 
 # Slugs de permissão (Permissao.modulos_json, PERMISSOES_PADRAO, get_dashboard)
 # dos 8 módulos de relatório da Central. Fase 5: o mapeamento slug->label de
@@ -838,6 +868,11 @@ Sobre Microsoft Teams:
 - Use teams_criar_reuniao para criar reuniões online com link do Teams — sempre registre também na agenda via criar_evento
 - Use teams_chat_enviar para enviar mensagens diretas a outros usuários pelo Teams
 
+Sobre encontrar o e-mail/contato de uma pessoa:
+- Você NÃO tem uma ferramenta de busca de contatos. Se precisar do endereço de e-mail de alguém para agendar uma reunião, enviar um e-mail ou mandar mensagem no Teams, e não souber esse endereço, NUNCA tente descobri-lo vasculhando buscar_emails ou buscar_conversas — pergunte diretamente ao usuário qual é o e-mail da pessoa
+- Isso vale mesmo que o nome pareça familiar ou já tenha aparecido em conversas passadas — confirme com o usuário em vez de presumir ou pesquisar
+- Depois que o usuário informar o endereço, prossiga normalmente com a ação (criar_evento, enviar_email, teams_chat_enviar etc.)
+
 Sobre e-mails:
 - Use buscar_emails para consultar e-mails do usuário no Outlook — retorna assunto, remetente, data e um trecho curto do corpo, NUNCA o corpo completo
 - Se o trecho curto de buscar_emails não for suficiente, use ler_email com o id do e-mail (retornado por buscar_emails) para ler o corpo completo — chame ler_email apenas para o(s) e-mail(s) especificamente necessário(s), nunca para todos os resultados de uma busca
@@ -847,6 +882,7 @@ Sobre conversas anteriores:
 - Você TEM acesso às conversas anteriores do usuário via ferramenta buscar_conversas
 - Use essa ferramenta quando o usuário pedir para você se atualizar, revisar o histórico, ou referenciar algo que foi discutido antes
 - Os resumos retornados são trechos curtos, não o conteúdo integral das mensagens — use-os para identificar do que se tratava a conversa, não como fonte de citação literal extensa
+- Se o trecho curto não for suficiente (ex. o usuário pede detalhes de algo específico que foi discutido), use ler_conversa com o conv_id (retornado por buscar_conversas) para ler o conteúdo completo dessa conversa — chame ler_conversa apenas para a conversa especificamente necessária, nunca para todos os resultados de uma busca
 - Após buscar, leia os resumos e responda com base no que foi encontrado
 
 Sobre busca na internet:
@@ -946,13 +982,24 @@ ATLAS_TOOLS_DECLARATIONS = [
     },
     {
         'name': 'buscar_conversas',
-        'description': 'Busca conversas anteriores do usuário com o Atlas. Use quando o usuário pedir para se atualizar, revisar o que foi discutido, ou referenciar algo de conversas passadas.',
+        'description': 'Busca conversas anteriores do usuário com o Atlas e retorna uma lista com um trecho curto de cada mensagem. Use quando o usuário pedir para se atualizar, revisar o que foi discutido, ou referenciar algo de conversas passadas. NÃO traz o conteúdo completo — para reler uma conversa específica encontrada aqui em detalhe, use ler_conversa com o conv_id retornado.',
         'parameters': {
             'type': 'object',
             'properties': {
                 'query': {'type': 'string', 'description': 'Palavras-chave para buscar nas conversas. Pode ser vazio para trazer as mais recentes.'}
             },
             'required': ['query']
+        }
+    },
+    {
+        'name': 'ler_conversa',
+        'description': 'Retorna o conteúdo completo (não resumido) de UMA conversa anterior específica, a partir do conv_id obtido via buscar_conversas. Use quando o trecho curto de buscar_conversas não for suficiente e for necessário reler em detalhe o que foi discutido.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'conv_id': {'type': 'string', 'description': 'conv_id da conversa, obtido no campo "conv_id" de um resultado de buscar_conversas.'}
+            },
+            'required': ['conv_id']
         }
     },
     {
@@ -2994,7 +3041,11 @@ def atlas_buscar_conversas():
     gerar_relatorio/get_dashboard) bastava para inflar um resultado desta
     tool a dezenas de milhares de tokens. Medido: um cenário realista com um
     relatório de KPIs entre as mensagens caiu de ~37k para ~2.7k tokens só
-    com esta projeção (script de medição no relatório do prompt)."""
+    com esta projeção (script de medição no relatório do prompt).
+
+    Split lista/detalhe: esta função é a metade 'lista' — devolve conv_id +
+    um trecho curto por mensagem. Para o conteúdo completo de UMA conversa
+    já identificada aqui, ver atlas_ler_conversa (rota /ler) logo abaixo."""
     usuario_id = int(get_jwt_identity())
     q = request.args.get('q', '').strip().lower()
     conversas = (
@@ -3023,6 +3074,56 @@ def atlas_buscar_conversas():
             'resumo':     resumo
         })
     return jsonify(resultado), 200
+
+
+@app.route('/api/atlas/conversas/<conv_id>/ler', methods=['GET'])
+@jwt_required()
+def atlas_ler_conversa(conv_id):
+    """Conteúdo completo de UMA conversa anterior — a metade 'detalhe' do
+    split lista/detalhe de atlas_buscar_conversas (plano de integridade
+    2026-07-16, correção de code review §1: a primeira versão deste plano
+    projetou buscar_conversas para um trecho curto sem adicionar nenhuma
+    forma de ler o conteúdo completo depois — o modelo descobria que uma
+    conversa sobre determinado assunto existia e não tinha como lê-la).
+
+    Orçamento de caracteres TOTAL, não por-mensagem × contagem (ver
+    CONVERSA_DETALHE_TOTAL_CHARS) — itera as mensagens mais recentes
+    primeiro e para quando o orçamento estoura, truncando a última se
+    necessário. `truncado` no retorno é explícito: nunca corta em silêncio."""
+    usuario_id = int(get_jwt_identity())
+    conversa = AtlasConversa.query.filter_by(usuario_id=usuario_id, conv_id=conv_id).first()
+    if not conversa:
+        return jsonify({'erro': 'Conversa não encontrada'}), 404
+
+    msgs = json.loads(conversa.msgs_json)
+    candidatas = [m for m in msgs if m.get('role') in ('user', 'assistant')]
+    total_disponivel = len(candidatas)
+    # Mais recentes primeiro (mesma ordem de prioridade do resumo em
+    # buscar_conversas), até CONVERSA_DETALHE_MAX_MSGS candidatas avaliadas.
+    candidatas = list(reversed(candidatas))[:CONVERSA_DETALHE_MAX_MSGS]
+
+    mensagens = []
+    orcamento_restante = CONVERSA_DETALHE_TOTAL_CHARS
+    truncado = total_disponivel > len(candidatas)
+    for m in candidatas:
+        if orcamento_restante <= 0:
+            truncado = True
+            break
+        texto = (m.get('text') or '')[:orcamento_restante]
+        if len(m.get('text') or '') > len(texto):
+            truncado = True
+        mensagens.append({'role': m.get('role'), 'texto': texto})
+        orcamento_restante -= len(texto)
+    mensagens.reverse()  # devolve em ordem cronológica
+
+    return jsonify({
+        'conv_id':            conversa.conv_id,
+        'titulo':             conversa.titulo,
+        'criadaEm':           conversa.criada_em.isoformat(),
+        'mensagens':          mensagens,
+        'total_disponivel':   total_disponivel,
+        'truncado':           truncado,
+    }), 200
 
 
 # ── Helper: obter ou criar Vector Store ───────────────────────────────────────

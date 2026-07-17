@@ -127,6 +127,14 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string, confirmToken?: 
     if (!res.ok) return { erro: 'Não foi possível buscar conversas.' }
     return res.json()
   },
+  ler_conversa: async ({ conv_id }: any, token: string) => {
+    const res = await fetch(`${API}/api/atlas/conversas/${encodeURIComponent(conv_id)}/ler`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) return { erro: data.erro || 'Não foi possível ler a conversa.' }
+    return data
+  },
   enviar_email: async (args: any, token: string, confirmToken?: string) => {
     const res = await fetch(`${API}/api/outlook/enviar_email`, {
       method: 'POST',
@@ -2350,6 +2358,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                               : m.tools?.includes('gerar_relatorio') ? 'Gerando relatório'
                               : m.tools?.includes('get_agenda') ? 'Consultando agenda'
                               : m.tools?.includes('buscar_conversas') ? 'Buscando conversas anteriores'
+                              : m.tools?.includes('ler_conversa') ? 'Relendo conversa anterior'
                               : m.tools?.includes('buscar_emails') ? 'Buscando e-mails'
                               : m.tools?.includes('ler_email') ? 'Lendo e-mail'
                               : m.tools?.includes('enviar_email') ? 'Enviando e-mail'
