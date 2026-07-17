@@ -1,7 +1,8 @@
 """
 Orchestrates the RAG observability validation suite: runs pytest, writes a
-timestamped results JSON (gitignored, like tests/redteam/results/), and
-regenerates REPORT.md (committed).
+timestamped results JSON, and regenerates REPORT.md. Both are gitignored as
+of 2026-07-17 (generated artifacts, and this report quotes real production
+groundedness scores — not fit for a public repo).
 
 Usage:
   python run_validation.py                # $0, fully mocked, honest skips on SQLite

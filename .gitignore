@@ -32,11 +32,18 @@ test-results/
 tests/screenshots/
 playwright-report/
 
-# Red-team suite: generated per-run artifacts, not source
+# Red-team suite: generated per-run artifacts, not source. REPORT.md here is
+# hand-authored per phase from the results/*.json (no script regenerates it,
+# unlike observabilidade's below) but untracked as of 2026-07-17 for the same
+# reason: a public repo shouldn't publish real jailbreak framings/targets or
+# a config_fingerprint of live enforcement flags.
 tests/redteam/results/
+tests/redteam/REPORT.md
 
 # RAG observability validation suite: generated per-run artifacts, not source
-# (REPORT.md itself IS committed — only the raw results/ dir is ignored)
+# REPORT.md untracked as of 2026-07-17, alongside the redteam one above: it
+# quoted real production groundedness scores from live RAG traces
 tests/observabilidade/results/
+tests/observabilidade/REPORT.md
 tests/observabilidade/.venv/
 tests/observabilidade/obs_metrics_redacted.json
