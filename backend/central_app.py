@@ -797,7 +797,23 @@ def processar_cap_operacional_route():
     threading.Thread(target=executar, daemon=True).start()
     return jsonify({'job_id': job_id}), 202
 
-DB_ESTOQUE_PATH_WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'estoque_db.json')
+# ESTOQUE_DB_PATH permite apontar para um arquivo fora do checkout (ex. um
+# diretório temporário) sem mexer no default de produção. Existe porque, em
+# docker-compose.yml, o volume nomeado `backend_data:/app/data` do serviço
+# `central` já sombra `./backend/data` do host — então dentro do container
+# este caminho nunca toca o `backend/data/estoque_db.json` versionado no
+# git. Mas rodar central_app.py DIRETO no host (fora do compose — o método
+# mais rápido de subir um backend ao vivo para run_api_tests.py, sem essa
+# indireção de volume) escreve nele de verdade: já aconteceu duas vezes
+# (sessão da Fase 2 e desta sessão) o teste de Estoque sobrescrever os
+# 2MB do arquivo versionado, só notado porque alguém conferiu `git status`
+# antes de commitar. Rodando fora do compose, exporte
+# ESTOQUE_DB_PATH=/tmp/estoque_db_test.json (ou qualquer caminho fora do
+# checkout) antes de iniciar o processo.
+DB_ESTOQUE_PATH_WEB = os.getenv(
+    'ESTOQUE_DB_PATH',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'estoque_db.json')
+)
 os.makedirs(os.path.dirname(DB_ESTOQUE_PATH_WEB), exist_ok=True)
 
 @app.route('/api/modulos/estoque/db/info', methods=['GET'])

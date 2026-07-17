@@ -1,7 +1,17 @@
 # -*- coding: utf-8 -*-
 """
 Fase 4 — Testes de API para a Central de Relatórios.
-Requer o backend rodando em http://localhost:5001.
+Requer o backend E o central rodando (BASE aponta só para :5001, sem override —
+pós-Fase-5 a maioria destas rotas mora em `central`, então também precisa de um
+gateway/nginx expondo os dois nesse mesmo endereço, ver frontend/nginx.dev.conf
+para a divisão de rotas; docker-compose.yml sobe os três).
+
+Se estiver rodando `central_app.py` DIRETO no host (fora do docker-compose) para
+montar esse ambiente rapidamente: exporte ESTOQUE_DB_PATH para um caminho fora
+do checkout (ex. /tmp/estoque_db_test.json) antes de subir o processo — sem
+isso, os testes de Estoque escrevem direto em cima de backend/data/estoque_db.json,
+que é versionado no git (já aconteceu duas vezes). Dentro do docker-compose,
+o volume `backend_data:/app/data` já protege isso automaticamente.
 
 Executar a partir do diretório backend/:
     python tests/run_api_tests.py
