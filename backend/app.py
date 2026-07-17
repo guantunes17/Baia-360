@@ -23,7 +23,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-from openai import OpenAI
+from openai import OpenAI, APIError, BadRequestError
 from sqlalchemy import func, text
 from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -513,6 +513,209 @@ def derivar_segmento_rag(usou_file_search: bool, tools_usadas, n_file_citations:
     if usou_file_search:
         return 'rag_only'
     return 'no_retrieval'
+
+
+# ── Atlas: montagem de input para a Responses API ─────────────────────────────
+# Hoisted para nível de módulo (2026-07-16, plano de integridade Prompt 2) —
+# antes vivia aninhada dentro de atlas_chat(), mas não depende de nenhum
+# closure (só do parâmetro `hist`); precisa ser testável isoladamente e
+# reusável pelo helper de teto de histórico abaixo.
+def converter_input(hist: list) -> list:
+    """Converte `history` (formato interno, estilo Gemini) para o formato de
+    `input` da Responses API."""
+    input_list = []
+    for m in hist:
+        role = 'assistant' if m['role'] == 'model' else m['role']
+        parts = m.get('parts', [])
+
+        fn_responses = [p for p in parts if 'functionResponse' in p]
+        if fn_responses:
+            for fr in fn_responses:
+                input_list.append({
+                    'type': 'function_call_output',
+                    'call_id': fr['functionResponse'].get('call_id', fr['functionResponse']['name']),
+                    'output': json.dumps(fr['functionResponse']['response'], ensure_ascii=False)
+                })
+            continue
+
+        fn_calls = [p for p in parts if 'functionCall' in p]
+        if fn_calls:
+            for fc in fn_calls:
+                input_list.append({
+                    'type': 'function_call',
+                    'call_id': fc['functionCall'].get('call_id', fc['functionCall']['name']),
+                    'name': fc['functionCall']['name'],
+                    'arguments': json.dumps(fc['functionCall'].get('args', {}), ensure_ascii=False)
+                })
+            continue
+
+        content = []
+        for p in parts:
+            if 'text' in p:
+                text_type = 'output_text' if role == 'assistant' else 'input_text'
+                content.append({'type': text_type, 'text': p['text']})
+            elif 'file_data' in p:
+                content.append({'type': 'input_file', 'file_id': p['file_data']['file_id']})
+        if content:
+            input_list.append({'role': role, 'content': content})
+
+    return input_list
+
+
+# Teto de mensagens de `history` antes da rede de segurança do Prompt 2 §4
+# entrar em ação — acima disso, ignora previous_response_id de propósito e
+# manda só um sufixo recente, mesmo que o cliente tenha mandado um chain
+# válido. ~60 mensagens ~ 15-20 turnos de conversa (cada turno normal gasta
+# 2-4 mensagens: usuário, function_call do modelo, function_response,
+# resposta final) — folga generosa sobre os 8 turnos do incidente gurq9e4e,
+# mas ainda um teto de verdade, não "nunca dispara na prática".
+HISTORY_CEILING_MENSAGENS = 60
+
+
+def _sufixo_seguro_historico(hist: list, n: int) -> list:
+    """Trunca `hist` para as últimas ~n mensagens SEM cortar uma
+    functionResponse do início do sufixo sem sua functionCall correspondente
+    — plano de integridade 2026-07-16, Prompt 2 §4 ('a truncagem não pode
+    criar a órfã que deveria prevenir'). Anda o ponto de corte pra trás
+    enquanto a mensagem ali for uma functionResponse (o que deixaria a
+    functionCall dela de fora do sufixo)."""
+    if len(hist) <= n:
+        return hist
+    corte = len(hist) - n
+    while corte > 0:
+        msg = hist[corte]
+        parts = msg.get('parts', []) if isinstance(msg, dict) else []
+        tem_function_response = any('functionResponse' in p for p in parts)
+        if not tem_function_response:
+            break
+        corte -= 1
+    return hist[corte:]
+
+
+def preparar_input_turno(history: list, previous_resp_id):
+    """Decide o que vira `input` da chamada à Responses API e se
+    previous_response_id é honrado. Retorna (input_list, previous_resp_id_efetivo).
+
+    Plano de integridade 2026-07-16, Prompt 2 §1 (achado principal, COUPLING_MAP.md
+    §7 item 8) + §4 (teto de histórico):
+
+    - Histórico além do teto: quebra o chain de propósito (mesmo com
+      previous_resp_id válido do cliente) e manda um sufixo recente e
+      limitado, cortado num ponto seguro. Rede de segurança final — degrada
+      graciosamente (contexto recente, ainda uma resposta útil) em vez de
+      deixar a requisição crescer sem limite.
+    - Chaining ativo (previous_resp_id setado) e dentro do teto: manda só o
+      delta (history[-1:]) — o resto já está retido do lado da OpenAI via o
+      chain. Confirmado empiricamente contra a API real que mandar o
+      histórico inteiro JUNTO com previous_response_id faz a OpenAI
+      processar (e cobrar) a conversa duas vezes. Verificado que, em todos
+      os pontos do frontend que fazem essa chamada, history[-1:] é
+      exatamente a unidade nova do turno (a mensagem de usuário nova, ou a
+      mensagem de function_call_output) — nunca corta nada que devesse ir.
+    - Sem chaining (primeiro turno, ou o cliente não mandou
+      previous_response_id): histórico inteiro, como sempre foi.
+    """
+    if len(history) > HISTORY_CEILING_MENSAGENS:
+        sufixo = _sufixo_seguro_historico(history, HISTORY_CEILING_MENSAGENS)
+        return converter_input(sufixo), None
+    if previous_resp_id:
+        return converter_input(history[-1:]), previous_resp_id
+    return converter_input(history), None
+
+
+# ── Atlas: reparo de function_call órfã e retry de rate limit em stream ──────
+# Plano de integridade 2026-07-16, Prompt 2 — incidente gurq9e4e.
+_RE_CALL_ID_ORFAO = re.compile(r"No tool output found for function call (\S+?)\.")
+_RE_RETRY_SEGUNDOS = re.compile(r"try again in ([\d.]+)s", re.IGNORECASE)
+
+
+def extrair_call_id_orfao(mensagem: str):
+    """Extrai o call_id de uma mensagem de erro 'No tool output found for
+    function call {id}.' — None se a mensagem não for esse erro. Função pura,
+    testável isoladamente."""
+    m = _RE_CALL_ID_ORFAO.search(mensagem or '')
+    return m.group(1) if m else None
+
+
+def extrair_retry_segundos(mensagem: str):
+    """Extrai o número de segundos de uma mensagem de rate limit tipo
+    'Please try again in 7.218s.' — None se não encontrar. A API manda o
+    backoff na própria mensagem (não há Retry-After em cabeçalho HTTP para
+    erros que chegam DENTRO do stream — confirmado lendo openai/_streaming.py:
+    o APIError ali é construído só com `request`, nunca com `response`, então
+    não tem .headers). Função pura, testável isoladamente."""
+    m = _RE_RETRY_SEGUNDOS.search(mensagem or '')
+    return float(m.group(1)) if m else None
+
+
+def eh_erro_rate_limit(mensagem: str) -> bool:
+    """Mesma heurística que já existia no handler de erro geral do turno
+    (agora também usada para decidir se vale tentar o retry em stream)."""
+    m = (mensagem or '').lower()
+    return '429' in m or 'quota' in m or 'rate_limit' in m or 'rate limit' in m
+
+
+def montar_output_sintetico_orfao(call_id: str) -> dict:
+    """Output sintético para uma function_call órfã (sem output — ver
+    montar_input_com_reparo_orfao). Erro explícito para o modelo, nunca um
+    resultado inventado — o modelo deve contar ao usuário que a ferramenta
+    falhou, não fingir que funcionou. Confirmado contra a API real: com só
+    isso como output, o modelo respondeu avisando a falha, não alucinou uma
+    resposta (ver relatório do Prompt 2)."""
+    return {
+        'type': 'function_call_output',
+        'call_id': call_id,
+        'output': json.dumps({
+            'erro': 'Esta chamada de ferramenta não recebeu resposta (conexão perdida ou '
+                    'tentativa anterior interrompida). Informe ao usuário que esta ação '
+                    'específica falhou e pode ser tentada novamente, em vez de presumir um resultado.'
+        }, ensure_ascii=False),
+    }
+
+
+def criar_resposta_com_reparo_orfao(client, kwargs: dict, max_tentativas: int = 3):
+    """client.responses.create(**kwargs), reparando function_call órfã se a
+    API rejeitar com 'No tool output found for function call {id}' (uma call
+    pendente sem output no `input` desta chamada — ver incidente gurq9e4e e
+    o plano de integridade 2026-07-16, Prompt 2 §1).
+
+    Confirmado empiricamente (relatório do Prompt 2): a API rejeita
+    submissão PARCIAL de outputs com esse exato erro — então a causa não
+    precisa ser conhecida com certeza (rate limit no meio do stream, conexão
+    perdida no round-trip do frontend, o que for); a resposta é sempre a
+    mesma: completar o `input` com um output sintético para a call
+    apontada e tentar de novo. Nunca mascara em silêncio — cada reparo é
+    logado (stdout, capturado pelo log do container).
+
+    Levanta a exceção original se: (a) o erro não for esse (não é órfã, é
+    outra coisa — não reparar o que não se entende), ou (b) esgotar
+    max_tentativas (múltiplas calls órfãs na mesma resposta — cada
+    tentativa só repara UMA, a que a mensagem de erro apontou)."""
+    tentativa_kwargs = dict(kwargs)
+    ultima_excecao = None
+    for tentativa in range(max_tentativas):
+        try:
+            return client.responses.create(**tentativa_kwargs)
+        except BadRequestError as e:
+            call_id_orfao = extrair_call_id_orfao(str(e))
+            if not call_id_orfao:
+                raise
+            ultima_excecao = e
+            # flush=True: sys.stdout é bufferizado em bloco quando redirecionado
+            # pra arquivo (não é um TTY) — sem isso, esta linha só apareceria no
+            # log quando o buffer enchesse ou o processo terminasse, o que pode
+            # ser nunca num worker de vida longa. Verificado ao vivo: o
+            # traceback.print_exc() logo abaixo (stderr, sem esse problema)
+            # aparecia na hora; este print sem flush não aparecia. O objetivo
+            # deste log é justamente NÃO mascarar o reparo — teria falhado
+            # nisso silenciosamente.
+            print(f'[orfa] function_call {call_id_orfao} sem output — injetando saída sintética '
+                  f'de erro e tentando de novo (tentativa {tentativa + 1}/{max_tentativas})', flush=True)
+            traceback.print_exc()
+            novo_input = list(tentativa_kwargs.get('input') or [])
+            novo_input.append(montar_output_sintetico_orfao(call_id_orfao))
+            tentativa_kwargs = dict(tentativa_kwargs, input=novo_input)
+    raise ultima_excecao
 
 
 def _emit_otel_span(trace_dict: dict):
@@ -1938,53 +2141,24 @@ def atlas_chat():
     try:
         client = OpenAI(api_key=api_key)
 
-        # ── Converter histórico do formato interno para Responses API ─────────
-        def converter_input(hist: list) -> list:
-            input_list = []
-            for m in hist:
-                role = 'assistant' if m['role'] == 'model' else m['role']
-                parts = m.get('parts', [])
-
-                fn_responses = [p for p in parts if 'functionResponse' in p]
-                if fn_responses:
-                    for fr in fn_responses:
-                        input_list.append({
-                            'type': 'function_call_output',
-                            'call_id': fr['functionResponse'].get('call_id', fr['functionResponse']['name']),
-                            'output': json.dumps(fr['functionResponse']['response'], ensure_ascii=False)
-                        })
-                    continue
-
-                fn_calls = [p for p in parts if 'functionCall' in p]
-                if fn_calls:
-                    for fc in fn_calls:
-                        input_list.append({
-                            'type': 'function_call',
-                            'call_id': fc['functionCall'].get('call_id', fc['functionCall']['name']),
-                            'name': fc['functionCall']['name'],
-                            'arguments': json.dumps(fc['functionCall'].get('args', {}), ensure_ascii=False)
-                        })
-                    continue
-
-                content = []
-                for p in parts:
-                    if 'text' in p:
-                        text_type = 'output_text' if role == 'assistant' else 'input_text'
-                        content.append({'type': text_type, 'text': p['text']})
-                    elif 'file_data' in p:
-                        content.append({'type': 'input_file', 'file_id': p['file_data']['file_id']})
-                if content:
-                    input_list.append({'role': role, 'content': content})
-
-            return input_list
-
-        input_list   = converter_input(history)
+        # ── Monta o `input` desta chamada + decide se o chaining é honrado ────
+        # Plano de integridade 2026-07-16, Prompt 2 §1/§4 — ver preparar_input_turno
+        # (nível de módulo). input_list_completo é usado só para extrair
+        # _rag_pergunta abaixo (precisa ver o histórico INTEIRO pra achar a
+        # última pergunta real do usuário, mesmo quando o input que de fato
+        # vai pra API é só o delta).
+        input_list_completo = converter_input(history)
+        input_list, previous_resp_id = preparar_input_turno(history, previous_resp_id)
         openai_tools = build_tools(ATLAS_TOOLS_DECLARATIONS)
 
         # RAG observability: última mensagem do usuário, capturada para o trace
+        # — varre input_list_completo (histórico inteiro), não input_list (que
+        # pode ser só o delta desta chamada quando encadeando via
+        # previous_response_id, e nesse caso pode nem conter texto de usuário
+        # algum, ex. um turno que só está submetendo function_call_output).
         _rag_pergunta = ''
         try:
-            for _m in reversed(input_list):
+            for _m in reversed(input_list_completo):
                 if _m.get('role') == 'user':
                     _c = _m.get('content')
                     if isinstance(_c, str):
@@ -2051,154 +2225,219 @@ def atlas_chat():
                     kwargs['previous_response_id'] = previous_resp_id
 
                 hop = 0
+                # Orçamento de retry de rate limit p/ TODA a requisição (soma de
+                # todos os hops), não por hop — evita que um hop de dashboard
+                # reinicie o contador e permita mais tentativas no total do que
+                # o pretendido. Plano de integridade 2026-07-16, Prompt 2 §2.
+                tentativas_rate_limit = 0
+                MAX_TENTATIVAS_RATE_LIMIT = 3
 
                 while True:
-                    stream = client.responses.create(**kwargs)
-
                     fn_calls_buffer: dict = {}
                     resolver_dashboard = False
                     next_kwargs = None
+                    # Índice em text_buffer no início desta TENTATIVA (não deste
+                    # hop) — se um rate limit interromper o stream no meio, o
+                    # texto parcial gerado só nesta tentativa é descartado antes
+                    # de tentar de novo (ver except abaixo). Hops anteriores já
+                    # concluídos com sucesso não são afetados.
+                    _texto_inicio_tentativa = len(text_buffer)
 
-                    for event in stream:
-                        etype = event.type
+                    while True:  # tentativas desta MESMA chamada (retry de rate limit, na criação OU no meio do stream)
+                        try:
+                            # criar_resposta_com_reparo_orfao: se a API rejeitar por
+                            # function_call órfã (sem output no input — ver incidente
+                            # gurq9e4e), repara com uma saída sintética e tenta de
+                            # novo automaticamente antes mesmo de chegar aqui. Fica
+                            # DENTRO do try porque um rate limit também pode chegar
+                            # nesta chamada (antes do stream começar), não só no
+                            # meio da iteração — mesmo tratamento pros dois casos.
+                            stream = criar_resposta_com_reparo_orfao(client, kwargs)
+                            for event in stream:
+                                etype = event.type
 
-                        if etype == 'response.output_text.delta':
-                            delta = event.delta or ''
-                            text_buffer += delta
-                            yield f"data: {json.dumps({'type': 'text_delta', 'delta': delta})}\n\n"
+                                if etype == 'response.output_text.delta':
+                                    delta = event.delta or ''
+                                    text_buffer += delta
+                                    yield f"data: {json.dumps({'type': 'text_delta', 'delta': delta})}\n\n"
 
-                        elif etype == 'response.output_item.added':
-                            item = event.item
-                            if getattr(item, 'type', None) == 'function_call':
-                                fn_calls_buffer[item.call_id] = {'name': item.name, 'arguments': ''}
-                            elif getattr(item, 'type', None) == 'reasoning':
-                                yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
+                                elif etype == 'response.output_item.added':
+                                    item = event.item
+                                    if getattr(item, 'type', None) == 'function_call':
+                                        fn_calls_buffer[item.call_id] = {'name': item.name, 'arguments': ''}
+                                    elif getattr(item, 'type', None) == 'reasoning':
+                                        yield f"data: {json.dumps({'type': 'reasoning_start'})}\n\n"
 
-                        elif etype == 'response.reasoning_summary_text.delta':
-                            delta = event.delta or ''
-                            yield f"data: {json.dumps({'type': 'reasoning_delta', 'delta': delta})}\n\n"
+                                elif etype == 'response.reasoning_summary_text.delta':
+                                    delta = event.delta or ''
+                                    yield f"data: {json.dumps({'type': 'reasoning_delta', 'delta': delta})}\n\n"
 
-                        elif etype == 'response.function_call_arguments.delta':
-                            if fn_calls_buffer:
-                                call_id = list(fn_calls_buffer.keys())[-1]
-                                fn_calls_buffer[call_id]['arguments'] += (event.delta or '')
+                                elif etype == 'response.function_call_arguments.delta':
+                                    if fn_calls_buffer:
+                                        call_id = list(fn_calls_buffer.keys())[-1]
+                                        fn_calls_buffer[call_id]['arguments'] += (event.delta or '')
 
-                        elif etype == 'response.output_item.done':
-                            item = event.item
-                            if getattr(item, 'type', None) == 'function_call':
-                                call_id = item.call_id
-                                try:
-                                    args = json.loads(item.arguments or '{}')
-                                except Exception:
-                                    args = {}
-                                fn_calls_buffer[call_id] = {'name': item.name, 'arguments': item.arguments, 'args': args}
-                                # Não emite mais o evento function_call aqui — a decisão de
-                                # resolver server-side (get_dashboard) ou repassar ao
-                                # frontend (demais tools) só é possível em response.completed,
-                                # quando o conjunto completo de chamadas pendentes é conhecido.
+                                elif etype == 'response.output_item.done':
+                                    item = event.item
+                                    if getattr(item, 'type', None) == 'function_call':
+                                        call_id = item.call_id
+                                        try:
+                                            args = json.loads(item.arguments or '{}')
+                                        except Exception:
+                                            args = {}
+                                        fn_calls_buffer[call_id] = {'name': item.name, 'arguments': item.arguments, 'args': args}
+                                        # Não emite mais o evento function_call aqui — a decisão de
+                                        # resolver server-side (get_dashboard) ou repassar ao
+                                        # frontend (demais tools) só é possível em response.completed,
+                                        # quando o conjunto completo de chamadas pendentes é conhecido.
 
-                        elif etype == 'response.completed':
-                            resp_id   = getattr(event.response, 'id', None)
-                            pendentes = list(fn_calls_buffer.items())
-                            somente_dashboard = bool(pendentes) and all(
-                                c['name'] == 'get_dashboard' for _, c in pendentes
-                            )
+                                elif etype == 'response.completed':
+                                    resp_id   = getattr(event.response, 'id', None)
+                                    pendentes = list(fn_calls_buffer.items())
+                                    # A1.4 (plano de integridade 2026-07-16, Prompt 2 §3, COUPLING_MAP.md
+                                    # §7 item 1): antes, só o caso "toda call pendente é get_dashboard"
+                                    # era resolvido aqui — se o modelo batchasse get_dashboard com
+                                    # QUALQUER outra tool, a function_call crua de get_dashboard ia
+                                    # direto pro browser, que não tem (nunca teve, desde a Fase 2) um
+                                    # handler pra ela — turno quebrado em silêncio. Agora as duas listas
+                                    # são tratadas separadamente: get_dashboard sempre resolvida aqui,
+                                    # nunca vaza como function_call, batchada ou não.
+                                    calls_dashboard = [(cid, c) for cid, c in pendentes if c['name'] == 'get_dashboard']
+                                    calls_outras    = [(cid, c) for cid, c in pendentes if c['name'] != 'get_dashboard']
+                                    somente_dashboard = bool(pendentes) and not calls_outras
 
-                            if somente_dashboard and hop < MAX_HOPS_DASHBOARD:
-                                tool_outputs = [
-                                    {
-                                        'type':    'function_call_output',
-                                        'call_id': call_id,
-                                        'output':  json.dumps(_resolver_get_dashboard(chamada['args']), ensure_ascii=False),
-                                    }
-                                    for call_id, chamada in pendentes
-                                ]
-                                next_kwargs = dict(
-                                    model=ATLAS_MODEL,
-                                    input=tool_outputs,
-                                    instructions=system_prompt,
-                                    temperature=ATLAS_TEMPERATURE,
-                                    tools=all_tools,
-                                    stream=True,
-                                    reasoning={'effort': ATLAS_REASONING_EFFORT, 'summary': 'auto'},
-                                    store=True,
-                                    include=['file_search_call.results'],
-                                    previous_response_id=resp_id,
-                                )
-                                tools_resolvidos.append('get_dashboard')
-                                resolver_dashboard = True
-                                break
+                                    if somente_dashboard and hop < MAX_HOPS_DASHBOARD:
+                                        tool_outputs = [
+                                            {
+                                                'type':    'function_call_output',
+                                                'call_id': call_id,
+                                                'output':  json.dumps(_resolver_get_dashboard(chamada['args']), ensure_ascii=False),
+                                            }
+                                            for call_id, chamada in pendentes
+                                        ]
+                                        next_kwargs = dict(
+                                            model=ATLAS_MODEL,
+                                            input=tool_outputs,
+                                            instructions=system_prompt,
+                                            temperature=ATLAS_TEMPERATURE,
+                                            tools=all_tools,
+                                            stream=True,
+                                            reasoning={'effort': ATLAS_REASONING_EFFORT, 'summary': 'auto'},
+                                            store=True,
+                                            include=['file_search_call.results'],
+                                            previous_response_id=resp_id,
+                                        )
+                                        tools_resolvidos.append('get_dashboard')
+                                        resolver_dashboard = True
+                                        break
 
-                            # Qualquer chamada pendente não resolvida automaticamente
-                            # (tool que não é get_dashboard, ou limite de hops atingido)
-                            # volta ao fluxo original: o frontend a executa.
-                            for call_id, chamada in pendentes:
-                                yield f"data: {json.dumps({'type': 'function_call', 'call_id': call_id, 'name': chamada['name'], 'args': chamada['args']})}\n\n"
+                                    # get_dashboard batchada com outra tool (ou sozinha mas o teto de
+                                    # hops estourou) — resolvida SÍNCRONA e diretamente aqui, sem round-
+                                    # trip extra: um evento próprio (function_call_resolved), nunca o
+                                    # 'function_call' cru que o frontend não sabe tratar para essa tool.
+                                    # O frontend usa esse resultado já pronto ao montar o envio do
+                                    # round-trip das OUTRAS calls, então os outputs continuam sendo
+                                    # submetidos todos juntos (a API rejeita submissão parcial — ver
+                                    # relatório do Prompt 2, achado empírico).
+                                    for call_id, chamada in calls_dashboard:
+                                        resultado_dashboard = _resolver_get_dashboard(chamada['args'])
+                                        tools_resolvidos.append('get_dashboard')
+                                        yield f"data: {json.dumps({'type': 'function_call_resolved', 'call_id': call_id, 'name': 'get_dashboard', 'args': chamada['args'], 'output': resultado_dashboard})}\n\n"
 
-                            citations = []
-                            file_citations = []      # [{'files': [filename, ...]}, ...] — 1 entrada por span, sem texto de documento
-                            rag_chunks = []          # [{file_id, filename, score, quote}]
-                            rag_query  = None
-                            n_file_cit = 0
-                            try:
-                                output   = getattr(event.response, 'output', None) or []
-                                extraido = extrair_rag_do_output(output)
-                                rag_chunks     = extraido['chunks']
-                                rag_query      = extraido['retrieval_query']
-                                n_file_cit     = extraido['n_file_citations']
-                                citations      = extraido['url_citations']
-                                file_citations = extraido['file_citations']
-                            except Exception:
-                                traceback.print_exc()
+                                    # Qualquer outra chamada pendente (nunca get_dashboard, tratada
+                                    # acima) volta ao fluxo original: o frontend a executa.
+                                    for call_id, chamada in calls_outras:
+                                        yield f"data: {json.dumps({'type': 'function_call', 'call_id': call_id, 'name': chamada['name'], 'args': chamada['args']})}\n\n"
 
-                            # ── RAG observability: dispatch assíncrono (não bloqueia) ──
-                            # Só grava trace quando o turno REALMENTE terminou — `pendentes`
-                            # não-vazio aqui significa uma function_call sendo repassada ao
-                            # frontend (ver loop acima), e o turno só se completa numa PRÓXIMA
-                            # requisição, quando o output dessa call voltar. Gravar aqui
-                            # também produzia uma "meia-trace" (resposta vazia, tools_usadas
-                            # sem a tool que está prestes a rodar) — puro ruído no
-                            # denominador do corpus: a requisição que completa o turno já
-                            # grava tools_usadas corretamente via extrair_tools_do_turno
-                            # (que lê o function_call desta chamada de dentro de `history`,
-                            # devolvido pelo frontend). Ver plano de integridade 2026-07-16, §4.
-                            if not pendentes:
-                                try:
-                                    usage = getattr(event.response, 'usage', None)
-                                    # União, preservando ordem e sem duplicatas: tools
-                                    # resolvidas pelo backend NESTA requisição
-                                    # (tools_resolvidos, ex. get_dashboard) + tools
-                                    # resolvidas pelo FRONTEND num hop anterior deste
-                                    # mesmo turno (sobrevivem em `history`, ver
-                                    # extrair_tools_do_turno). Nenhuma das duas fontes
-                                    # sozinha cobre os dois casos.
-                                    _tools_usadas = list(dict.fromkeys(
-                                        extrair_tools_do_turno(history) + tools_resolvidos
-                                    ))
-                                    trace_dict = {
-                                        'usuario_id':       usuario_id,
-                                        'conv_id':          conv_id,
-                                        'response_id':      resp_id,
-                                        'modelo':           ATLAS_MODEL,
-                                        'pergunta':         _rag_pergunta,
-                                        'resposta':         text_buffer,
-                                        'usou_file_search': bool(rag_chunks) or (rag_query is not None),
-                                        'retrieval_query':  rag_query,
-                                        'chunks':           rag_chunks,
-                                        'n_file_citations': n_file_cit,
-                                        'tools_usadas':     _tools_usadas,
-                                        'latencia_ms':      int((time.time() - _rag_t0) * 1000),
-                                        'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
-                                        'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
-                                    }
-                                    registrar_rag_trace(app, trace_dict)
-                                except Exception:
-                                    traceback.print_exc()
+                                    citations = []
+                                    file_citations = []      # [{'files': [filename, ...]}, ...] — 1 entrada por span, sem texto de documento
+                                    rag_chunks = []          # [{file_id, filename, score, quote}]
+                                    rag_query  = None
+                                    n_file_cit = 0
+                                    try:
+                                        output   = getattr(event.response, 'output', None) or []
+                                        extraido = extrair_rag_do_output(output)
+                                        rag_chunks     = extraido['chunks']
+                                        rag_query      = extraido['retrieval_query']
+                                        n_file_cit     = extraido['n_file_citations']
+                                        citations      = extraido['url_citations']
+                                        file_citations = extraido['file_citations']
+                                    except Exception:
+                                        traceback.print_exc()
 
-                            yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations, 'file_citations': file_citations, 'tools_used': tools_resolvidos})}\n\n"
+                                    # ── RAG observability: dispatch assíncrono (não bloqueia) ──
+                                    # Só grava trace quando o turno REALMENTE terminou — `pendentes`
+                                    # não-vazio aqui significa uma function_call sendo repassada ao
+                                    # frontend (ver loop acima), e o turno só se completa numa PRÓXIMA
+                                    # requisição, quando o output dessa call voltar. Gravar aqui
+                                    # também produzia uma "meia-trace" (resposta vazia, tools_usadas
+                                    # sem a tool que está prestes a rodar) — puro ruído no
+                                    # denominador do corpus: a requisição que completa o turno já
+                                    # grava tools_usadas corretamente via extrair_tools_do_turno
+                                    # (que lê o function_call desta chamada de dentro de `history`,
+                                    # devolvido pelo frontend). Ver plano de integridade 2026-07-16, §4.
+                                    if not pendentes:
+                                        try:
+                                            usage = getattr(event.response, 'usage', None)
+                                            # União, preservando ordem e sem duplicatas: tools
+                                            # resolvidas pelo backend NESTA requisição
+                                            # (tools_resolvidos, ex. get_dashboard) + tools
+                                            # resolvidas pelo FRONTEND num hop anterior deste
+                                            # mesmo turno (sobrevivem em `history`, ver
+                                            # extrair_tools_do_turno). Nenhuma das duas fontes
+                                            # sozinha cobre os dois casos.
+                                            _tools_usadas = list(dict.fromkeys(
+                                                extrair_tools_do_turno(history) + tools_resolvidos
+                                            ))
+                                            trace_dict = {
+                                                'usuario_id':       usuario_id,
+                                                'conv_id':          conv_id,
+                                                'response_id':      resp_id,
+                                                'modelo':           ATLAS_MODEL,
+                                                'pergunta':         _rag_pergunta,
+                                                'resposta':         text_buffer,
+                                                'usou_file_search': bool(rag_chunks) or (rag_query is not None),
+                                                'retrieval_query':  rag_query,
+                                                'chunks':           rag_chunks,
+                                                'n_file_citations': n_file_cit,
+                                                'tools_usadas':     _tools_usadas,
+                                                'latencia_ms':      int((time.time() - _rag_t0) * 1000),
+                                                'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
+                                                'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
+                                            }
+                                            registrar_rag_trace(app, trace_dict)
+                                        except Exception:
+                                            traceback.print_exc()
 
-                        elif etype == 'error':
-                            yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
+                                    yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations, 'file_citations': file_citations, 'tools_used': tools_resolvidos})}\n\n"
+
+                                elif etype == 'error':
+                                    yield f"data: {json.dumps({'type': 'error', 'message': str(event)})}\n\n"
+                        except APIError as e:
+                            _msg_erro = str(e)
+                            if not eh_erro_rate_limit(_msg_erro) or tentativas_rate_limit >= MAX_TENTATIVAS_RATE_LIMIT:
+                                raise
+                            tentativas_rate_limit += 1
+                            _espera_s = extrair_retry_segundos(_msg_erro) or min(2 ** tentativas_rate_limit, 30)
+                            # Descarta o texto gerado só NESTA tentativa (hops
+                            # anteriores ja concluidos com sucesso nao sao afetados)
+                            # -- o stream morreu no meio, o texto acumulado esta
+                            # incompleto e nao pode aparecer concatenado com o da
+                            # nova tentativa. O frontend zera seu proprio buffer ao
+                            # ver o evento 'retry'.
+                            text_buffer = text_buffer[:_texto_inicio_tentativa]
+                            # flush=True pelo mesmo motivo do log em
+                            # criar_resposta_com_reparo_orfao — verificado ao
+                            # vivo que sem isso este print não aparecia no log
+                            # a tempo (stdout bufferizado em bloco quando não é
+                            # um TTY).
+                            print(f'[retry] rate limit no meio do stream — aguardando {_espera_s:.1f}s '
+                                  f'(tentativa {tentativas_rate_limit}/{MAX_TENTATIVAS_RATE_LIMIT})', flush=True)
+                            traceback.print_exc()
+                            yield f"data: {json.dumps({'type': 'retry', 'motivo': 'rate_limit', 'espera_s': _espera_s, 'tentativa': tentativas_rate_limit})}\n\n"
+                            time.sleep(_espera_s)
+                            continue
+                        break  # stream (e eventual hop de dashboard) concluiu sem erro de rate limit
 
                     if not resolver_dashboard:
                         break

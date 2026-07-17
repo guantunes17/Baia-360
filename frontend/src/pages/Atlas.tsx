@@ -1404,6 +1404,14 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
       let buffer = ''
       let streamedText = ''
       const fnCallsColetados: { call_id: string; name: string; args: any }[] = []
+      // get_dashboard resolvida no backend MESMO quando vem batchada com outra
+      // tool (A1.4, plano de integridade 2026-07-16, Prompt 2 §3) — o backend
+      // nunca emite 'function_call' para ela nesse caso, só este evento com o
+      // resultado já pronto, indexado por call_id pra usar na montagem de
+      // fnResponses abaixo em vez de um handler de MOCK_RESPONSES (que nunca
+      // existiu pra get_dashboard — essa era exatamente a lacuna do A1.4:
+      // nada tratava esse function_call quando batchado).
+      const resolvidosPeloBackend: Record<string, any> = {}
       let newHistory = [...currentHistory]
 
       while (true) {
@@ -1461,6 +1469,21 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               return { ...c, msgs }
             })
 
+          } else if (evt.type === 'function_call_resolved') {
+            // get_dashboard batchada com outra tool (A1.4) — o backend já
+            // resolveu, nunca emite 'function_call' pra ela. Ainda entra em
+            // fnCallsColetados (a reconstrução de newHistory abaixo precisa do
+            // par functionCall/functionResponse completo), mas o resultado já
+            // vem pronto — ver resolvidosPeloBackend na montagem de fnResponses.
+            fnCallsColetados.push({ call_id: evt.call_id, name: evt.name, args: evt.args })
+            resolvidosPeloBackend[evt.call_id] = evt.output
+            const toolNames = fnCallsColetados.map(f => f.name)
+            updateConversa(convId, c => {
+              const msgs = [...c.msgs]
+              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: 'Consultando...', streaming: true, tools: toolNames }
+              return { ...c, msgs }
+            })
+
           } else if (evt.type === 'done') {
             // Salva response_id para Conversation State (próxima mensagem não precisa mandar histórico)
             if (evt.response_id) setPreviousResponseId(evt.response_id)
@@ -1489,11 +1512,20 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 }))
                 const h3 = [...newHistory, { role: 'user', parts: fnResponses }]
 
-                // Segunda chamada via SSE para tool_response
+                // Segunda chamada via SSE para tool_response — encadeia via
+                // previous_response_id=evt.response_id (a resposta que acabou
+                // de completar COM a function_call pendente) em vez de mandar
+                // `history` inteiro de novo. Plano de integridade 2026-07-16,
+                // Prompt 2 §1: mandar os dois juntos faz a OpenAI processar
+                // (e cobrar) a conversa duas vezes — confirmado empiricamente
+                // contra a API real, ver COUPLING_MAP.md §7 item 8. O backend
+                // (preparar_input_turno) usa só a última mensagem de `history`
+                // quando há previous_response_id — aqui, a functionResponse
+                // que acabamos de montar.
                 const res2 = await fetch(`${API}/api/atlas/chat`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ ...base, history: h3, previous_response_id: null, store: false })
+                  body: JSON.stringify({ ...base, history: h3, previous_response_id: evt.response_id || null })
                 })
                 const reader2 = res2.body!.getReader()
                 let buf2 = '', text2 = '', respId2 = ''
@@ -1507,6 +1539,11 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                     try { const e2 = JSON.parse(l2.slice(6)); if (e2.type === 'done') { text2 = e2.text; respId2 = e2.response_id || '' } } catch {}
                   }
                 }
+                // A PRÓXIMA mensagem do usuário deve encadear a partir desta
+                // resposta (a que de fato completou o turno), não da que só
+                // emitiu a function_call — sem isso, o chain fica um passo
+                // atrasado e o servidor nunca vê o resultado deste round-trip.
+                setPreviousResponseId(respId2 || null)
                 updateConversa(convId, c => {
                   const msgs = [...c.msgs]
                   msgs[msgs.length - 1] = {
@@ -1520,6 +1557,13 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
 
               } else {
                 const fnResponses = await Promise.all(fnCallsColetados.map(async f => {
+                  // get_dashboard batchada (A1.4) — resultado já veio pronto
+                  // do backend, nunca passa por GATED_TOOLS nem MOCK_RESPONSES
+                  // (que nunca teve handler pra ela — era exatamente aí que o
+                  // bug do A1.4 quebrava o turno em silêncio).
+                  if (Object.prototype.hasOwnProperty.call(resolvidosPeloBackend, f.call_id)) {
+                    return { functionResponse: { call_id: f.call_id, name: f.name, response: { result: resolvidosPeloBackend[f.call_id] } } }
+                  }
                   if (GATED_TOOLS.has(f.name)) {
                     const result = await solicitarConfirmacao(f.name, f.args || {}, token, convId)
                     return { functionResponse: { call_id: f.call_id, name: f.name, response: { result } } }
@@ -1535,10 +1579,13 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                 }))
                 const h3 = [...newHistory, { role: 'user', parts: fnResponses }]
 
+                // Ver comentário equivalente no branch gerar_relatorio acima —
+                // mesma correção de encadeamento (plano de integridade
+                // 2026-07-16, Prompt 2 §1).
                 const res2 = await fetch(`${API}/api/atlas/chat`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ ...base, history: h3, previous_response_id: null, store: false })
+                  body: JSON.stringify({ ...base, history: h3, previous_response_id: evt.response_id || null })
                 })
                 const reader2 = res2.body!.getReader()
                 let buf2 = '', text2 = '', respId2 = ''
@@ -1552,6 +1599,7 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
                     try { const e2 = JSON.parse(l2.slice(6)); if (e2.type === 'done') { text2 = e2.text; respId2 = e2.response_id || '' } } catch {}
                   }
                 }
+                setPreviousResponseId(respId2 || null)
                 updateConversa(convId, c => {
                   const msgs = [...c.msgs]
                   msgs[msgs.length - 1] = {
@@ -1595,6 +1643,22 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
               })
               if (parsed.artifact) setPainelArtifact(parsed.artifact)
             }
+          } else if (evt.type === 'retry') {
+            // Rate limit no meio do stream (plano de integridade 2026-07-16,
+            // Prompt 2 §2) — o backend já descartou o texto parcial da
+            // tentativa que morreu e vai tentar de novo sozinho, do zero.
+            // Espelha isso aqui: zera o texto já mostrado (senão a resposta
+            // da nova tentativa apareceria concatenada com o começo da
+            // tentativa anterior) e mostra que ainda está em andamento, sem
+            // jogar erro nenhum pro usuário — só a tentativa final esgotada
+            // vira um evento 'error' de verdade.
+            streamedText = ''
+            updateConversa(convId, c => {
+              const msgs = [...c.msgs]
+              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: 'Limite de requisições — tentando novamente...', streaming: true }
+              return { ...c, msgs }
+            })
+
           } else if (evt.type === 'error') {
             throw new Error(evt.message)
           }
