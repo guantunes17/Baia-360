@@ -191,9 +191,16 @@ def _clean_tables(app, db, models):
     """Wipes the tables this suite touches before every test — cheap full-table
     delete rather than savepoint/rollback tricks, which don't play well with
     _persistir_rag_trace's own commits or registrar_rag_trace's background thread
-    (separate connection). FK-safe order: traces before users."""
+    (separate connection). FK-safe order: traces/conversas before users.
+
+    AtlasConversa added 2026-07-16 (integrity plan, test_08_tool_payloads.py):
+    without wiping it too, a conversation row created by one test outlives it
+    and blocks the next test's User delete with a FK violation
+    (atlas_conversas_usuario_id_fkey) — caught by exactly that failure the
+    first time a test in this suite created an AtlasConversa row."""
     with app.app_context():
         db.session.execute(db.delete(models.AtlasRAGTrace))
+        db.session.execute(db.delete(models.AtlasConversa))
         db.session.execute(db.delete(models.AtlasGoldenRun))
         db.session.execute(db.delete(models.AtlasGoldenQA))
         db.session.execute(db.delete(models.User))

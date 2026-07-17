@@ -175,6 +175,22 @@ class AtlasRAGTrace(db.Model):
     # qual lógica gerou qual score.
     eval_versao        = db.Column(db.Integer, nullable=True)
 
+    # Higiene de trace (plano de integridade 2026-07-16, §4): antes desta
+    # coluna, um turno resolvido pelo frontend gravava DUAS traces (a
+    # "meia-trace" com o function_call ainda pendente, resposta vazia, e a
+    # que completa) — puro ruído no denominador do corpus. Agora só a
+    # completa é gravada... EXCETO quando o turno morre no meio (rate limit
+    # dentro do stream, erro de rede — ver o incidente gurq9e4e) — aí não
+    # existe "a que completa", e não gravar NADA apagaria justamente o caso
+    # mais importante de registrar. `falhou` distingue os dois: sempre um
+    # valor definido (True/False) em linhas novas — nunca NULL, ao contrário
+    # de tools_usadas/eval_versao, porque aqui não há ambiguidade histórica
+    # possível: o processo SEMPRE sabe, no momento da escrita, se a própria
+    # execução terminou ou lançou uma exceção. NULL só em linhas anteriores a
+    # esta coluna existir.
+    falhou         = db.Column(db.Boolean, nullable=True, index=True)
+    erro_mensagem  = db.Column(db.Text, nullable=True)
+
     latencia_ms   = db.Column(db.Integer, nullable=True)
     tokens_in     = db.Column(db.Integer, nullable=True)
     tokens_out    = db.Column(db.Integer, nullable=True)
@@ -538,8 +554,13 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
     # isso gravaria a mesma fabricação que este plano corrigiu na
     # reprocessagem (ver data_2026-07-16_reprocess_rag_traces.sql).
     tools_usadas     = trace_dict.get('tools_usadas') or []
+    falhou           = bool(trace_dict.get('falhou', False))
     segmento         = derivar_segmento_rag(usou_file_search, tools_usadas, n_file_citations)
-    pula_judge       = segmento in ('tool_only', 'hybrid')
+    # Turno falhado (stream morreu no meio, ex. rate limit interno — ver
+    # incidente gurq9e4e) não tem uma `resposta` coerente pra julgar: pode
+    # ser vazia, truncada no meio de uma frase, ou nunca ter chegado a gerar
+    # texto algum. Igual a tool_only/hybrid: pula Tier 2/3 inteiramente.
+    pula_judge       = falhou or segmento in ('tool_only', 'hybrid')
 
     row = AtlasRAGTrace(
         usuario_id       = trace_dict.get('usuario_id'),
@@ -559,6 +580,8 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
         citation_coverage= n_file_citations > 0,
         tools_usadas     = json.dumps(tools_usadas, ensure_ascii=False),
         eval_versao      = EVAL_PIPELINE_VERSION,
+        falhou           = falhou,
+        erro_mensagem    = (trace_dict.get('erro_mensagem') or None),
         latencia_ms      = trace_dict.get('latencia_ms'),
         tokens_in        = trace_dict.get('tokens_in'),
         tokens_out       = trace_dict.get('tokens_out'),
@@ -572,7 +595,8 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
     # resposta com um contexto que não é a fonte real do seu conteúdo —
     # tecnicamente correto de calcular, semanticamente sem sentido (foi
     # exatamente o caso da trace #15 que motivou este plano). groundedness/
-    # eval_* ficam NULL — "não avaliável", nunca 0 ("avaliado, ruim").
+    # eval_* ficam NULL — "não avaliável", nunca 0 ("avaliado, ruim"). Mesma
+    # regra para falhou=True, pelo motivo explicado acima.
     if pula_judge:
         return row.id
 
@@ -702,6 +726,10 @@ ATLAS_MODEL            = 'gpt-5.4-mini'
 ATLAS_TEMPERATURE      = 1.0
 ATLAS_REASONING_EFFORT = 'medium'
 
+# Tamanho máximo de texto por mensagem projetada em buscar_conversas — plano
+# de integridade 2026-07-16, §1. Ver atlas_buscar_conversas().
+CONVERSA_SNIPPET_MAX_CHARS = 300
+
 # Slugs de permissão (Permissao.modulos_json, PERMISSOES_PADRAO, get_dashboard)
 # dos 8 módulos de relatório da Central. Fase 5: o mapeamento slug->label de
 # exibição (usado para consultar RelatorioGerado.modulo) agora mora só em
@@ -811,12 +839,14 @@ Sobre Microsoft Teams:
 - Use teams_chat_enviar para enviar mensagens diretas a outros usuários pelo Teams
 
 Sobre e-mails:
-- Use buscar_emails para consultar e-mails do usuário no Outlook
+- Use buscar_emails para consultar e-mails do usuário no Outlook — retorna assunto, remetente, data e um trecho curto do corpo, NUNCA o corpo completo
+- Se o trecho curto de buscar_emails não for suficiente, use ler_email com o id do e-mail (retornado por buscar_emails) para ler o corpo completo — chame ler_email apenas para o(s) e-mail(s) especificamente necessário(s), nunca para todos os resultados de uma busca
 - Use enviar_email para enviar e-mails pelo Outlook do usuário
 
 Sobre conversas anteriores:
 - Você TEM acesso às conversas anteriores do usuário via ferramenta buscar_conversas
 - Use essa ferramenta quando o usuário pedir para você se atualizar, revisar o histórico, ou referenciar algo que foi discutido antes
+- Os resumos retornados são trechos curtos, não o conteúdo integral das mensagens — use-os para identificar do que se tratava a conversa, não como fonte de citação literal extensa
 - Após buscar, leia os resumos e responda com base no que foi encontrado
 
 Sobre busca na internet:
@@ -927,7 +957,7 @@ ATLAS_TOOLS_DECLARATIONS = [
     },
     {
         'name': 'buscar_emails',
-        'description': 'Busca e-mails do usuário no Outlook. Use quando o usuário perguntar sobre e-mails, mensagens recebidas, ou quiser encontrar um e-mail específico.',
+        'description': 'Busca e-mails do usuário no Outlook e retorna uma lista resumida (assunto, remetente, data, um trecho curto do corpo). Use quando o usuário perguntar sobre e-mails, mensagens recebidas, ou quiser encontrar um e-mail específico. NÃO traz o corpo completo — para ler o conteúdo integral de um e-mail específico já encontrado aqui, use ler_email com o id retornado.',
         'parameters': {
             'type': 'object',
             'properties': {
@@ -936,6 +966,17 @@ ATLAS_TOOLS_DECLARATIONS = [
                 'limite':           {'type': 'number', 'description': 'Quantidade máxima de e-mails a retornar. Default 20, máximo 50.'}
             },
             'required': ['query', 'apenas_nao_lidos', 'limite']
+        }
+    },
+    {
+        'name': 'ler_email',
+        'description': 'Retorna o corpo completo de UM e-mail específico, a partir do id obtido via buscar_emails. Use apenas quando o resumo de buscar_emails não for suficiente e for necessário o conteúdo integral da mensagem.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'email_id': {'type': 'string', 'description': 'id do e-mail, obtido no campo "id" de um resultado de buscar_emails.'}
+            },
+            'required': ['email_id']
         }
     },
     {
@@ -1931,6 +1972,14 @@ def atlas_chat():
 
         # ── Chamada à Responses API com streaming SSE ─────────────────────────
         def generate():
+            # Inicializados FORA do try (plano de integridade 2026-07-16, §4):
+            # o bloco except precisa desses três para montar a trace de falha
+            # mesmo se a exceção estourar cedo — texto/tools parciais são
+            # exatamente o sinal que se quer preservar quando o turno morre
+            # no meio (ver o incidente gurq9e4e).
+            _rag_t0 = time.time()   # RAG observability: início da medição de latência (toda a troca, incl. hops de tool)
+            text_buffer = ''
+            tools_resolvidos = []   # nomes das tools resolvidas server-side — repassado no 'done' para o frontend exibir o badge
             try:
                 all_tools = list(openai_tools)
                 all_tools.append({'type': 'web_search_preview'})
@@ -1954,9 +2003,6 @@ def atlas_chat():
                 if previous_resp_id:
                     kwargs['previous_response_id'] = previous_resp_id
 
-                _rag_t0 = time.time()   # RAG observability: início da medição de latência (toda a troca, incl. hops de tool)
-                text_buffer = ''
-                tools_resolvidos = []   # nomes das tools resolvidas server-side — repassado no 'done' para o frontend exibir o badge
                 hop = 0
 
                 while True:
@@ -2059,37 +2105,48 @@ def atlas_chat():
                                 traceback.print_exc()
 
                             # ── RAG observability: dispatch assíncrono (não bloqueia) ──
-                            try:
-                                usage = getattr(event.response, 'usage', None)
-                                # União, preservando ordem e sem duplicatas: tools
-                                # resolvidas pelo backend NESTA requisição
-                                # (tools_resolvidos, ex. get_dashboard) + tools
-                                # resolvidas pelo FRONTEND num hop anterior deste
-                                # mesmo turno (sobrevivem em `history`, ver
-                                # extrair_tools_do_turno). Nenhuma das duas fontes
-                                # sozinha cobre os dois casos.
-                                _tools_usadas = list(dict.fromkeys(
-                                    extrair_tools_do_turno(history) + tools_resolvidos
-                                ))
-                                trace_dict = {
-                                    'usuario_id':       usuario_id,
-                                    'conv_id':          conv_id,
-                                    'response_id':      resp_id,
-                                    'modelo':           ATLAS_MODEL,
-                                    'pergunta':         _rag_pergunta,
-                                    'resposta':         text_buffer,
-                                    'usou_file_search': bool(rag_chunks) or (rag_query is not None),
-                                    'retrieval_query':  rag_query,
-                                    'chunks':           rag_chunks,
-                                    'n_file_citations': n_file_cit,
-                                    'tools_usadas':     _tools_usadas,
-                                    'latencia_ms':      int((time.time() - _rag_t0) * 1000),
-                                    'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
-                                    'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
-                                }
-                                registrar_rag_trace(app, trace_dict)
-                            except Exception:
-                                traceback.print_exc()
+                            # Só grava trace quando o turno REALMENTE terminou — `pendentes`
+                            # não-vazio aqui significa uma function_call sendo repassada ao
+                            # frontend (ver loop acima), e o turno só se completa numa PRÓXIMA
+                            # requisição, quando o output dessa call voltar. Gravar aqui
+                            # também produzia uma "meia-trace" (resposta vazia, tools_usadas
+                            # sem a tool que está prestes a rodar) — puro ruído no
+                            # denominador do corpus: a requisição que completa o turno já
+                            # grava tools_usadas corretamente via extrair_tools_do_turno
+                            # (que lê o function_call desta chamada de dentro de `history`,
+                            # devolvido pelo frontend). Ver plano de integridade 2026-07-16, §4.
+                            if not pendentes:
+                                try:
+                                    usage = getattr(event.response, 'usage', None)
+                                    # União, preservando ordem e sem duplicatas: tools
+                                    # resolvidas pelo backend NESTA requisição
+                                    # (tools_resolvidos, ex. get_dashboard) + tools
+                                    # resolvidas pelo FRONTEND num hop anterior deste
+                                    # mesmo turno (sobrevivem em `history`, ver
+                                    # extrair_tools_do_turno). Nenhuma das duas fontes
+                                    # sozinha cobre os dois casos.
+                                    _tools_usadas = list(dict.fromkeys(
+                                        extrair_tools_do_turno(history) + tools_resolvidos
+                                    ))
+                                    trace_dict = {
+                                        'usuario_id':       usuario_id,
+                                        'conv_id':          conv_id,
+                                        'response_id':      resp_id,
+                                        'modelo':           ATLAS_MODEL,
+                                        'pergunta':         _rag_pergunta,
+                                        'resposta':         text_buffer,
+                                        'usou_file_search': bool(rag_chunks) or (rag_query is not None),
+                                        'retrieval_query':  rag_query,
+                                        'chunks':           rag_chunks,
+                                        'n_file_citations': n_file_cit,
+                                        'tools_usadas':     _tools_usadas,
+                                        'latencia_ms':      int((time.time() - _rag_t0) * 1000),
+                                        'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
+                                        'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
+                                    }
+                                    registrar_rag_trace(app, trace_dict)
+                                except Exception:
+                                    traceback.print_exc()
 
                             yield f"data: {json.dumps({'type': 'done', 'text': text_buffer, 'response_id': resp_id, 'citations': citations, 'file_citations': file_citations, 'tools_used': tools_resolvidos})}\n\n"
 
@@ -2104,6 +2161,45 @@ def atlas_chat():
             except Exception as e:
                 traceback.print_exc()
                 msg = str(e)
+
+                # Trace de FALHA — plano de integridade 2026-07-16, §4: o
+                # turno morreu no meio (ex. rate limit dentro do stream, ver
+                # o incidente gurq9e4e) SEM passar por response.completed —
+                # sem isto, um turno assim gera ZERO traces, apagando
+                # exatamente o caso mais importante de registrar. `falhou`
+                # marca a linha para nunca ser confundida com um turno que
+                # terminou normalmente; groundedness/judge nunca rodam nela
+                # (ver pula_judge em _persistir_rag_trace). Sem retrieval
+                # telemetry (usou_file_search/chunks) — não há garantia de
+                # que outputs parciais de file_search tenham sido capturados
+                # antes da exceção, então fica honestamente vazio, não
+                # inferido.
+                try:
+                    _tools_tentadas = list(dict.fromkeys(
+                        extrair_tools_do_turno(history) + tools_resolvidos
+                    ))
+                    trace_dict_falha = {
+                        'usuario_id':       usuario_id,
+                        'conv_id':          conv_id,
+                        'response_id':      None,
+                        'modelo':           ATLAS_MODEL,
+                        'pergunta':         _rag_pergunta,
+                        'resposta':         text_buffer,
+                        'usou_file_search': False,
+                        'retrieval_query':  None,
+                        'chunks':           [],
+                        'n_file_citations': 0,
+                        'tools_usadas':     _tools_tentadas,
+                        'latencia_ms':      int((time.time() - _rag_t0) * 1000),
+                        'tokens_in':        None,
+                        'tokens_out':       None,
+                        'falhou':           True,
+                        'erro_mensagem':    msg[:2000],
+                    }
+                    registrar_rag_trace(app, trace_dict_falha)
+                except Exception:
+                    traceback.print_exc()
+
                 if '429' in msg or 'quota' in msg.lower() or 'rate_limit' in msg.lower():
                     yield f"data: {json.dumps({'type': 'error', 'message': 'cota_openai'})}\n\n"
                 else:
@@ -2886,7 +2982,19 @@ def mover_conversa_projeto(conv_id):
 @app.route('/api/atlas/conversas/buscar', methods=['GET'])
 @jwt_required()
 def atlas_buscar_conversas():
-    """Busca conversas por texto — usada pelo Atlas para se atualizar."""
+    """Busca conversas por texto — usada pelo Atlas para se atualizar.
+
+    Retorna uma PROJEÇÃO de cada mensagem (role + um trecho curto de texto),
+    nunca o objeto de mensagem completo. Encontrado no plano de integridade
+    2026-07-16 (§1): a versão anterior devolvia os dicts de mensagem
+    completos, incluindo `artifact` (documentos/relatórios inteiros gerados
+    pelo Atlas), `reasoning` e outros campos pesados, sem nenhum limite de
+    tamanho de texto — só um limite de CONTAGEM (10 conversas x 6 mensagens).
+    Um único turno anterior que gerou um relatório longo (ex. via
+    gerar_relatorio/get_dashboard) bastava para inflar um resultado desta
+    tool a dezenas de milhares de tokens. Medido: um cenário realista com um
+    relatório de KPIs entre as mensagens caiu de ~37k para ~2.7k tokens só
+    com esta projeção (script de medição no relatório do prompt)."""
     usuario_id = int(get_jwt_identity())
     q = request.args.get('q', '').strip().lower()
     conversas = (
@@ -2898,11 +3006,16 @@ def atlas_buscar_conversas():
     )
     if q:
         conversas = [c for c in conversas if q in c.titulo.lower() or q in c.msgs_json.lower()]
-    # Retorna apenas título, data e primeiras msgs para não explodir o contexto
+    # Retorna apenas título, data e projeção das primeiras msgs — nunca o
+    # objeto de mensagem completo — para não explodir o contexto.
     resultado = []
     for c in conversas[:10]:
         msgs = json.loads(c.msgs_json)
-        resumo = [m for m in msgs if m.get('role') in ('user', 'assistant')][:6]
+        candidatas = [m for m in msgs if m.get('role') in ('user', 'assistant')][:6]
+        resumo = [
+            {'role': m.get('role'), 'texto': (m.get('text') or '')[:CONVERSA_SNIPPET_MAX_CHARS]}
+            for m in candidatas
+        ]
         resultado.append({
             'conv_id':    c.conv_id,
             'titulo':     c.titulo,
@@ -3111,6 +3224,23 @@ OUTLOOK_SCOPES = [
     "Team.ReadBasic.All",
     "Channel.ReadBasic.All",
 ]
+# BLOQUEIO conhecido (plano de integridade 2026-07-16, §3): uma tool
+# resolver_contato(nome) — para resolver "André" a um endereço de e-mail via
+# GET /me/people ou GET /users, em vez de o modelo ransackear buscar_emails/
+# buscar_conversas procurando o endereço — precisa de People.Read (para
+# /me/people) ou User.ReadBasic.All (para /users), e NENHUM dos dois está
+# nesta lista. `User.Read` acima só cobre o perfil do PRÓPRIO usuário
+# logado (GET /me), não a busca de outros usuários da organização.
+# Adicionar o escopo aqui reabre o fluxo de consentimento incremental do
+# MSAL na próxima vez que um usuário conectar o Outlook — e, dependendo da
+# política de consentimento do tenant Azure AD (provável para um app
+# corporativo), isso pode exigir aprovação de administrador (Michelly, na
+# Colla) antes que qualquer usuário consiga conceder. NÃO foi verificado se
+# a política do tenant permite consentimento por usuário comum — só foi
+# confirmado, pelo código, que o escopo não é sequer solicitado hoje. Por
+# isso resolver_contato foi adiado desta fase: escopo não pedido = bloqueio
+# certo, independentemente da política do tenant.
+
 
 def _renovar_token_se_necessario(token_obj: OutlookToken) -> bool:
     """
@@ -3446,6 +3576,32 @@ def outlook_buscar_emails():
         for email in resultado.get('emails', []):
             email['assunto'] = _marcar_conteudo_externo(email.get('assunto', ''))
             email['resumo']  = _marcar_conteudo_externo(email.get('resumo', ''))
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/api/outlook/email/<email_id>', methods=['GET'])
+@jwt_required()
+def outlook_ler_email(email_id):
+    """Corpo completo de UM e-mail via MCP Server — a metade 'detalhe' do
+    split lista/detalhe de outlook_buscar_emails (plano de integridade
+    2026-07-16, §1). `email_id` vem de um `id` já retornado por buscar_emails."""
+    usuario_id = get_jwt_identity()
+
+    access_token, erro_msg = _get_access_token(usuario_id)
+    if not access_token:
+        return jsonify({'erro': erro_msg, 'nao_conectado': True}), 401
+
+    try:
+        resultado = _chamar_mcp('ler_email', {
+            'access_token': access_token,
+            'email_id':     email_id,
+        })
+        # Mesma delimitação de outlook_buscar_emails — assunto/corpo vêm de um
+        # remetente externo não confiável.
+        resultado['assunto'] = _marcar_conteudo_externo(resultado.get('assunto', ''))
+        resultado['corpo']   = _marcar_conteudo_externo(resultado.get('corpo', ''))
         return jsonify(resultado)
     except Exception as e:
         return jsonify({'erro': str(e)}), 500

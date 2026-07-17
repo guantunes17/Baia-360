@@ -236,3 +236,54 @@ def test_no_tools_usadas_key_defaults_to_empty_list_not_none(app, db, models, mo
         row = db.session.get(models.AtlasRAGTrace, row_id)
         assert row.tools_usadas == '[]'
         assert row.eval_versao == models.EVAL_PIPELINE_VERSION
+
+
+# ── Trace hygiene: falhou (2026-07-16 integrity plan, §4) ─────────────────
+
+def test_falhou_true_skips_judge_and_groundedness(app, db, models, monkeypatch):
+    """A turn that died mid-stream (e.g. the gurq9e4e rate-limit incident)
+    has no coherent 'resposta' to judge — falhou=True must skip Tier 2/3
+    exactly like tool_only/hybrid, and store the error message."""
+    monkeypatch.setattr(models, 'avaliar_groundedness', _BoomIfCalled())
+    monkeypatch.setattr(models, 'avaliar_judge', _BoomIfCalled())
+
+    trace_dict = {
+        'usuario_id': None, 'conv_id': 'gurq9e4e', 'response_id': None, 'modelo': 'gpt-test',
+        'pergunta': 'agende uma reunião com o André', 'resposta': '',
+        'usou_file_search': False, 'retrieval_query': None, 'chunks': [],
+        'n_file_citations': 0, 'tools_usadas': ['buscar_emails'],
+        'latencia_ms': 45000, 'tokens_in': None, 'tokens_out': None,
+        'falhou': True, 'erro_mensagem': 'Rate limit reached for gpt-5.4-mini ... Please try again in 7.218s.',
+    }
+    with app.app_context():
+        row_id = models._persistir_rag_trace(trace_dict)
+        row = db.session.get(models.AtlasRAGTrace, row_id)
+        assert row.falhou is True
+        assert 'Rate limit reached' in row.erro_mensagem
+        assert row.groundedness is None
+        assert row.eval_faithfulness is None
+        assert row.eval_flagged is None
+        # Tier 0/1 provenance is still preserved even on failure — this is
+        # the whole point: a failed turn is still worth knowing what it attempted.
+        assert row.tools_usadas == '["buscar_emails"]'
+        assert row.eval_versao == models.EVAL_PIPELINE_VERSION
+
+
+def test_falhou_defaults_false_when_omitted(app, db, models, monkeypatch):
+    """A normal (non-failure) trace_dict never sets 'falhou' — must default
+    to False, not None. Every NEW row always has a definite falhou value;
+    only rows written before this column existed are NULL."""
+    monkeypatch.setattr(models, 'avaliar_groundedness', lambda client, resposta, chunks: None)
+    monkeypatch.setattr(models, 'avaliar_judge', lambda client, pergunta, resposta, chunks: None)
+
+    trace_dict = {
+        'usuario_id': None, 'conv_id': 'conv-ok', 'response_id': 'resp-ok', 'modelo': 'gpt-test',
+        'pergunta': 'oi', 'resposta': 'olá', 'usou_file_search': False,
+        'retrieval_query': None, 'chunks': [], 'n_file_citations': 0,
+        'latencia_ms': 10, 'tokens_in': 1, 'tokens_out': 1,
+    }
+    with app.app_context():
+        row_id = models._persistir_rag_trace(trace_dict)
+        row = db.session.get(models.AtlasRAGTrace, row_id)
+        assert row.falhou is False
+        assert row.erro_mensagem is None

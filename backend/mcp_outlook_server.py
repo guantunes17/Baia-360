@@ -6,7 +6,10 @@ e executa requisições ao Microsoft Graph API.
 Tools disponíveis:
   - get_agenda        → GET  /me/calendarView
   - criar_evento      → POST /me/events
-  - buscar_emails     → GET  /me/messages
+  - buscar_emails     → GET  /me/messages (projeção — nunca o corpo, ver §1 do
+                         plano de integridade 2026-07-16)
+  - ler_email         → GET  /me/messages/{id} (corpo completo de UM e-mail —
+                         a metade 'detalhe' do split lista/detalhe)
 """
 
 from flask import Flask, request, jsonify
@@ -187,10 +190,23 @@ def criar_evento():
         return erro(str(e), 500)
 
 
+# Tamanho máximo de 'resumo' devolvido por buscar_emails — defesa em
+# profundidade sobre o bodyPreview do Graph, que a documentação da Microsoft
+# descreve como "os primeiros 255 caracteres" mas não garante como contrato
+# formal para todo tipo de mensagem (ex. convites de calendário, mensagens só
+# HTML). Nunca confiar num campo de um terceiro como automaticamente limitado
+# só porque costuma vir curto — ver plano de integridade 2026-07-16, §1.
+RESUMO_EMAIL_MAX_CHARS = 300
+
+
 @app.route("/tools/buscar_emails", methods=["POST"])
 def buscar_emails():
     """
-    Busca e-mails na caixa do usuário.
+    Busca e-mails na caixa do usuário — retorna uma PROJEÇÃO (lista), nunca o
+    corpo completo. Para o corpo de um e-mail específico, ver /tools/ler_email.
+    Este split lista/detalhe é o que torna estruturalmente impossível puxar o
+    corpo de 50 e-mails de uma vez — não é um limite discricionário, é a forma
+    da API (ver plano de integridade 2026-07-16, §1).
 
     Body esperado:
       access_token : str
@@ -209,7 +225,7 @@ def buscar_emails():
 
     try:
         params = {
-            "$select":  "subject,from,receivedDateTime,isRead,bodyPreview,hasAttachments",
+            "$select":  "id,subject,from,receivedDateTime,isRead,bodyPreview,hasAttachments",
             "$orderby": "receivedDateTime desc",
             "$top":     limite
         }
@@ -227,18 +243,62 @@ def buscar_emails():
         emails = []
         for msg in resultado.get("value", []):
             emails.append({
+                "id":           msg.get("id", ""),
                 "assunto":      msg.get("subject", "Sem assunto"),
                 "remetente":    msg.get("from", {}).get("emailAddress", {}).get("name", ""),
                 "email_de":     msg.get("from", {}).get("emailAddress", {}).get("address", ""),
                 "recebido_em":  msg.get("receivedDateTime", ""),
                 "lido":         msg.get("isRead", True),
                 "tem_anexo":    msg.get("hasAttachments", False),
-                "resumo":       msg.get("bodyPreview", "")
+                "resumo":       (msg.get("bodyPreview", "") or "")[:RESUMO_EMAIL_MAX_CHARS]
             })
         return jsonify({"emails": emails, "total": len(emails)})
 
     except requests.HTTPError as e:
         return erro(f"Erro ao buscar e-mails: {e.response.status_code} — {e.response.text}", 502)
+    except Exception as e:
+        return erro(str(e), 500)
+
+
+@app.route("/tools/ler_email", methods=["POST"])
+def ler_email():
+    """
+    Retorna o corpo completo de UM e-mail — a metade 'detalhe' do split
+    lista/detalhe de buscar_emails. Só chamado quando o usuário/modelo
+    precisa do conteúdo integral de uma mensagem específica já identificada
+    via buscar_emails (que fornece o `id`).
+
+    Body esperado:
+      access_token : str
+      email_id     : str  — id retornado por buscar_emails
+    """
+    data     = request.get_json()
+    token    = data.get("access_token")
+    email_id = data.get("email_id")
+
+    if not token or not email_id:
+        return erro("Campos obrigatórios: access_token, email_id")
+
+    try:
+        params = {"$select": "id,subject,from,toRecipients,receivedDateTime,isRead,hasAttachments,body"}
+        msg = graph_get(token, f"/me/messages/{email_id}", params=params)
+        corpo = msg.get("body", {}) or {}
+        return jsonify({
+            "id":            msg.get("id", ""),
+            "assunto":       msg.get("subject", "Sem assunto"),
+            "remetente":     msg.get("from", {}).get("emailAddress", {}).get("name", ""),
+            "email_de":      msg.get("from", {}).get("emailAddress", {}).get("address", ""),
+            "destinatarios": [r.get("emailAddress", {}).get("address", "")
+                               for r in msg.get("toRecipients", [])],
+            "recebido_em":   msg.get("receivedDateTime", ""),
+            "lido":          msg.get("isRead", True),
+            "tem_anexo":     msg.get("hasAttachments", False),
+            "tipo_corpo":    corpo.get("contentType", "text"),
+            "corpo":         corpo.get("content", ""),
+        })
+
+    except requests.HTTPError as e:
+        return erro(f"Erro ao ler e-mail: {e.response.status_code} — {e.response.text}", 502)
     except Exception as e:
         return erro(str(e), 500)
 
