@@ -128,7 +128,17 @@ services:
       - baia360
 
 volumes:
+  # external: true — compose never creates or destroys this volume, so
+  # `docker compose down -v` cannot wipe the billing database. Name pinned
+  # to the volume already on the server (confirmed via `docker volume ls`);
+  # this is NOT a fresh volume, no data migration happened or is needed.
+  # Disaster-recovery gotcha: on a BRAND NEW host, `docker volume create
+  # baia360_postgres_data` must run before the first `docker compose up`,
+  # or compose fails saying the volume doesn't exist — see
+  # scripts/README_backup.md.
   postgres_data:
+    external: true
+    name: baia360_postgres_data
   backend_data:
 
 networks:

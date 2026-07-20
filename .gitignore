@@ -27,6 +27,10 @@ dist-ssr/
 # OS
 .DS_Store
 
+# SDD — Central de Relatórios pipeline: contains real pharma client names,
+# lives only on the local machine, never committed (public repo).
+SDD_Pipeline_Central_Relatorios.md
+
 # Playwright
 test-results/
 tests/screenshots/
