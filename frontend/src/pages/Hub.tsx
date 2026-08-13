@@ -65,7 +65,8 @@ export function Hub({
   }
   const bp = badgePerfil[perfil]
 
-  const nCardsPrincipais = [temRelatorios, true, temHub('painel_controle'), temHub('painel_resultados')].filter(Boolean).length
+  // Painel de Resultados é exclusivo do admin — não passa por temHub().
+  const nCardsPrincipais = [temRelatorios, true, temHub('painel_controle'), isAdmin].filter(Boolean).length
   const gridCols = nCardsPrincipais === 1 ? '1fr' : nCardsPrincipais === 2 ? 'repeat(2,1fr)' : 'repeat(3,1fr)'
 
   const cardPrincipal = (
@@ -308,7 +309,7 @@ export function Hub({
           {temRelatorios && cardPrincipal(FileSpreadsheet, 'Central de Relatórios', 'Geração e análise de relatórios.', T.accentBlue, onEntrarRelatorios)}
           {cardPrincipal(Bot, 'Atlas', 'Assistente IA — análises via linguagem natural.', T.accentPurple, onEntrarAtlas)}
           {temHub('painel_controle') && cardPrincipal(Activity, 'Painel de Controle', 'Métricas gerenciais e uso do sistema.', T.accentBlue, onEntrarPainelControle)}
-          {temHub('painel_resultados') && cardPrincipal(TrendingUp, 'Painel de Resultados', 'KPIs operacionais por módulo e mês.', T.accentGreen, onEntrarPainelResultados)}
+          {isAdmin && cardPrincipal(TrendingUp, 'Painel de Resultados', 'KPIs operacionais por módulo e mês.', T.accentGreen, onEntrarPainelResultados)}
         </div>
 
         {/* Cards secundários */}

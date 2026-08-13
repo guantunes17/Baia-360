@@ -51,3 +51,8 @@ tests/observabilidade/results/
 tests/observabilidade/REPORT.md
 tests/observabilidade/.venv/
 tests/observabilidade/obs_metrics_redacted.json
+# Guias de usuário (HTML + PDF): entregáveis gerados a partir dos artefatos
+# publicados, não fonte. São ~3 MB de binários que mudam por inteiro a cada
+# regeração — versioná-los inflaria o repo sem dar diff legível. Regerar:
+# ver a conversa de geração (Chrome headless --print-to-pdf sobre os HTML).
+docs/guias/

@@ -37,24 +37,11 @@ export const MODULOS = [
     cor: '#f59e0b',
     grupo: 'operacional',
   },
-  {
-    key: 'produtividade',
-    icone: '👥',
-    lucideIcon: 'Users',
-    titulo: 'Produtividade de Equipe',
-    descricao: 'Utilização · Ociosidade · Ranking por etapa',
-    cor: '#06b6d4',
-    grupo: 'operacional',
-  },
-  {
-    key: 'cap_operacional',
-    icone: '⚙️',
-    lucideIcon: 'Activity',
-    titulo: 'Capacidade Operacional',
-    descricao: 'OS por depositante · SKUs · Extração do ESL',
-    cor: '#e11d48',
-    grupo: 'operacional',
-  },
+  // 'produtividade' e 'cap_operacional' foram removidos da navegação: o
+  // primeiro nunca teve página no frontend (só processamento no backend) e o
+  // segundo deixou de ser funcional. Ambos continuavam aparecendo na sidebar e
+  // no Painel Principal, levando a telas vazias. O processamento no backend
+  // segue intacto — reintroduzir é só devolver a entrada aqui e a rota.
   {
     key: 'recebimentos',
     icone: '📥',

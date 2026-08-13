@@ -13,7 +13,6 @@ import { Fretes } from '@/pages/Fretes'
 import { Armazenagem } from '@/pages/Armazenagem'
 import { Pedidos } from '@/pages/Pedidos'
 import { Recebimentos } from '@/pages/Recebimentos'
-import { CapOperacional } from '@/pages/CapOperacional'
 import { Estoque } from '@/pages/Estoque'
 import { FatDistribuicao } from '@/pages/FatDistribuicao'
 import { FatArmazenagem } from '@/pages/FatArmazenagem'
@@ -464,8 +463,6 @@ function Dashboard({ usuario, onLogout, onVoltarHub, onAtualizarUsuario, paginaI
         return temModulo('pedidos') ? <Pedidos /> : null
       case 'recebimentos':
         return temModulo('recebimentos') ? <Recebimentos /> : null
-      case 'cap_operacional':
-        return temModulo('cap_operacional') ? <CapOperacional /> : null
       case 'estoque':
         return temModulo('estoque') ? <Estoque /> : null
       case 'fat_dist':
@@ -802,7 +799,9 @@ if (tela === 'painel_controle') return (
     </>
   )
 
-  if (tela === 'painel_resultados') return (
+  // Painel de Resultados é exclusivo do admin — o card no Hub já é gated, este
+  // teste é a segunda barreira (não-admin cai no fallback da Central).
+  if (tela === 'painel_resultados' && usuario.perfil === 'admin') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
       <div key={tela} className="page-fade">

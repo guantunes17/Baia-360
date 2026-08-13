@@ -1040,7 +1040,7 @@ Capacidades:
 Contexto da empresa:
 - Baia 4 é um operador logístico focado em distribuição farmacêutica
 - Clientes: ADITUS, BIOGEN, EPHARMA, BHC-Xofigo, CSL BEHRING, IPSEN, CELLTRION, YELUM, CM HOSPITALAR, GSK, PINT PHARMA, FUNCIONAL
-- Módulos: Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem
+- Módulos: Pedidos, Fretes, Armazenagem, Estoque, Recebimentos, Fat. Distribuição, Fat. Armazenagem
 
 Sobre consulta de dados operacionais:
 - Use get_dashboard quando o usuário perguntar sobre KPIs, desempenho, faturamento, SLA, estoque, picos ou qualquer dado operacional histórico — essa ferramenta retorna os dados do último relatório gerado por módulo
@@ -1054,7 +1054,7 @@ Sobre arquivos enviados pelo usuário:
 - Quando receber um arquivo, você TEM acesso ao conteúdo real dele — leia e analise de verdade, nunca diga que não consegue ler
 
 Sobre geração de relatórios operacionais:
-- Quando o usuário pedir para GERAR um relatório operacional (Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem), use IMEDIATAMENTE a ferramenta gerar_relatorio — nunca diga que não consegue gerar
+- Quando o usuário pedir para GERAR um relatório operacional (Pedidos, Fretes, Armazenagem, Estoque, Recebimentos, Fat. Distribuição, Fat. Armazenagem), use IMEDIATAMENTE a ferramenta gerar_relatorio — nunca diga que não consegue gerar
 - Após usar a ferramenta, informe que um botão aparecerá na tela para o usuário enviar o arquivo Excel correspondente
 - Gerar relatório e analisar um arquivo são coisas distintas: gerar usa a ferramenta gerar_relatorio; analisar lê um arquivo enviado pelo usuário
 
@@ -1139,7 +1139,11 @@ ATLAS_TOOLS_DECLARATIONS = [
         'parameters': {
             'type': 'object',
             'properties': {
-                'modulo': {'type': 'string', 'description': 'Nome do módulo: Pedidos, Fretes, Armazenagem, Estoque, Cap. Operacional, Recebimentos, Fat. Distribuição, Fat. Armazenagem'},
+                # 'Cap. Operacional' foi retirado desta lista: o módulo não tem
+                # mais tela e sua rota exige .pdf, enquanto o upload do Atlas só
+                # aceita .xlsx — oferecê-lo levava o usuário a um beco sem saída.
+                # Segue em MODULOS_VALIDOS (get_dashboard lê o histórico dele).
+                'modulo': {'type': 'string', 'description': 'Nome do módulo: Pedidos, Fretes, Armazenagem, Estoque, Recebimentos, Fat. Distribuição, Fat. Armazenagem'},
                 'mes_ref': {'type': 'string', 'description': 'Mês de referência no formato YYYY-MM. Ex: 2025-03'}
             },
             'required': ['modulo', 'mes_ref']
@@ -1428,15 +1432,42 @@ def verificar_token_acao(tool: str, args: dict, token: str, usuario_id: int):
     return True, None
 
 
+# Vocabulário de permissões que o frontend de fato consulta. Existe porque
+# atualizar_permissoes_usuario gravava o JSON cru vindo do cliente, e a tela de
+# permissões (Usuarios.tsx) carrega o objeto inteiro do servidor no estado mas
+# só desenha checkbox para as chaves que conhece: qualquer chave que saísse da
+# UI ficava gravada para sempre, invisível e não-removível pela tela. Filtrar
+# aqui torna o registro auto-sanável — o próximo save de cada usuário limpa as
+# órfãs (hoje 'painel_resultados' e 'cap_operacional').
+#
+# NÃO é o mesmo conjunto de MODULOS_VALIDOS: 'cap_operacional' continua válido
+# lá porque get_dashboard ainda lê seus relatórios históricos, mas deixou de ser
+# concedível quando o módulo perdeu a tela.
+MODULOS_CONCEDIVEIS = [
+    'pedidos', 'fretes', 'armazenagem', 'estoque',
+    'recebimentos', 'fat_dist', 'fat_arm',
+]
+HUB_CONCEDIVEIS = ['central', 'painel_controle', 'atlas', 'agenda']
+
 # Defaults de permissão por perfil
 PERMISSOES_PADRAO = {
+    # 'painel_resultados' NÃO aparece em nenhum perfil: o Painel de Resultados
+    # passou a ser exclusivo do perfil admin, decidido no frontend por
+    # `usuario.perfil === 'admin'` (App.tsx, Hub.tsx) e não mais por chave de
+    # permissão. Mantê-lo aqui seria config inerte que lê como ativa
+    # (COUPLING_MAP.md §7). Linhas antigas em Permissao.modulos_json podem
+    # ainda conter a chave — o frontend simplesmente a ignora.
     'admin': {
-        'hub':     ['central', 'painel_controle', 'painel_resultados', 'atlas', 'agenda'],
+        'hub':     ['central', 'painel_controle', 'atlas', 'agenda'],
         'modulos': list(MODULOS_VALIDOS)
     },
+    # 'cap_operacional' saiu daqui junto com a remoção do módulo da navegação
+    # (constants.ts / App.tsx): conceder por padrão um módulo sem tela deixaria
+    # a permissão inerte. O slug segue em MODULOS_VALIDOS de propósito —
+    # get_dashboard ainda consulta os relatórios históricos do módulo.
     'analista': {
         'hub':     ['central', 'atlas', 'agenda'],
-        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'cap_operacional', 'recebimentos']
+        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'recebimentos']
     },
     'financeiro': {
         'hub':     ['central', 'atlas', 'agenda'],
@@ -1844,8 +1875,13 @@ def atualizar_permissoes_usuario(user_id):
         return jsonify({'erro': 'Usuário não encontrado'}), 404
 
     data = request.get_json()
-    hub     = data.get('hub', [])
-    modulos = data.get('modulos', [])
+    # Filtra em vez de rejeitar com 400: a própria tela de permissões reenvia as
+    # chaves órfãs que carregou do banco (ver MODULOS_CONCEDIVEIS acima), então
+    # um 400 travaria o admin sem que ele tivesse como corrigir pela interface.
+    # Descartar silenciosamente o que não existe mais é o comportamento que
+    # limpa o registro em vez de perpetuá-lo.
+    hub     = [k for k in data.get('hub', [])     if k in HUB_CONCEDIVEIS]
+    modulos = [m for m in data.get('modulos', []) if m in MODULOS_CONCEDIVEIS]
 
     perm = Permissao.query.filter_by(usuario_id=user_id).first()
     if perm:

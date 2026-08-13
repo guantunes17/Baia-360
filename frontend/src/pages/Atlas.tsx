@@ -256,7 +256,9 @@ const MOCK_RESPONSES: Record<string, ((args: any, token: string, confirmToken?: 
 
 const ENDPOINT_MAP: Record<string, string> = {
   'Pedidos': 'pedidos', 'Fretes': 'fretes', 'Armazenagem': 'armazenagem',
-  'Estoque': 'estoque', 'Cap. Operacional': 'cap_operacional',
+  // 'Cap. Operacional' removido junto com a tela do módulo — ver comentário em
+  // ATLAS_TOOLS_DECLARATIONS (backend/app.py) sobre o beco sem saída .pdf/.xlsx.
+  'Estoque': 'estoque',
   'Recebimentos': 'recebimentos', 'Fat. Distribuição': 'fat_dist', 'Fat. Armazenagem': 'fat_arm'
 }
 
@@ -2120,10 +2122,10 @@ export function Atlas({ nomeUsuario }: { nomeUsuario: string }) {
           {/* Sugestões rápidas */}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as any, justifyContent: 'center', maxWidth: 640 }}>
             {[
+              { icon: '📋', texto: 'Qual é o procedimento para receber uma carga termolábil?' },
+              { icon: '⚠️', texto: 'O que eu faço quando chega um volume com a embalagem violada?' },
+              { icon: '📑', texto: 'Tem alguma política sobre uso de celular dentro do CD?' },
               { icon: '☀️', texto: 'Atlas, me passa o briefing de hoje' },
-              { icon: '📊', texto: 'Como está o desempenho operacional este mês?' },
-              { icon: '🌐', texto: 'Qual a cotação do dólar hoje?' },
-              { icon: '📋', texto: 'Gerar relatório de Fretes' },
               { icon: '💡', texto: 'Me atualize sobre nossas últimas conversas' },
             ].map(s => (
               <button key={s.texto} onClick={e => { addRipple(e as React.MouseEvent<HTMLElement>, T.accentBlue, 0.2); setInput(s.texto); setTimeout(() => inputRef.current?.focus(), 50) }}

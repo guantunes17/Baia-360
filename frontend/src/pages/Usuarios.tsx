@@ -30,7 +30,6 @@ const MODULOS_DISPONIVEIS = [
   { key: 'fretes',          label: 'Fretes' },
   { key: 'armazenagem',     label: 'Armazenagem' },
   { key: 'estoque',         label: 'Estoque' },
-  { key: 'cap_operacional', label: 'Capacidade Operacional' },
   { key: 'recebimentos',    label: 'Recebimentos e Devoluções' },
   { key: 'fat_dist',        label: 'Faturamento Distribuição' },
   { key: 'fat_arm',         label: 'Faturamento Armazenagem' },
@@ -39,7 +38,8 @@ const MODULOS_DISPONIVEIS = [
 const HUB_ITEMS = [
   { key: 'central',           label: 'Central de Relatórios' },
   { key: 'painel_controle',   label: 'Painel de Controle' },
-  { key: 'painel_resultados', label: 'Painel de Resultados' },
+  // 'painel_resultados' não é concedível: o Painel de Resultados é exclusivo
+  // do perfil admin (ver App.tsx e Hub.tsx).
   { key: 'agenda',            label: 'Agenda' },
 ]
 
