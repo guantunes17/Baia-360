@@ -30,6 +30,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from zoneinfo import ZoneInfo
 
+import atlas_kb
 import central_client
 import identity
 
@@ -1504,6 +1505,42 @@ class Permissao(db.Model):
             modulos_json = json.dumps(padrao['modulos']),
         )
 
+
+def _atlas_permissoes(perm) -> dict:
+    """Desserializa Permissao.atlas_json, sempre fail-closed.
+
+    Tolerante à AUSÊNCIA da coluna de propósito: o ponto de estrangulamento
+    entra em produção um commit antes da migração que cria `atlas_json`, e
+    durante esse intervalo a resposta correta é "ninguém tem base restrita" —
+    que é exatamente o {} devolvido aqui. Vale também para JSON corrompido:
+    qualquer dúvida sobre o conteúdo vira ausência de concessão, nunca
+    concessão.
+    """
+    bruto = getattr(perm, 'atlas_json', None)
+    if not bruto:
+        return {}
+    try:
+        valor = json.loads(bruto)
+    except (ValueError, TypeError):
+        return {}
+    return valor if isinstance(valor, dict) else {}
+
+
+def escopo_conhecimento_do_usuario(usuario) -> atlas_kb.EscopoConhecimento:
+    """Ponte entre a linha viva de Permissao e a política pura em atlas_kb.
+
+    É o ÚNICO lugar que lê permissão para decidir escopo de retrieval. Lê a
+    linha do banco, nunca a string `perfil` (COUPLING_MAP §5) — o bypass de
+    admin vive dentro de escopo_para(), junto do resto da política, e não
+    espalhado aqui.
+
+    `usuario=None` (helper de avaliação, golden set) cai no escopo comum.
+    """
+    if usuario is None:
+        return atlas_kb.escopo_para(None, None)
+    perm = Permissao.query.filter_by(usuario_id=usuario.id).first()
+    return atlas_kb.escopo_para(usuario.perfil, _atlas_permissoes(perm))
+
 class User(db.Model):
     __tablename__ = 'baia360_users'
     __table_args__ = {'schema': 'identity'}
@@ -2060,17 +2097,21 @@ def responder_atlas(pergunta: str, usuario_id: int = None):
     client = OpenAI(api_key=api_key)
 
     nome_usuario = 'Usuário'
-    if usuario_id:
-        usuario = User.query.get(usuario_id)
-        if usuario:
-            nome_usuario = usuario.nome
+    usuario = User.query.get(usuario_id) if usuario_id else None
+    if usuario:
+        nome_usuario = usuario.nome
     system_prompt = ATLAS_SYSTEM_PROMPT_BASE.replace('{nome_usuario}', nome_usuario)
 
     all_tools = build_tools(ATLAS_TOOLS_DECLARATIONS)
     all_tools.append({'type': 'web_search_preview'})
-    vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
-    if vs_id:
-        all_tools.append({'type': 'file_search', 'vector_store_ids': [vs_id]})
+    # Escopo de conhecimento pelo ponto de estrangulamento (atlas_kb). Com
+    # usuario=None — o caso do golden set — o escopo é a base COMUM, nunca a
+    # restrita: a regressão precisa medir um escopo que usuários reais têm.
+    _fs_tool, _bases_efetivas = atlas_kb.ferramenta_file_search(
+        escopo_conhecimento_do_usuario(usuario)
+    )
+    if _fs_tool:
+        all_tools.append(_fs_tool)
 
     resp = client.responses.create(
         model=ATLAS_MODEL,
@@ -2134,6 +2175,15 @@ def atlas_chat():
     usuario_id  = int(get_jwt_identity())
     usuario     = User.query.get(usuario_id)
     nome_usuario = usuario.nome if usuario else 'Usuário'
+    # Escopo de conhecimento resolvido AQUI, não dentro de generate(): o
+    # gerador roda depois que o contexto do request foi desmontado, e uma
+    # consulta a Permissao lá dentro é justamente o tipo de leitura que falha
+    # de forma intermitente. Resolver cedo e carregar por closure também torna
+    # o escopo um dado do request — conhecido com certeza antes do stream
+    # começar, o que é o que permite gravá-lo até na trace de falha.
+    _fs_tool, _bases_efetivas = atlas_kb.ferramenta_file_search(
+        escopo_conhecimento_do_usuario(usuario)
+    )
     # Fase 5: token bruto do cookie, capturado aqui (contexto do request ainda
     # vivo) para o hop HTTP até a Central em _resolver_get_dashboard, abaixo —
     # Central revalida esse token com a própria chave pública em vez de
@@ -2242,9 +2292,8 @@ def atlas_chat():
                 all_tools.append({'type': 'web_search_preview'})
                 if use_code_interp:
                     all_tools.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
-                vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
-                if vs_id:
-                    all_tools.append({'type': 'file_search', 'vector_store_ids': [vs_id]})
+                if _fs_tool:
+                    all_tools.append(_fs_tool)
 
                 kwargs = dict(
                     model=ATLAS_MODEL,
@@ -3401,25 +3450,14 @@ def atlas_ler_conversa(conv_id):
     }), 200
 
 
-# ── Helper: obter ou criar Vector Store ───────────────────────────────────────
-def _get_vector_store_id():
-    """Retorna o vector_store_id do .env ou cria um novo e persiste."""
-    vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
-    if vs_id:
-        return vs_id
-    # Cria um novo Vector Store na OpenAI
-    api_key = os.getenv('OPENAI_API_KEY', '').strip()
-    client = OpenAI(api_key=api_key)
-    vs = client.vector_stores.create(name='Baia 4 — Base de Conhecimento')
-    # Persiste no .env para próximas reinicializações
-    env_path = os.path.join(os.path.dirname(__file__), '.env')
-    try:
-        with open(env_path, 'a') as f:
-            f.write(f'\nOPENAI_VECTOR_STORE_ID={vs.id}\n')
-    except Exception:
-        pass
-    os.environ['OPENAI_VECTOR_STORE_ID'] = vs.id
-    return vs.id
+# ── Vector Store ──────────────────────────────────────────────────────────────
+# _get_vector_store_id() foi REMOVIDO aqui. Ele criava uma store sob demanda e
+# anexava o id em backend/.env, o que era falso conforto em três frentes: a
+# mutação de os.environ é local ao processo (o outro worker gunicorn seguia sem
+# file_search até reiniciar), o append no .env se perde no rebuild do container,
+# e num mundo de duas bases uma criação automática produziria silenciosamente
+# uma TERCEIRA store que nada leria. As stores passam a ser criadas à mão, uma
+# vez, e os ids vivem em .env.production — ver atlas_kb.store_id_da_base.
 
 
 @app.route('/api/atlas/base_conhecimento', methods=['GET'])
@@ -3431,7 +3469,10 @@ def base_conhecimento_listar():
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
     try:
         client = OpenAI(api_key=api_key)
-        vs_id = _get_vector_store_id()
+        vs_id = atlas_kb.store_id_da_base(atlas_kb.BASE_COMUM)
+        if not vs_id:
+            return jsonify({'erro': 'Base de conhecimento não configurada no servidor '
+                                    '(ATLAS_VECTOR_STORE_COMUM_ID).'}), 503
         # Paginar para buscar TODOS os arquivos (OpenAI retorna até 100 por página)
         todos_files = []
         after = None
@@ -3496,13 +3537,17 @@ def base_conhecimento_upload():
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
 
+    vs_id = atlas_kb.store_id_da_base(atlas_kb.BASE_COMUM)
+    if not vs_id:
+        return jsonify({'erro': 'Base de conhecimento não configurada no servidor '
+                                '(ATLAS_VECTOR_STORE_COMUM_ID).'}), 503
+
     try:
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         arquivo.save(tmp.name)
         tmp.close()
 
         client = OpenAI(api_key=api_key)
-        vs_id = _get_vector_store_id()
 
         # Upload do arquivo para a OpenAI Files API
         with open(tmp.name, 'rb') as f:
@@ -3540,7 +3585,10 @@ def base_conhecimento_deletar(file_id):
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
     try:
         client = OpenAI(api_key=api_key)
-        vs_id = _get_vector_store_id()
+        vs_id = atlas_kb.store_id_da_base(atlas_kb.BASE_COMUM)
+        if not vs_id:
+            return jsonify({'erro': 'Base de conhecimento não configurada no servidor '
+                                    '(ATLAS_VECTOR_STORE_COMUM_ID).'}), 503
         # Remove do Vector Store
         client.vector_stores.files.delete(vector_store_id=vs_id, file_id=file_id)
         # Remove da Files API
