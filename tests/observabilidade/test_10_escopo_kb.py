@@ -225,6 +225,164 @@ def test_atlas_json_invalido_nunca_concede(models, bruto):
     assert models._atlas_permissoes(_Perm()) == {}
 
 
+def test_ponte_le_a_linha_viva_e_nao_o_perfil(app, db, models, make_user):
+    """O enforcement lê Permissao, não a string `perfil` (COUPLING_MAP §5): um
+    'operacional' com a flag concedida alcança a base restrita, e um 'analista'
+    sem ela não alcança. Se algum dia alguém derivar acesso do perfil, este
+    teste cai."""
+    uid_concedido = make_user(perfil='operacional')
+    uid_negado    = make_user(perfil='analista')
+    with app.app_context():
+        db.session.add(models.Permissao(
+            usuario_id=uid_concedido, hub_json='[]', modulos_json='[]',
+            atlas_json=json.dumps({'base_restrita': True})))
+        db.session.add(models.Permissao(
+            usuario_id=uid_negado, hub_json='[]', modulos_json='[]',
+            atlas_json=json.dumps({'base_restrita': False})))
+        db.session.commit()
+
+        assert models.escopo_conhecimento_do_usuario(
+            models.User.query.get(uid_concedido)).bases == ('comum', 'restrita')
+        assert models.escopo_conhecimento_do_usuario(
+            models.User.query.get(uid_negado)).bases == ('comum',)
+
+
+def test_ponte_com_atlas_json_corrompido_no_banco_fica_no_comum(app, db, models, make_user):
+    uid = make_user(perfil='operacional')
+    with app.app_context():
+        db.session.add(models.Permissao(usuario_id=uid, hub_json='[]',
+                                        modulos_json='[]', atlas_json='{isso nao e json'))
+        db.session.commit()
+        assert models.escopo_conhecimento_do_usuario(
+            models.User.query.get(uid)).bases == ('comum',)
+
+
+# ── PUT /api/auth/usuarios/<id>/permissoes ──────────────────────────────────
+
+def test_put_grava_a_concessao_e_o_escopo_passa_a_incluir_restrita(
+        app, db, models, make_user, make_client):
+    admin_id = make_user(perfil='admin')
+    alvo_id  = make_user(perfil='operacional')
+
+    resp = make_client(admin_id).put(
+        f'/api/auth/usuarios/{alvo_id}/permissoes',
+        json={'hub': [], 'modulos': [], 'atlas': {'base_restrita': True}})
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert models.escopo_conhecimento_do_usuario(
+            models.User.query.get(alvo_id)).bases == ('comum', 'restrita')
+
+
+@pytest.mark.parametrize('enviado', ['true', 1, 'sim', [1], {'x': 1}])
+def test_put_coage_valores_nao_booleanos_para_false(
+        app, db, models, make_user, make_client, enviado):
+    """O que chega do cliente nunca é persistido cru: só `is True` vira True.
+    Sem isso, a string 'true' ficaria gravada e o enforcement teria de
+    reinterpretá-la — e `escopo_para` a rejeitaria, deixando a tela mostrando
+    uma concessão que não concede nada."""
+    admin_id = make_user(perfil='admin')
+    alvo_id  = make_user(perfil='operacional')
+
+    make_client(admin_id).put(f'/api/auth/usuarios/{alvo_id}/permissoes',
+                              json={'hub': [], 'modulos': [],
+                                    'atlas': {'base_restrita': enviado}})
+
+    with app.app_context():
+        perm = models.Permissao.query.filter_by(usuario_id=alvo_id).first()
+        assert json.loads(perm.atlas_json) == {'base_restrita': False}
+
+
+def test_put_descarta_chaves_nao_concediveis(app, db, models, make_user, make_client):
+    """Mesmo tratamento que hub/modulos: filtra em silêncio em vez de 400."""
+    admin_id = make_user(perfil='admin')
+    alvo_id  = make_user(perfil='operacional')
+
+    make_client(admin_id).put(f'/api/auth/usuarios/{alvo_id}/permissoes',
+                              json={'hub': [], 'modulos': [],
+                                    'atlas': {'base_restrita': True, 'inventada': True}})
+
+    with app.app_context():
+        perm = models.Permissao.query.filter_by(usuario_id=alvo_id).first()
+        assert json.loads(perm.atlas_json) == {'base_restrita': True}
+
+
+def test_put_sem_a_chave_atlas_revoga(app, db, models, make_user, make_client):
+    """Toda chave concedível é sempre gravada, então um PUT que omite 'atlas'
+    grava False em vez de deixar a concessão anterior. É o mesmo
+    comportamento-overwrite de hub/modulos, e erra para o lado seguro."""
+    admin_id = make_user(perfil='admin')
+    alvo_id  = make_user(perfil='operacional')
+    cliente  = make_client(admin_id)
+
+    cliente.put(f'/api/auth/usuarios/{alvo_id}/permissoes',
+                json={'hub': [], 'modulos': [], 'atlas': {'base_restrita': True}})
+    cliente.put(f'/api/auth/usuarios/{alvo_id}/permissoes',
+                json={'hub': [], 'modulos': []})
+
+    with app.app_context():
+        assert models.escopo_conhecimento_do_usuario(
+            models.User.query.get(alvo_id)).bases == ('comum',)
+
+
+def test_nao_admin_nao_concede_a_si_mesmo(app, models, make_user, make_client):
+    alvo_id = make_user(perfil='operacional')
+    resp = make_client(alvo_id).put(
+        f'/api/auth/usuarios/{alvo_id}/permissoes',
+        json={'hub': [], 'modulos': [], 'atlas': {'base_restrita': True}})
+    assert resp.status_code == 403
+    with app.app_context():
+        assert models.escopo_conhecimento_do_usuario(
+            models.User.query.get(alvo_id)).bases == ('comum',)
+
+
+# ── Semeadura por perfil ────────────────────────────────────────────────────
+
+def test_nenhum_perfil_alem_de_admin_semeia_base_restrita(models):
+    """O perfil semeia o default, a flag governa o acesso. 'operacional' é o
+    default de todo cadastro novo e costuma significar apenas "ainda não
+    classificado" — herdar acesso regulatório daí seria conceder por inércia."""
+    for perfil, padrao in models.PERMISSOES_PADRAO.items():
+        concedido = padrao.get('atlas', {}).get('base_restrita', False)
+        assert concedido == (perfil == 'admin'), f'perfil {perfil}'
+
+
+def test_criar_para_grava_o_padrao_do_perfil(app, models):
+    with app.app_context():
+        assert json.loads(models.Permissao.criar_para(1, 'operacional').atlas_json) == {'base_restrita': False}
+        assert json.loads(models.Permissao.criar_para(2, 'admin').atlas_json) == {'base_restrita': True}
+
+
+def test_aprovacao_reseta_a_concessao_para_o_padrao_do_perfil(
+        app, db, models, make_user, make_client):
+    """Documenta um comportamento com dente: reaprovar um usuário já ativo
+    REVOGA uma concessão manual. É o que hub/modulos já faziam (COUPLING_MAP §7
+    item 10) e, para acesso a material regulatório, revogar por engano é o lado
+    seguro de errar — mas tem de estar coberto, não descoberto por acidente."""
+    admin_id = make_user(perfil='admin')
+    alvo_id  = make_user(perfil='operacional')
+    cliente  = make_client(admin_id)
+
+    cliente.put(f'/api/auth/usuarios/{alvo_id}/permissoes',
+                json={'hub': [], 'modulos': [], 'atlas': {'base_restrita': True}})
+    with app.app_context():
+        assert models.escopo_conhecimento_do_usuario(
+            models.User.query.get(alvo_id)).bases == ('comum', 'restrita')
+
+    resp = cliente.post(f'/api/auth/usuarios/{alvo_id}/aprovar',
+                        json={'perfil': 'operacional'})
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert models.escopo_conhecimento_do_usuario(
+            models.User.query.get(alvo_id)).bases == ('comum',)
+
+
+def test_to_dict_expoe_atlas(app, models):
+    with app.app_context():
+        assert models.Permissao.criar_para(1, 'admin').to_dict()['atlas'] == {'base_restrita': True}
+
+
 # ── responder_atlas: o escopo default do helper de avaliação ────────────────
 
 def test_responder_atlas_sem_usuario_usa_apenas_a_base_comum(models, monkeypatch, stores):

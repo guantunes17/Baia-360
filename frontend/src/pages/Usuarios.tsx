@@ -43,6 +43,17 @@ const HUB_ITEMS = [
   { key: 'agenda',            label: 'Agenda' },
 ]
 
+// Toggles de Atlas — espelha ATLAS_CONCEDIVEIS em backend/atlas_kb.py. O PUT
+// filtra contra aquela lista, então uma chave a mais aqui é descartada em
+// silêncio pelo servidor (e não vira permissão-ficção na tela).
+const ATLAS_ITEMS = [
+  {
+    key: 'base_restrita',
+    label: 'Base de conhecimento restrita',
+    descricao: 'Material regulatório (ANVISA) e plantas físicas. Sem isto, o Atlas responde apenas a partir da base comum.',
+  },
+]
+
 const inp: React.CSSProperties = {
   width: '100%', padding: '8px 12px',
   background: 'rgba(8,11,20,0.7)',
@@ -110,13 +121,16 @@ export function Usuarios() {
   const [perfilAprovacao, setPerfilAprovacao] = useState<Record<number, string>>({})
 
   const [painelPermissoes, setPainelPermissoes] = useState<Usuario | null>(null)
-  const [permissoes,       setPermissoes]       = useState<{ hub: string[]; modulos: string[] }>({ hub: [], modulos: [] })
+  const [permissoes,       setPermissoes]       = useState<{ hub: string[]; modulos: string[]; atlas: Record<string, boolean> }>({ hub: [], modulos: [], atlas: {} })
   const [salvandoPerm,     setSalvandoPerm]     = useState(false)
 
   const abrirPermissoes = async (u: Usuario) => {
     try {
       const res = await axios.get(`${API}/api/auth/usuarios/${u.id}/permissoes`, { headers: headers() })
-      setPermissoes(res.data)
+      // Defaults explícitos: uma linha gravada antes da coluna atlas_json
+      // existir volta sem a chave, e um spread cru deixaria `atlas` undefined —
+      // o primeiro toggle quebraria a tela.
+      setPermissoes({ hub: [], modulos: [], atlas: {}, ...res.data })
       setPainelPermissoes(u)
     } catch {
       alert('Erro ao carregar permissões')
@@ -139,6 +153,7 @@ export function Usuarios() {
 
   const toggleHub    = (key: string) => setPermissoes(p => ({ ...p, hub:    p.hub.includes(key)    ? p.hub.filter(k => k !== key)    : [...p.hub, key] }))
   const toggleModulo = (m: string)   => setPermissoes(p => ({ ...p, modulos: p.modulos.includes(m) ? p.modulos.filter(k => k !== m) : [...p.modulos, m] }))
+  const toggleAtlas  = (key: string) => setPermissoes(p => ({ ...p, atlas: { ...p.atlas, [key]: !p.atlas?.[key] } }))
 
   const carregar = async () => {
     try {
@@ -495,9 +510,29 @@ export function Usuarios() {
               </div>
             </div>
 
-            <div style={{ marginBottom: 28, padding: '12px 14px', background: `${T.accentPurple}11`, border: `1px solid ${T.accentPurple}33`, borderRadius: 8 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: T.accentPurple, marginBottom: 4 }}>🤖 Atlas</p>
-              <p style={{ fontSize: 12, color: T.textMuted }}>Disponível para todos os usuários com acesso total.</p>
+            <div style={{ marginBottom: 28 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: T.accentPurple, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, paddingLeft: 8, borderLeft: `2px solid ${T.accentPurple}` }}>
+                🤖 Atlas
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {ATLAS_ITEMS.map(item => {
+                  const marcado = permissoes.atlas?.[item.key] === true
+                  return (
+                    <label key={item.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, background: 'rgba(8,11,20,0.7)', border: `1px solid ${marcado ? T.accentPurple + '44' : T.border}` }}>
+                      <input type="checkbox" checked={marcado} onChange={() => toggleAtlas(item.key)} style={{ accentColor: T.accentPurple, width: 15, height: 15, marginTop: 2 }} />
+                      <span>
+                        <span style={{ display: 'block', fontSize: 13, color: marcado ? T.text : T.textMuted }}>{item.label}</span>
+                        <span style={{ display: 'block', fontSize: 11, color: T.textMuted, marginTop: 2 }}>{item.descricao}</span>
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+              {painelPermissoes.perfil === 'admin' && (
+                <p style={{ fontSize: 11, color: T.textMuted, marginTop: 8 }}>
+                  Admin alcança todas as bases independentemente desta marcação.
+                </p>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>

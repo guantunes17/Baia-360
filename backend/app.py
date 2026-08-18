@@ -1458,9 +1458,14 @@ PERMISSOES_PADRAO = {
     # permissão. Mantê-lo aqui seria config inerte que lê como ativa
     # (COUPLING_MAP.md §7). Linhas antigas em Permissao.modulos_json podem
     # ainda conter a chave — o frontend simplesmente a ignora.
+    #
+    # A chave 'atlas' guarda os toggles de Atlas (hoje só a base restrita de
+    # conhecimento). É a primeira chave de valor NÃO-plano deste dicionário —
+    # todo consumidor usa padrao.get('atlas', {}), nunca padrao['atlas'].
     'admin': {
         'hub':     ['central', 'painel_controle', 'atlas', 'agenda'],
-        'modulos': list(MODULOS_VALIDOS)
+        'modulos': list(MODULOS_VALIDOS),
+        'atlas':   {'base_restrita': True},
     },
     # 'cap_operacional' saiu daqui junto com a remoção do módulo da navegação
     # (constants.ts / App.tsx): conceder por padrão um módulo sem tela deixaria
@@ -1468,15 +1473,23 @@ PERMISSOES_PADRAO = {
     # get_dashboard ainda consulta os relatórios históricos do módulo.
     'analista': {
         'hub':     ['central', 'atlas', 'agenda'],
-        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'recebimentos']
+        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'recebimentos'],
+        # A base restrita (regulatório/ANVISA, plantas) NÃO é default de perfil
+        # nenhum além de admin: o perfil semeia, a flag governa. 'operacional'
+        # é o default de todo cadastro novo e com frequência significa apenas
+        # "ainda não classificado" — herdar acesso daí seria conceder por
+        # inércia. Admin concede caso a caso na tela de Permissões.
+        'atlas':   {'base_restrita': False},
     },
     'financeiro': {
         'hub':     ['central', 'atlas', 'agenda'],
-        'modulos': ['fat_dist', 'fat_arm']
+        'modulos': ['fat_dist', 'fat_arm'],
+        'atlas':   {'base_restrita': False},
     },
     'operacional': {
         'hub':     ['atlas', 'agenda'],
-        'modulos': []
+        'modulos': [],
+        'atlas':   {'base_restrita': False},
     },
 }
 
@@ -1487,6 +1500,12 @@ class Permissao(db.Model):
     usuario_id   = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), unique=True, nullable=False)
     hub_json     = db.Column(db.Text, nullable=False, default='[]')
     modulos_json = db.Column(db.Text, nullable=False, default='[]')
+    # Toggles de Atlas, hoje só {'base_restrita': bool} — ver ATLAS_CONCEDIVEIS
+    # em atlas_kb.py. Coluna própria em vez de mais um slug em modulos_json:
+    # aquele namespace é compartilhado com MODULOS_VALIDOS, que get_dashboard
+    # ainda consulta, e misturar as duas coisas é como 'painel_resultados'
+    # virou permissão-ficção (COUPLING_MAP §7).
+    atlas_json   = db.Column(db.Text, nullable=False, default='{}', server_default='{}')
 
     usuario = db.relationship('User', backref=db.backref('permissao', uselist=False))
 
@@ -1494,6 +1513,7 @@ class Permissao(db.Model):
         return {
             'hub':     json.loads(self.hub_json),
             'modulos': json.loads(self.modulos_json),
+            'atlas':   _atlas_permissoes(self),
         }
 
     @staticmethod
@@ -1503,6 +1523,9 @@ class Permissao(db.Model):
             usuario_id   = usuario_id,
             hub_json     = json.dumps(padrao['hub']),
             modulos_json = json.dumps(padrao['modulos']),
+            # .get com default: um perfil que não declare 'atlas' não pode
+            # quebrar a criação da linha, e a ausência significa sem concessão.
+            atlas_json   = json.dumps(padrao.get('atlas', {})),
         )
 
 
@@ -1834,6 +1857,12 @@ def aprovar_usuario(user_id):
         padrao = PERMISSOES_PADRAO.get(perfil, PERMISSOES_PADRAO['operacional'])
         perm.hub_json     = json.dumps(padrao['hub'])
         perm.modulos_json = json.dumps(padrao['modulos'])
+        # Reset ao padrão do perfil, igual a hub/modulos. Consequência a ter em
+        # mente: reaprovar um usuário já ativo REVOGA uma concessão manual de
+        # base restrita. É o comportamento que hub/modulos já tinham
+        # (COUPLING_MAP §7, item 10) e, para uma permissão de acesso a material
+        # regulatório, revogar por engano é o lado seguro de errar.
+        perm.atlas_json   = json.dumps(padrao.get('atlas', {}))
     else:
         db.session.add(Permissao.criar_para(user.id, perfil))
 
@@ -1919,16 +1948,29 @@ def atualizar_permissoes_usuario(user_id):
     # limpa o registro em vez de perpetuá-lo.
     hub     = [k for k in data.get('hub', [])     if k in HUB_CONCEDIVEIS]
     modulos = [m for m in data.get('modulos', []) if m in MODULOS_CONCEDIVEIS]
+    # Mesmo princípio para os toggles de Atlas, com duas garantias extras que a
+    # forma de dicionário permite: TODA chave concedível fica sempre presente
+    # (não existe ausência ambígua na linha gravada), e o valor gravado é
+    # sempre um booleano de verdade — `is True` descarta a string "true" que um
+    # cliente mal comportado enviasse, em vez de persistir algo que o
+    # enforcement teria de reinterpretar depois.
+    atlas_recebido = data.get('atlas') or {}
+    if not isinstance(atlas_recebido, dict):
+        atlas_recebido = {}
+    atlas = {chave: (atlas_recebido.get(chave) is True)
+             for chave in atlas_kb.ATLAS_CONCEDIVEIS}
 
     perm = Permissao.query.filter_by(usuario_id=user_id).first()
     if perm:
         perm.hub_json     = json.dumps(hub)
         perm.modulos_json = json.dumps(modulos)
+        perm.atlas_json   = json.dumps(atlas)
     else:
         perm = Permissao(
             usuario_id   = user_id,
             hub_json     = json.dumps(hub),
             modulos_json = json.dumps(modulos),
+            atlas_json   = json.dumps(atlas),
         )
         db.session.add(perm)
 
