@@ -760,6 +760,13 @@ def _emit_otel_span(trace_dict: dict):
             span.set_attribute('rag.top_score', trace_dict.get('top_score') or 0.0)
             span.set_attribute('rag.zero_retrieval', trace_dict.get('zero_retrieval', False))
             span.set_attribute('rag.latencia_ms', trace_dict.get('latencia_ms') or 0)
+            # Escopo como string ('comum' / 'comum+restrita' / '' / 'desconhecido'):
+            # atributo de span OTLP não aceita None, e um span sem o atributo
+            # some do filtro do Phoenix em vez de aparecer como não-medido —
+            # exatamente o zero_retrieval ambíguo que a coluna resolve.
+            _esc = trace_dict.get('escopo_kb')
+            span.set_attribute('rag.escopo_kb',
+                               'desconhecido' if _esc is None else '+'.join(_esc))
     except Exception:
         pass
 
@@ -3653,12 +3660,22 @@ def base_conhecimento_listar():
         client = OpenAI(api_key=api_key)
         bases = atlas_kb.bases_configuradas()
         documentos = []
+        _stores_lidas = set()
         for base, vs_id in bases.items():
             # Base sem store configurada não contribui documento algum e volta
             # como '' em `bases`, para a UI conseguir dizer "não configurada"
             # em vez de mostrar uma base vazia que parece existir.
-            if vs_id:
-                documentos.extend(_listar_documentos_da_base(client, vs_id, base))
+            if not vs_id:
+                continue
+            # Duas bases apontando para a MESMA store é erro de .env, mas se
+            # acontecer a listagem não pode enumerá-la duas vezes: cada
+            # documento apareceria duplicado com rótulos de base diferentes,
+            # e o admin decidiria a classificação a partir de uma tela que
+            # mente. O adaptador já deduplica os ids pelo mesmo motivo.
+            if vs_id in _stores_lidas:
+                continue
+            _stores_lidas.add(vs_id)
+            documentos.extend(_listar_documentos_da_base(client, vs_id, base))
         return jsonify({
             'bases':      bases,
             'documentos': documentos,
@@ -3767,8 +3784,10 @@ def base_conhecimento_deletar(file_id):
     try:
         client = OpenAI(api_key=api_key)
         bases = atlas_kb.bases_configuradas()
-        alvos = [bases[base]] if base else [v for v in bases.values() if v]
-        alvos = [v for v in alvos if v]
+        alvos = [bases[base]] if base else list(bases.values())
+        # Filtra vazios e deduplica (duas bases apontando para a mesma store é
+        # erro de .env, mas não pode virar delete duplicado).
+        alvos = list(dict.fromkeys(v for v in alvos if v))
         if not alvos:
             return jsonify({'erro': 'Nenhuma base de conhecimento configurada no servidor.'}), 503
 

@@ -98,6 +98,12 @@ def emitir_trace_para_phoenix(trace: dict, tracer) -> None:
         chain.set_attribute('metadata.eval_faithfulness', trace.get('eval_faithfulness') or 0.0)
         chain.set_attribute('metadata.feedback', trace.get('feedback') or '')
         chain.set_attribute('metadata.latencia_ms', trace.get('latencia_ms') or 0)
+        # Escopo de conhecimento do turno. 'desconhecido' para linhas anteriores
+        # à coluna escopo_kb, '' para turno sem base configurada — os três
+        # estados chegam distintos no Phoenix em vez de colapsarem.
+        _esc = trace.get('escopo_kb')
+        chain.set_attribute('metadata.escopo_kb',
+                            'desconhecido' if _esc is None else '+'.join(_esc))
         with tracer.start_as_current_span('atlas.retrieval') as ret:
             ret.set_attribute('openinference.span.kind', 'RETRIEVER')
             ret.set_attribute('input.value', trace.get('retrieval_query') or trace.get('pergunta') or '')

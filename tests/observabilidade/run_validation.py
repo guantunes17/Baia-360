@@ -98,8 +98,13 @@ def _environment_info() -> dict:
     return {
         'db': 'postgres' if dialect == 'postgresql' else dialect,
         'live_enabled': OBS_LIVE,
+        # A base comum passou a ser ATLAS_VECTOR_STORE_COMUM_ID, com o nome
+        # antigo mantido como fallback (atlas_kb.store_id_da_base). Checar só o
+        # legado reportaria "sem chaves" num ambiente corretamente configurado
+        # com o nome novo.
         'openai_keys_present': bool(os.environ.get('OPENAI_API_KEY', '').strip())
-                                and bool(os.environ.get('OPENAI_VECTOR_STORE_ID', '').strip()),
+                                and bool(os.environ.get('ATLAS_VECTOR_STORE_COMUM_ID', '').strip()
+                                         or os.environ.get('OPENAI_VECTOR_STORE_ID', '').strip()),
     }
 
 
