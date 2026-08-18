@@ -141,6 +141,16 @@ def export_traces(since_iso=None, limite=2000):
                 'eval_flagged': r.eval_flagged,
                 'eval_versao': r.eval_versao,
                 'tools_usadas': json.loads(r.tools_usadas) if r.tools_usadas else None,
+                # `is not None`, não truthy: '[]' é escopo medido sem nenhuma
+                # store configurada, e vira [] aqui; NULL (nunca capturado)
+                # continua None. Colapsar os dois no export reintroduziria, no
+                # Phoenix, a ambiguidade que a coluna existe para eliminar.
+                'escopo_kb': json.loads(r.escopo_kb) if r.escopo_kb is not None else None,
+                # falhou/erro_mensagem faltavam aqui desde 9033ea28bb29: o
+                # replay mostrava turnos que morreram no meio como se
+                # tivessem terminado normalmente.
+                'falhou': r.falhou,
+                'erro_mensagem': r.erro_mensagem,
                 'latencia_ms': r.latencia_ms,
                 'tokens_in': r.tokens_in, 'tokens_out': r.tokens_out,
             }

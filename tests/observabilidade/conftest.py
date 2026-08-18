@@ -197,12 +197,18 @@ def _clean_tables(app, db, models):
     without wiping it too, a conversation row created by one test outlives it
     and blocks the next test's User delete with a FK violation
     (atlas_conversas_usuario_id_fkey) — caught by exactly that failure the
-    first time a test in this suite created an AtlasConversa row."""
+    first time a test in this suite created an AtlasConversa row.
+
+    Permissao added 2026-08-18 (segregação da base de conhecimento,
+    test_10_escopo_kb.py) — same failure, same shape
+    (permissoes_usuario_id_fkey), the first time a test here granted a
+    permission. Any new table with an FK to User belongs in this list."""
     with app.app_context():
         db.session.execute(db.delete(models.AtlasRAGTrace))
         db.session.execute(db.delete(models.AtlasConversa))
         db.session.execute(db.delete(models.AtlasGoldenRun))
         db.session.execute(db.delete(models.AtlasGoldenQA))
+        db.session.execute(db.delete(models.Permissao))
         db.session.execute(db.delete(models.User))
         db.session.commit()
     yield

@@ -119,6 +119,16 @@ const SEGMENTO_LABEL: Record<string, string> = {
   legacy_unknown: 'Legado (proveniência desconhecida)',
 }
 
+const ESCOPO_LABEL: Record<string, string> = {
+  'comum': 'Base comum',
+  'comum+restrita': 'Comum + restrita',
+  // Escopo capturado, nenhuma store configurada — o turno respondeu sem
+  // file_search. Não é o mesmo que "não sabemos".
+  'sem_base': 'Sem base configurada',
+  // escopo_kb NULL: linhas anteriores à coluna. Nunca reconstruível.
+  'legacy_unknown': 'Legado (escopo desconhecido)',
+}
+
 function AtlasObservabilidadeCard() {
   const [dados,       setDados]       = useState<any>(null)
   const [dias,        setDias]        = useState(30)
@@ -237,6 +247,39 @@ function AtlasObservabilidadeCard() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {dados.escopos && (
+            <div style={{ ...glass(0.35, 20), boxShadow: neoShadow, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Segmentação por escopo de conhecimento
+              </p>
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                {Object.entries(dados.escopos).map(([esc, n]) => (
+                  <div key={esc}>
+                    <p style={{ fontSize: 20, fontWeight: 700, color: T.text, lineHeight: 1 }}>{n as number}</p>
+                    <p style={{ fontSize: 11, color: T.textMuted }}>{ESCOPO_LABEL[esc] || esc}</p>
+                  </div>
+                ))}
+              </div>
+              {dados.zero_retrieval_por_escopo && (
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 16, paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
+                  {Object.entries(dados.zero_retrieval_por_escopo).map(([esc, v]: [string, any]) => (
+                    <div key={esc}>
+                      <p style={{ fontSize: 16, fontWeight: 700, color: T.text, lineHeight: 1 }}>
+                        {v.rate == null ? '—' : `${(v.rate * 100).toFixed(1)}%`}
+                      </p>
+                      <p style={{ fontSize: 11, color: T.textMuted }}>
+                        Zero retrieval — {ESCOPO_LABEL[esc] || esc}
+                      </p>
+                      {/* n exposto junto da taxa, como nos mean_*_n: uma taxa
+                          sobre poucos turnos lê como regressão sem ele. */}
+                      <p style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>n={v.com_fs}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

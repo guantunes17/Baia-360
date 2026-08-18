@@ -834,7 +834,11 @@ if (tela === 'painel_controle') return (
     </>
   )
 
-  if (tela === 'base_conhecimento') return (
+  // Segunda barreira, igual à do Painel de Resultados acima: o card no Hub já
+  // é gated, mas esta rota era a única das duas telas de admin sem o teste
+  // aqui. A barreira real é o 403 do backend (GET/POST/DELETE de
+  // base_conhecimento); esta evita renderizar a tela para quem levaria 403.
+  if (tela === 'base_conhecimento' && usuario.perfil === 'admin') return (
     <>
       <ToastContainer toasts={toastsGlobais} onRemover={removerToastGlobal} />
       <div key={tela} className="page-fade">

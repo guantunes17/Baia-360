@@ -148,6 +148,11 @@ class Permissao(db.Model):
     usuario_id   = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), unique=True, nullable=False)
     hub_json     = db.Column(db.Text, nullable=False, default='[]')
     modulos_json = db.Column(db.Text, nullable=False, default='[]')
+    # Espelhada por fidelidade ao schema, não porque Central use: a segregação
+    # da base de conhecimento é decidida no processo Atlas. Uma cópia read-only
+    # que omite colunas existentes é uma armadilha para o próximo autogenerate
+    # rodado a partir daqui, que proporia dropá-la.
+    atlas_json   = db.Column(db.Text, nullable=False, default='{}', server_default='{}')
 
     usuario = db.relationship('User', backref=db.backref('permissao', uselist=False))
 

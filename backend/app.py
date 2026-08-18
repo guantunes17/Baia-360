@@ -30,6 +30,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from zoneinfo import ZoneInfo
 
+import atlas_kb
 import central_client
 import identity
 
@@ -117,8 +118,11 @@ class AtlasRAGTrace(db.Model):
     Escrita de forma assíncrona DEPOIS que o stream SSE termina (ver
     registrar_rag_trace), então não adiciona latência à resposta do usuário.
 
-    NOTA DE DEPLOY: tabela nova — db.create_all() a cria no próximo restart
-    do container (ver entrypoint.sh). Sem migração manual.
+    NOTA DE DEPLOY: esta nota dizia que db.create_all() criava a tabela no
+    restart do container e que não havia migração manual. Isso deixou de ser
+    verdade em ea3c7e95f47e: entrypoint.sh roda `alembic upgrade head` e nada
+    mais. Toda coluna nova aqui precisa de migração própria, senão o modelo
+    diverge do schema em produção e a primeira query quebra.
     """
     __tablename__ = 'atlas_rag_trace'
     __table_args__ = {'schema': 'atlas'}
@@ -174,6 +178,30 @@ class AtlasRAGTrace(db.Model):
     # mesmo corpus após reprocessamento parcial; sem isso não dá pra saber
     # qual lógica gerou qual score.
     eval_versao        = db.Column(db.Integer, nullable=True)
+
+    # Bases de conhecimento EFETIVAMENTE anexadas ao file_search neste turno
+    # (JSON array-as-text, mesma convenção de tools_usadas/chunks_json). Sinal
+    # cru; a interpretação é feita na leitura.
+    #   NULL                       não capturado — linhas anteriores a esta
+    #                              coluna. Nunca reconstruível: o escopo de um
+    #                              turno passado não está gravado em lugar
+    #                              nenhum. Segmentado como 'legacy_unknown'.
+    #   '[]'                       capturado, e NENHUM store estava
+    #                              configurado: o turno respondeu sem
+    #                              file_search.
+    #   '["comum"]'                só a base comum.
+    #   '["comum","restrita"]'     escopo ampliado.
+    #
+    # É o que foi ANEXADO, não o que a política concedeu: se escopo_para()
+    # devolveu ('comum','restrita') mas ATLAS_VECTOR_STORE_RESTRITA_ID estava
+    # vazia, aqui fica ["comum"]. A degradação silenciosa vira dado visível em
+    # vez de sumir.
+    #
+    # Combinado com zero_retrieval é o que resolve a ambiguidade que motivou a
+    # coluna: zero_retrieval=True com escopo ["comum"] significa "pode existir,
+    # estava fora do escopo deste usuário"; com ["comum","restrita"], significa
+    # "o documento realmente não foi encontrado".
+    escopo_kb          = db.Column(db.Text, nullable=True)
 
     # Higiene de trace (plano de integridade 2026-07-16, §4): antes desta
     # coluna, um turno resolvido pelo frontend gravava DUAS traces (a
@@ -732,6 +760,13 @@ def _emit_otel_span(trace_dict: dict):
             span.set_attribute('rag.top_score', trace_dict.get('top_score') or 0.0)
             span.set_attribute('rag.zero_retrieval', trace_dict.get('zero_retrieval', False))
             span.set_attribute('rag.latencia_ms', trace_dict.get('latencia_ms') or 0)
+            # Escopo como string ('comum' / 'comum+restrita' / '' / 'desconhecido'):
+            # atributo de span OTLP não aceita None, e um span sem o atributo
+            # some do filtro do Phoenix em vez de aparecer como não-medido —
+            # exatamente o zero_retrieval ambíguo que a coluna resolve.
+            _esc = trace_dict.get('escopo_kb')
+            span.set_attribute('rag.escopo_kb',
+                               'desconhecido' if _esc is None else '+'.join(_esc))
     except Exception:
         pass
 
@@ -757,6 +792,13 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
     # isso gravaria a mesma fabricação que este plano corrigiu na
     # reprocessagem (ver data_2026-07-16_reprocess_rag_traces.sql).
     tools_usadas     = trace_dict.get('tools_usadas') or []
+    # Deliberadamente SEM `or []`, ao contrário de tools_usadas acima: aqui a
+    # chave ausente e a lista vazia significam coisas diferentes e ambas são
+    # reais. Ausente = escopo não capturado (NULL). [] = capturado, e nenhum
+    # store estava configurado. Colapsar as duas gravaria '[]' como se fosse
+    # medição em linhas onde nada foi medido.
+    _escopo_kb       = trace_dict.get('escopo_kb')
+    escopo_kb        = json.dumps(_escopo_kb) if _escopo_kb is not None else None
     falhou           = bool(trace_dict.get('falhou', False))
     segmento         = derivar_segmento_rag(usou_file_search, tools_usadas, n_file_citations)
     # Turno falhado (stream morreu no meio, ex. rate limit interno — ver
@@ -782,6 +824,7 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
         n_file_citations = n_file_citations,
         citation_coverage= n_file_citations > 0,
         tools_usadas     = json.dumps(tools_usadas, ensure_ascii=False),
+        escopo_kb        = escopo_kb,
         eval_versao      = EVAL_PIPELINE_VERSION,
         falhou           = falhou,
         erro_mensagem    = (trace_dict.get('erro_mensagem') or None),
@@ -1457,9 +1500,14 @@ PERMISSOES_PADRAO = {
     # permissão. Mantê-lo aqui seria config inerte que lê como ativa
     # (COUPLING_MAP.md §7). Linhas antigas em Permissao.modulos_json podem
     # ainda conter a chave — o frontend simplesmente a ignora.
+    #
+    # A chave 'atlas' guarda os toggles de Atlas (hoje só a base restrita de
+    # conhecimento). É a primeira chave de valor NÃO-plano deste dicionário —
+    # todo consumidor usa padrao.get('atlas', {}), nunca padrao['atlas'].
     'admin': {
         'hub':     ['central', 'painel_controle', 'atlas', 'agenda'],
-        'modulos': list(MODULOS_VALIDOS)
+        'modulos': list(MODULOS_VALIDOS),
+        'atlas':   {'base_restrita': True},
     },
     # 'cap_operacional' saiu daqui junto com a remoção do módulo da navegação
     # (constants.ts / App.tsx): conceder por padrão um módulo sem tela deixaria
@@ -1467,15 +1515,23 @@ PERMISSOES_PADRAO = {
     # get_dashboard ainda consulta os relatórios históricos do módulo.
     'analista': {
         'hub':     ['central', 'atlas', 'agenda'],
-        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'recebimentos']
+        'modulos': ['pedidos', 'fretes', 'armazenagem', 'estoque', 'recebimentos'],
+        # A base restrita (regulatório/ANVISA, plantas) NÃO é default de perfil
+        # nenhum além de admin: o perfil semeia, a flag governa. 'operacional'
+        # é o default de todo cadastro novo e com frequência significa apenas
+        # "ainda não classificado" — herdar acesso daí seria conceder por
+        # inércia. Admin concede caso a caso na tela de Permissões.
+        'atlas':   {'base_restrita': False},
     },
     'financeiro': {
         'hub':     ['central', 'atlas', 'agenda'],
-        'modulos': ['fat_dist', 'fat_arm']
+        'modulos': ['fat_dist', 'fat_arm'],
+        'atlas':   {'base_restrita': False},
     },
     'operacional': {
         'hub':     ['atlas', 'agenda'],
-        'modulos': []
+        'modulos': [],
+        'atlas':   {'base_restrita': False},
     },
 }
 
@@ -1486,6 +1542,12 @@ class Permissao(db.Model):
     usuario_id   = db.Column(db.Integer, db.ForeignKey('identity.baia360_users.id'), unique=True, nullable=False)
     hub_json     = db.Column(db.Text, nullable=False, default='[]')
     modulos_json = db.Column(db.Text, nullable=False, default='[]')
+    # Toggles de Atlas, hoje só {'base_restrita': bool} — ver ATLAS_CONCEDIVEIS
+    # em atlas_kb.py. Coluna própria em vez de mais um slug em modulos_json:
+    # aquele namespace é compartilhado com MODULOS_VALIDOS, que get_dashboard
+    # ainda consulta, e misturar as duas coisas é como 'painel_resultados'
+    # virou permissão-ficção (COUPLING_MAP §7).
+    atlas_json   = db.Column(db.Text, nullable=False, default='{}', server_default='{}')
 
     usuario = db.relationship('User', backref=db.backref('permissao', uselist=False))
 
@@ -1493,6 +1555,7 @@ class Permissao(db.Model):
         return {
             'hub':     json.loads(self.hub_json),
             'modulos': json.loads(self.modulos_json),
+            'atlas':   _atlas_permissoes(self),
         }
 
     @staticmethod
@@ -1502,7 +1565,46 @@ class Permissao(db.Model):
             usuario_id   = usuario_id,
             hub_json     = json.dumps(padrao['hub']),
             modulos_json = json.dumps(padrao['modulos']),
+            # .get com default: um perfil que não declare 'atlas' não pode
+            # quebrar a criação da linha, e a ausência significa sem concessão.
+            atlas_json   = json.dumps(padrao.get('atlas', {})),
         )
+
+
+def _atlas_permissoes(perm) -> dict:
+    """Desserializa Permissao.atlas_json, sempre fail-closed.
+
+    Tolerante à AUSÊNCIA da coluna de propósito: o ponto de estrangulamento
+    entra em produção um commit antes da migração que cria `atlas_json`, e
+    durante esse intervalo a resposta correta é "ninguém tem base restrita" —
+    que é exatamente o {} devolvido aqui. Vale também para JSON corrompido:
+    qualquer dúvida sobre o conteúdo vira ausência de concessão, nunca
+    concessão.
+    """
+    bruto = getattr(perm, 'atlas_json', None)
+    if not bruto:
+        return {}
+    try:
+        valor = json.loads(bruto)
+    except (ValueError, TypeError):
+        return {}
+    return valor if isinstance(valor, dict) else {}
+
+
+def escopo_conhecimento_do_usuario(usuario) -> atlas_kb.EscopoConhecimento:
+    """Ponte entre a linha viva de Permissao e a política pura em atlas_kb.
+
+    É o ÚNICO lugar que lê permissão para decidir escopo de retrieval. Lê a
+    linha do banco, nunca a string `perfil` (COUPLING_MAP §5) — o bypass de
+    admin vive dentro de escopo_para(), junto do resto da política, e não
+    espalhado aqui.
+
+    `usuario=None` (helper de avaliação, golden set) cai no escopo comum.
+    """
+    if usuario is None:
+        return atlas_kb.escopo_para(None, None)
+    perm = Permissao.query.filter_by(usuario_id=usuario.id).first()
+    return atlas_kb.escopo_para(usuario.perfil, _atlas_permissoes(perm))
 
 class User(db.Model):
     __tablename__ = 'baia360_users'
@@ -1797,6 +1899,12 @@ def aprovar_usuario(user_id):
         padrao = PERMISSOES_PADRAO.get(perfil, PERMISSOES_PADRAO['operacional'])
         perm.hub_json     = json.dumps(padrao['hub'])
         perm.modulos_json = json.dumps(padrao['modulos'])
+        # Reset ao padrão do perfil, igual a hub/modulos. Consequência a ter em
+        # mente: reaprovar um usuário já ativo REVOGA uma concessão manual de
+        # base restrita. É o comportamento que hub/modulos já tinham
+        # (COUPLING_MAP §7, item 10) e, para uma permissão de acesso a material
+        # regulatório, revogar por engano é o lado seguro de errar.
+        perm.atlas_json   = json.dumps(padrao.get('atlas', {}))
     else:
         db.session.add(Permissao.criar_para(user.id, perfil))
 
@@ -1882,16 +1990,29 @@ def atualizar_permissoes_usuario(user_id):
     # limpa o registro em vez de perpetuá-lo.
     hub     = [k for k in data.get('hub', [])     if k in HUB_CONCEDIVEIS]
     modulos = [m for m in data.get('modulos', []) if m in MODULOS_CONCEDIVEIS]
+    # Mesmo princípio para os toggles de Atlas, com duas garantias extras que a
+    # forma de dicionário permite: TODA chave concedível fica sempre presente
+    # (não existe ausência ambígua na linha gravada), e o valor gravado é
+    # sempre um booleano de verdade — `is True` descarta a string "true" que um
+    # cliente mal comportado enviasse, em vez de persistir algo que o
+    # enforcement teria de reinterpretar depois.
+    atlas_recebido = data.get('atlas') or {}
+    if not isinstance(atlas_recebido, dict):
+        atlas_recebido = {}
+    atlas = {chave: (atlas_recebido.get(chave) is True)
+             for chave in atlas_kb.ATLAS_CONCEDIVEIS}
 
     perm = Permissao.query.filter_by(usuario_id=user_id).first()
     if perm:
         perm.hub_json     = json.dumps(hub)
         perm.modulos_json = json.dumps(modulos)
+        perm.atlas_json   = json.dumps(atlas)
     else:
         perm = Permissao(
             usuario_id   = user_id,
             hub_json     = json.dumps(hub),
             modulos_json = json.dumps(modulos),
+            atlas_json   = json.dumps(atlas),
         )
         db.session.add(perm)
 
@@ -2060,17 +2181,21 @@ def responder_atlas(pergunta: str, usuario_id: int = None):
     client = OpenAI(api_key=api_key)
 
     nome_usuario = 'Usuário'
-    if usuario_id:
-        usuario = User.query.get(usuario_id)
-        if usuario:
-            nome_usuario = usuario.nome
+    usuario = User.query.get(usuario_id) if usuario_id else None
+    if usuario:
+        nome_usuario = usuario.nome
     system_prompt = ATLAS_SYSTEM_PROMPT_BASE.replace('{nome_usuario}', nome_usuario)
 
     all_tools = build_tools(ATLAS_TOOLS_DECLARATIONS)
     all_tools.append({'type': 'web_search_preview'})
-    vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
-    if vs_id:
-        all_tools.append({'type': 'file_search', 'vector_store_ids': [vs_id]})
+    # Escopo de conhecimento pelo ponto de estrangulamento (atlas_kb). Com
+    # usuario=None — o caso do golden set — o escopo é a base COMUM, nunca a
+    # restrita: a regressão precisa medir um escopo que usuários reais têm.
+    _fs_tool, _bases_efetivas = atlas_kb.ferramenta_file_search(
+        escopo_conhecimento_do_usuario(usuario)
+    )
+    if _fs_tool:
+        all_tools.append(_fs_tool)
 
     resp = client.responses.create(
         model=ATLAS_MODEL,
@@ -2134,6 +2259,15 @@ def atlas_chat():
     usuario_id  = int(get_jwt_identity())
     usuario     = User.query.get(usuario_id)
     nome_usuario = usuario.nome if usuario else 'Usuário'
+    # Escopo de conhecimento resolvido AQUI, não dentro de generate(): o
+    # gerador roda depois que o contexto do request foi desmontado, e uma
+    # consulta a Permissao lá dentro é justamente o tipo de leitura que falha
+    # de forma intermitente. Resolver cedo e carregar por closure também torna
+    # o escopo um dado do request — conhecido com certeza antes do stream
+    # começar, o que é o que permite gravá-lo até na trace de falha.
+    _fs_tool, _bases_efetivas = atlas_kb.ferramenta_file_search(
+        escopo_conhecimento_do_usuario(usuario)
+    )
     # Fase 5: token bruto do cookie, capturado aqui (contexto do request ainda
     # vivo) para o hop HTTP até a Central em _resolver_get_dashboard, abaixo —
     # Central revalida esse token com a própria chave pública em vez de
@@ -2242,9 +2376,8 @@ def atlas_chat():
                 all_tools.append({'type': 'web_search_preview'})
                 if use_code_interp:
                     all_tools.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
-                vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
-                if vs_id:
-                    all_tools.append({'type': 'file_search', 'vector_store_ids': [vs_id]})
+                if _fs_tool:
+                    all_tools.append(_fs_tool)
 
                 kwargs = dict(
                     model=ATLAS_MODEL,
@@ -2437,6 +2570,7 @@ def atlas_chat():
                                                 'chunks':           rag_chunks,
                                                 'n_file_citations': n_file_cit,
                                                 'tools_usadas':     _tools_usadas,
+                                                'escopo_kb':        _bases_efetivas,
                                                 'latencia_ms':      int((time.time() - _rag_t0) * 1000),
                                                 'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
                                                 'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
@@ -2512,6 +2646,14 @@ def atlas_chat():
                         'chunks':           [],
                         'n_file_citations': 0,
                         'tools_usadas':     _tools_tentadas,
+                        # Ao contrário de usou_file_search/chunks acima, este
+                        # não é inferido nem deixado vazio por precaução: o
+                        # escopo é propriedade do REQUEST, resolvido antes do
+                        # stream começar, então é conhecido com certeza mesmo
+                        # quando o turno morre no meio. É justamente o que
+                        # responde se um turno que falhou sequer tinha acesso
+                        # à base onde a resposta estaria.
+                        'escopo_kb':        _bases_efetivas,
                         'latencia_ms':      int((time.time() - _rag_t0) * 1000),
                         'tokens_in':        None,
                         'tokens_out':       None,
@@ -3010,10 +3152,48 @@ def atlas_observabilidade():
     # persistida (ver derivar_segmento_rag/§3 do plano). Sempre soma para
     # `total`. ─────────────────────────────────────────────────────────────
     _seg_rows = _janela(db.session.query(
-        AtlasRAGTrace.usou_file_search, AtlasRAGTrace.tools_usadas, AtlasRAGTrace.n_file_citations
+        AtlasRAGTrace.usou_file_search, AtlasRAGTrace.tools_usadas, AtlasRAGTrace.n_file_citations,
+        AtlasRAGTrace.escopo_kb, AtlasRAGTrace.zero_retrieval
     )).all()
+
+    # Segmentação por escopo de conhecimento. Sem ela, uma regressão na base
+    # comum ficaria mascarada pela média das duas, e — mais importante — não
+    # haveria como distinguir "zero retrieval porque o documento não existe" de
+    # "zero retrieval porque estava fora do escopo daquele usuário".
+    escopos = {'comum': 0, 'comum+restrita': 0, 'sem_base': 0, 'legacy_unknown': 0}
+    # Denominador próprio por escopo: um zero_retrieval_rate global some com a
+    # diferença entre os públicos, que é exatamente o que se quer observar
+    # depois de segregar.
+    zero_por_escopo = {'comum': {'zero': 0, 'com_fs': 0},
+                       'comum+restrita': {'zero': 0, 'com_fs': 0}}
+
     segmentos = {'rag_only': 0, 'tool_only': 0, 'hybrid': 0, 'no_retrieval': 0, 'legacy_unknown': 0}
-    for _fs, _tools_json, _n_cit in _seg_rows:
+    for _fs, _tools_json, _n_cit, _escopo_json, _zero in _seg_rows:
+        # Mesma disciplina de NULL de tools_usadas logo abaixo: escopo_kb NULL
+        # é "não capturado" (linha anterior à coluna), NUNCA 'comum'. Assumir
+        # 'comum' aqui inventaria, na leitura, um escopo que ninguém mediu.
+        if _escopo_json is None:
+            escopos['legacy_unknown'] += 1
+        else:
+            try:
+                _bases = json.loads(_escopo_json)
+            except (ValueError, TypeError):
+                _bases = None
+            if not isinstance(_bases, list):
+                escopos['legacy_unknown'] += 1
+            elif not _bases:
+                escopos['sem_base'] += 1
+            else:
+                _rotulo = '+'.join(_bases)
+                if _rotulo in escopos:
+                    escopos[_rotulo] += 1
+                    if _fs:
+                        zero_por_escopo[_rotulo]['com_fs'] += 1
+                        if _zero:
+                            zero_por_escopo[_rotulo]['zero'] += 1
+                else:
+                    escopos['legacy_unknown'] += 1
+
         # CUIDADO: `_tools_json is None` (coluna NULL — proveniência nunca
         # capturada) tem que chegar em derivar_segmento_rag como None, não
         # como '[]'. Colapsar os dois aqui reintroduziria, na leitura, a
@@ -3057,6 +3237,17 @@ def atlas_observabilidade():
         'mean_context_rel':     _avg(AtlasRAGTrace.eval_context_rel),
         'mean_context_rel_n':   _n(AtlasRAGTrace.eval_context_rel),
         'segmentos':            segmentos,
+        'escopos':              escopos,
+        # Taxa por escopo com o denominador exposto junto, mesmo padrão dos
+        # mean_*_n: uma taxa sobre 3 turnos não é comparável a uma sobre 300,
+        # e escondê-lo convidaria a ler ruído como regressão.
+        'zero_retrieval_por_escopo': {
+            _rot: {
+                'rate':   round(_v['zero'] / _v['com_fs'], 4) if _v['com_fs'] else None,
+                'com_fs': _v['com_fs'],
+            }
+            for _rot, _v in zero_por_escopo.items()
+        },
         'heartbeat': {
             'ultimo_trace_h_atras': round(idade_ultimo_h, 2) if idade_ultimo_h is not None else None,
             'traces_24h':           traces_24h,
@@ -3401,72 +3592,93 @@ def atlas_ler_conversa(conv_id):
     }), 200
 
 
-# ── Helper: obter ou criar Vector Store ───────────────────────────────────────
-def _get_vector_store_id():
-    """Retorna o vector_store_id do .env ou cria um novo e persiste."""
-    vs_id = os.getenv('OPENAI_VECTOR_STORE_ID', '').strip()
-    if vs_id:
-        return vs_id
-    # Cria um novo Vector Store na OpenAI
-    api_key = os.getenv('OPENAI_API_KEY', '').strip()
-    client = OpenAI(api_key=api_key)
-    vs = client.vector_stores.create(name='Baia 4 — Base de Conhecimento')
-    # Persiste no .env para próximas reinicializações
-    env_path = os.path.join(os.path.dirname(__file__), '.env')
-    try:
-        with open(env_path, 'a') as f:
-            f.write(f'\nOPENAI_VECTOR_STORE_ID={vs.id}\n')
-    except Exception:
-        pass
-    os.environ['OPENAI_VECTOR_STORE_ID'] = vs.id
-    return vs.id
+# ── Vector Store ──────────────────────────────────────────────────────────────
+# _get_vector_store_id() foi REMOVIDO aqui. Ele criava uma store sob demanda e
+# anexava o id em backend/.env, o que era falso conforto em três frentes: a
+# mutação de os.environ é local ao processo (o outro worker gunicorn seguia sem
+# file_search até reiniciar), o append no .env se perde no rebuild do container,
+# e num mundo de duas bases uma criação automática produziria silenciosamente
+# uma TERCEIRA store que nada leria. As stores passam a ser criadas à mão, uma
+# vez, e os ids vivem em .env.production — ver atlas_kb.store_id_da_base.
+
+
+def _listar_documentos_da_base(client, vs_id: str, base: str) -> list:
+    """Enumera os arquivos de UMA vector store, já rotulados com a base."""
+    todos_files = []
+    after = None
+    while True:
+        kwargs = {'vector_store_id': vs_id, 'limit': 100}
+        if after:
+            kwargs['after'] = after
+        page = client.vector_stores.files.list(**kwargs)
+        todos_files.extend(page.data)
+        if not page.has_more:
+            break
+        after = page.data[-1].id
+
+    resultado = []
+    for f in todos_files:
+        # Busca metadados do arquivo original
+        try:
+            file_info = client.files.retrieve(f.id)
+            nome = file_info.filename
+            tamanho = file_info.bytes
+            criado_em = file_info.created_at
+        except Exception:
+            nome = f.id
+            tamanho = 0
+            criado_em = 0
+        resultado.append({
+            'file_id':   f.id,
+            'base':      base,
+            'nome':      nome,
+            'tamanho':   tamanho,
+            'status':    f.status,
+            'criado_em': criado_em
+        })
+    return resultado
 
 
 @app.route('/api/atlas/base_conhecimento', methods=['GET'])
 @jwt_required()
 def base_conhecimento_listar():
-    """Lista todos os documentos indexados no Vector Store."""
+    """Lista os documentos indexados, de todas as bases configuradas."""
+    # Este GET era o único dos três sem checagem de admin, o que deixava
+    # qualquer usuário autenticado enumerar o nome de TODO documento indexado
+    # (a tela ser gated no frontend nunca foi uma barreira de autorização).
+    # Com a base restrita isso passaria a vazar exatamente os nomes que a
+    # segregação existe para esconder — segregar o retrieval e deixar a
+    # listagem aberta protegeria o conteúdo e entregaria o índice.
+    _admin = User.query.get(int(get_jwt_identity()))
+    if not _admin or _admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
     api_key = os.getenv('OPENAI_API_KEY', '').strip()
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
     try:
         client = OpenAI(api_key=api_key)
-        vs_id = _get_vector_store_id()
-        # Paginar para buscar TODOS os arquivos (OpenAI retorna até 100 por página)
-        todos_files = []
-        after = None
-        while True:
-            kwargs = {'vector_store_id': vs_id, 'limit': 100}
-            if after:
-                kwargs['after'] = after
-            page = client.vector_stores.files.list(**kwargs)
-            todos_files.extend(page.data)
-            if not page.has_more:
-                break
-            after = page.data[-1].id
-        files_data = todos_files
-        resultado = []
-        for f in files_data:
-            # Busca metadados do arquivo original
-            try:
-                file_info = client.files.retrieve(f.id)
-                nome = file_info.filename
-                tamanho = file_info.bytes
-                criado_em = file_info.created_at
-            except Exception:
-                nome = f.id
-                tamanho = 0
-                criado_em = 0
-            resultado.append({
-                'file_id':   f.id,
-                'nome':      nome,
-                'tamanho':   tamanho,
-                'status':    f.status,
-                'criado_em': criado_em
-            })
+        bases = atlas_kb.bases_configuradas()
+        documentos = []
+        _stores_lidas = set()
+        for base, vs_id in bases.items():
+            # Base sem store configurada não contribui documento algum e volta
+            # como '' em `bases`, para a UI conseguir dizer "não configurada"
+            # em vez de mostrar uma base vazia que parece existir.
+            if not vs_id:
+                continue
+            # Duas bases apontando para a MESMA store é erro de .env, mas se
+            # acontecer a listagem não pode enumerá-la duas vezes: cada
+            # documento apareceria duplicado com rótulos de base diferentes,
+            # e o admin decidiria a classificação a partir de uma tela que
+            # mente. O adaptador já deduplica os ids pelo mesmo motivo.
+            if vs_id in _stores_lidas:
+                continue
+            _stores_lidas.add(vs_id)
+            documentos.extend(_listar_documentos_da_base(client, vs_id, base))
         return jsonify({
-            'vector_store_id': vs_id,
-            'documentos': resultado
+            'bases':      bases,
+            'documentos': documentos,
         }), 200
     except Exception as e:
         traceback.print_exc()
@@ -3484,6 +3696,17 @@ def base_conhecimento_upload():
     if 'arquivo' not in request.files:
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
 
+    # Base de destino OBRIGATÓRIA e sem default. Um default significaria que
+    # um clique errado arquiva uma norma da ANVISA na base comum — vazamento
+    # silencioso — ou um POP na restrita, onde o público operacional não o
+    # encontra mais. E como o Vector Store não tem operação de mover, o
+    # conserto é deletar e reindexar. Errar aqui é caro; exigir a escolha é
+    # barato.
+    base = (request.form.get('base') or '').strip()
+    if base not in atlas_kb.BASES_VALIDAS:
+        return jsonify({'erro': 'Base de destino inválida ou ausente. '
+                                f'Use uma de: {", ".join(atlas_kb.BASES_VALIDAS)}.'}), 400
+
     arquivo = request.files['arquivo']
     nome = secure_filename(arquivo.filename or 'documento')
     ext = os.path.splitext(nome)[1].lower()
@@ -3496,35 +3719,48 @@ def base_conhecimento_upload():
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
 
+    vs_id = atlas_kb.store_id_da_base(base)
+    if not vs_id:
+        return jsonify({'erro': f'Base "{base}" não configurada no servidor.'}), 503
+
+    tmp = None
     try:
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         arquivo.save(tmp.name)
         tmp.close()
 
         client = OpenAI(api_key=api_key)
-        vs_id = _get_vector_store_id()
 
         # Upload do arquivo para a OpenAI Files API
         with open(tmp.name, 'rb') as f:
             uploaded = client.files.create(file=(nome, f), purpose='assistants')
 
-        _deletar_temp(tmp.name)
-
-        # Adiciona ao Vector Store — a OpenAI indexa automaticamente
+        # Adiciona ao Vector Store — a OpenAI indexa automaticamente.
+        # `attributes` não participa de nenhuma decisão de acesso (a segregação
+        # é por store, justamente porque atributo esquecido falharia aberto) —
+        # é rótulo auditável no próprio objeto, útil para conferir a que base um
+        # arquivo pertence sem depender da store em que ele foi encontrado.
         client.vector_stores.files.create(
             vector_store_id=vs_id,
-            file_id=uploaded.id
+            file_id=uploaded.id,
+            attributes={'base': base},
         )
 
         return jsonify({
             'file_id': uploaded.id,
             'nome':    nome,
+            'base':    base,
             'status':  'indexando'
         }), 200
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
+    finally:
+        # No finally, não só no caminho feliz: uma exceção entre o save e o
+        # attach deixava o temporário para trás em /tmp do container.
+        if tmp is not None:
+            _deletar_temp(tmp.name)
 
 
 @app.route('/api/atlas/base_conhecimento/<file_id>', methods=['DELETE'])
@@ -3535,15 +3771,42 @@ def base_conhecimento_deletar(file_id):
     if not _admin or _admin.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
 
+    # Base explícita vinda da UI (a listagem já sabe a que base cada documento
+    # pertence). Ausente, tenta todas as configuradas: o arquivo vive em uma
+    # só, e o detach nas demais falha de forma inofensiva.
+    base = (request.args.get('base') or '').strip()
+    if base and base not in atlas_kb.BASES_VALIDAS:
+        return jsonify({'erro': f'Base inválida: {base}.'}), 400
+
     api_key = os.getenv('OPENAI_API_KEY', '').strip()
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
     try:
         client = OpenAI(api_key=api_key)
-        vs_id = _get_vector_store_id()
-        # Remove do Vector Store
-        client.vector_stores.files.delete(vector_store_id=vs_id, file_id=file_id)
-        # Remove da Files API
+        bases = atlas_kb.bases_configuradas()
+        alvos = [bases[base]] if base else list(bases.values())
+        # Filtra vazios e deduplica (duas bases apontando para a mesma store é
+        # erro de .env, mas não pode virar delete duplicado).
+        alvos = list(dict.fromkeys(v for v in alvos if v))
+        if not alvos:
+            return jsonify({'erro': 'Nenhuma base de conhecimento configurada no servidor.'}), 503
+
+        removido = False
+        for vs_id in alvos:
+            try:
+                client.vector_stores.files.delete(vector_store_id=vs_id, file_id=file_id)
+                removido = True
+            except Exception:
+                # Arquivo não pertence a esta store — esperado quando a base não
+                # foi informada e estamos varrendo as duas.
+                continue
+
+        if not removido:
+            return jsonify({'erro': 'Documento não encontrado nas bases configuradas.'}), 404
+
+        # Remove da Files API. Best-effort de propósito: o que importa para o
+        # retrieval é o detach acima; um órfão na Files API não é recuperável
+        # por busca e não justifica falhar a operação.
         try:
             client.files.delete(file_id)
         except Exception:

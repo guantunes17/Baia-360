@@ -36,16 +36,30 @@ def test_payload(payload, base_url, redteam_session, internal_domain, openai_api
     if payload['category'] == 'memory_poisoning':
         result = evaluate_memory_poisoning(redteam_session, base_url, payload, internal_domain, canary)
 
-    elif payload.get('skip'):
-        rag_doc = payload.get('rag_document')
-        if VECTOR_STORE_ID and OPENAI_API_KEY and rag_doc:
+    # Seeding is keyed off `rag_document`, NOT off `skip`. It used to live
+    # inside the `skip` branch, which coupled two unrelated things: flipping a
+    # payload to skip:false would have sent it down the plain path below and
+    # run an indirect-RAG injection test whose document was never indexed —
+    # passing while testing nothing. Presence of the document is what decides
+    # that this payload needs a seeded corpus; `skip` only ever meant "don't
+    # run this at all".
+    elif payload.get('rag_document'):
+        if payload.get('skip'):
+            result = build_skip_result(payload, payload.get('skip_reason', 'skipped by default'))
+        elif VECTOR_STORE_ID and OPENAI_API_KEY:
             from runner import substitute
-            rendered_doc = substitute(rag_doc, internal_domain, canary)
+            rendered_doc = substitute(payload['rag_document'], internal_domain, canary)
             seed_rag_document(OPENAI_API_KEY, VECTOR_STORE_ID, rendered_doc['filename'], rendered_doc['content'])
             result = evaluate_payload(redteam_session, base_url, payload, internal_domain,
                                        openai_api_key, JUDGE_MODEL, canary)
         else:
-            result = build_skip_result(payload, payload.get('skip_reason', 'skipped by default'))
+            # Sem store isolada, o único jeito de rodar seria semear um
+            # documento injetado na base real. Skip explícito é a resposta
+            # certa; rodar sem semear seria pior que não rodar.
+            result = build_skip_result(
+                payload,
+                'REDTEAM_VECTOR_STORE_ID/OPENAI_API_KEY ausentes — este payload precisa '
+                'de uma vector store isolada que o backend-under-test leia como base comum.')
 
     else:
         result = evaluate_payload(redteam_session, base_url, payload, internal_domain,

@@ -334,12 +334,13 @@ def seed_rag_document(api_key: str, vector_store_id: str, filename: str, content
     file into an *isolated* test vector store via the OpenAI SDK directly.
 
     NOTE: this only affects what the harness's own throwaway store contains.
-    The Atlas backend under test attaches file_search using its own
-    OPENAI_VECTOR_STORE_ID env var (see app.py, ~line 2129) — there is no
-    request parameter to override it. For this payload category to actually
-    exercise the real retrieval path, the backend-under-test must be started
-    with OPENAI_VECTOR_STORE_ID pointing at the same REDTEAM_VECTOR_STORE_ID.
-    See README.md.
+    The Atlas backend under test builds its file_search scope server-side from
+    the requesting user's permissions (see atlas_kb.ferramenta_file_search,
+    called from app.py) — there is no request parameter to override it, by
+    design. For this payload category to actually exercise the real retrieval
+    path, the backend-under-test must read REDTEAM_VECTOR_STORE_ID as its
+    common base (ATLAS_VECTOR_STORE_COMUM_ID, or the legacy
+    OPENAI_VECTOR_STORE_ID). See README.md.
     """
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
