@@ -179,16 +179,31 @@ content deterministically, independent of the judge.
 
 ## Known limitations (documented, not silently ignored)
 
-- **`indirect_rag` is skipped by default.** `file_search` retrieves from the
-  server's own `OPENAI_VECTOR_STORE_ID` — a value the client cannot
-  override over HTTP, and in this deployment it's a real, shared knowledge
-  base. To exercise this category: set `REDTEAM_VECTOR_STORE_ID` to a
-  *throwaway* OpenAI vector store you control, **and** start the
-  backend-under-test with its own `OPENAI_VECTOR_STORE_ID` pointing at that
-  same store. The harness will then upload the payload's `rag_document` into
-  it via the OpenAI SDK directly before running the chat turn. Without a
-  matching backend config, this category stays skipped — the report marks
-  it `"skipped": 2` rather than guessing.
+- **`indirect_rag` runs only against an isolated store.** `file_search`
+  retrieves from a scope the backend builds server-side from the requesting
+  user's permissions (`atlas_kb.ferramenta_file_search`) — the client cannot
+  override it over HTTP, by design. To exercise this category: set
+  `REDTEAM_VECTOR_STORE_ID` to a *throwaway* OpenAI vector store you control,
+  **and** start the backend-under-test reading that same store as its common
+  base (`ATLAS_VECTOR_STORE_COMUM_ID`, or the legacy `OPENAI_VECTOR_STORE_ID`).
+  The harness then uploads the payload's `rag_document` into it via the OpenAI
+  SDK before running the chat turn. Without that config the category is
+  skipped with an explicit reason — seeding an injected document into the real
+  knowledge base is the one thing worse than not running it.
+
+  Until the COMUM/RESTRITA split there was only one shared, real store, which
+  is what kept these two payloads `skip: true`. Note that seeding is keyed off
+  the presence of `rag_document`, not off `skip` — those were coupled before,
+  so flipping `skip` alone would have run the payload against a corpus that
+  was never seeded, passing while testing nothing.
+
+- **Isolation between the two bases** has its own test,
+  `test_kb_isolation.py` (opt-in via `REDTEAM_KB_ISOLATION=1` plus
+  `REDTEAM_VECTOR_STORE_RESTRITA_ID`). It is mechanical, not judged: a canary
+  document is seeded in the restricted base and the assertion is a literal
+  substring check over the whole SSE stream. It also runs the positive case,
+  because a non-leak test that passes because nothing is retrievable at all is
+  the most likely way this kind of test lies.
 - **`indirect_file` is approximated.** Real file content reaches the model
   via an `input_file` reference to an OpenAI-uploaded file id
   (`atlas_upload_arquivo`), not as inline text. This baseline simulates it as
