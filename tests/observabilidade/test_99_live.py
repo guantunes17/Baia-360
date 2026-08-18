@@ -19,7 +19,10 @@ import pytest
 from conftest import OBS_LIVE, OBS_LIVE_QUERY, RESULTS_JSON_MARKER
 
 _OPENAI_KEY_PRESENT = bool(os.environ.get('OPENAI_API_KEY', '').strip())
-_VECTOR_STORE_PRESENT = bool(os.environ.get('OPENAI_VECTOR_STORE_ID', '').strip())
+# Aceita os dois nomes: a base comum passou a ser ATLAS_VECTOR_STORE_COMUM_ID,
+# com OPENAI_VECTOR_STORE_ID mantido como fallback legado (atlas_kb.py).
+_VECTOR_STORE_PRESENT = bool(os.environ.get('ATLAS_VECTOR_STORE_COMUM_ID', '').strip()
+                             or os.environ.get('OPENAI_VECTOR_STORE_ID', '').strip())
 
 pytestmark = pytest.mark.skipif(
     not OBS_LIVE,
@@ -51,6 +54,10 @@ def test_live_retrieval_returns_scored_chunks(app, db, models):
             'modelo': models.ATLAS_MODEL, 'pergunta': OBS_LIVE_QUERY, 'resposta': resposta,
             'usou_file_search': True, 'retrieval_query': OBS_LIVE_QUERY, 'chunks': chunks,
             'n_file_citations': 0, 'latencia_ms': latencia_ms, 'tokens_in': None, 'tokens_out': None,
+            # responder_atlas roda sem usuário, portanto sempre no escopo comum
+            # (ver atlas_kb.escopo_para). Explícito para a linha não sair NULL,
+            # que significaria "escopo não capturado".
+            'escopo_kb': ['comum'],
         }
         row_id = models._persistir_rag_trace(trace_dict)
 

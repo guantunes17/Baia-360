@@ -383,6 +383,106 @@ def test_to_dict_expoe_atlas(app, models):
         assert models.Permissao.criar_para(1, 'admin').to_dict()['atlas'] == {'base_restrita': True}
 
 
+# ── Escopo gravado no trace ─────────────────────────────────────────────────
+
+def _trace_base(**extra):
+    base = {
+        'usuario_id': None, 'conv_id': 'c1', 'response_id': 'r1',
+        'modelo': 'gpt-5.4-mini', 'pergunta': 'p', 'resposta': 'r',
+        'usou_file_search': False, 'retrieval_query': None, 'chunks': [],
+        'n_file_citations': 0, 'tools_usadas': [],
+    }
+    base.update(extra)
+    return base
+
+
+def test_escopo_ausente_no_trace_dict_grava_null(app, db, models):
+    """Chave ausente = escopo não capturado. Tem de virar NULL, não '[]' —
+    senão uma linha onde nada foi medido leria como medição de "sem base"."""
+    with app.app_context():
+        row_id = models._persistir_rag_trace(_trace_base())
+        assert models.AtlasRAGTrace.query.get(row_id).escopo_kb is None
+
+
+def test_escopo_vazio_grava_lista_vazia(app, db, models):
+    """[] é uma afirmação positiva: escopo capturado, nenhum store
+    configurado. Distinto de NULL."""
+    with app.app_context():
+        row_id = models._persistir_rag_trace(_trace_base(escopo_kb=[]))
+        assert models.AtlasRAGTrace.query.get(row_id).escopo_kb == '[]'
+
+
+@pytest.mark.parametrize('bases', [['comum'], ['comum', 'restrita']])
+def test_escopo_grava_as_bases_efetivas(app, db, models, bases):
+    with app.app_context():
+        row_id = models._persistir_rag_trace(_trace_base(escopo_kb=bases))
+        assert json.loads(models.AtlasRAGTrace.query.get(row_id).escopo_kb) == bases
+
+
+def test_dashboard_segmenta_por_escopo_e_soma_o_total(app, db, models, make_user, make_client):
+    """NULL não pode virar 'comum' na leitura: seria inventar um escopo que
+    ninguém mediu, a mesma fabricação de certeza que o reprocessamento de
+    2026-07-16 corrigiu na escrita."""
+    admin_id = make_user(perfil='admin')
+    with app.app_context():
+        models._persistir_rag_trace(_trace_base())                                # NULL
+        models._persistir_rag_trace(_trace_base(escopo_kb=[]))                    # sem_base
+        models._persistir_rag_trace(_trace_base(escopo_kb=['comum']))
+        models._persistir_rag_trace(_trace_base(escopo_kb=['comum']))
+        models._persistir_rag_trace(_trace_base(escopo_kb=['comum', 'restrita']))
+
+    resp = make_client(admin_id).get('/api/atlas/observabilidade?dias=30')
+    assert resp.status_code == 200
+    dados = resp.get_json()
+
+    assert dados['escopos'] == {
+        'comum': 2, 'comum+restrita': 1, 'sem_base': 1, 'legacy_unknown': 1,
+    }
+    assert sum(dados['escopos'].values()) == dados['total']
+
+
+def test_dashboard_distingue_zero_retrieval_por_escopo(app, db, models, make_user, make_client):
+    """O ponto inteiro da coluna: um zero_retrieval no escopo comum pode ser
+    "o documento existe, mas fora do seu escopo"; no escopo ampliado, é "o
+    documento não foi encontrado". A métrica global não separa os dois."""
+    admin_id = make_user(perfil='admin')
+    with app.app_context():
+        # comum: 2 turnos com file_search, 1 deles sem chunk algum.
+        models._persistir_rag_trace(_trace_base(escopo_kb=['comum'], usou_file_search=True,
+                                                chunks=[{'file_id': 'f', 'score': 0.5}]))
+        models._persistir_rag_trace(_trace_base(escopo_kb=['comum'], usou_file_search=True))
+        # comum+restrita: 1 turno, recuperou.
+        models._persistir_rag_trace(_trace_base(escopo_kb=['comum', 'restrita'],
+                                                usou_file_search=True,
+                                                chunks=[{'file_id': 'g', 'score': 0.9}]))
+
+    dados = make_client(admin_id).get('/api/atlas/observabilidade?dias=30').get_json()
+    por_escopo = dados['zero_retrieval_por_escopo']
+
+    assert por_escopo['comum'] == {'rate': 0.5, 'com_fs': 2}
+    assert por_escopo['comum+restrita'] == {'rate': 0.0, 'com_fs': 1}
+
+
+def test_dashboard_sem_traces_nao_divide_por_zero(app, db, models, make_user, make_client):
+    admin_id = make_user(perfil='admin')
+    dados = make_client(admin_id).get('/api/atlas/observabilidade?dias=30').get_json()
+    assert dados['escopos'] == {'comum': 0, 'comum+restrita': 0, 'sem_base': 0, 'legacy_unknown': 0}
+    assert dados['zero_retrieval_por_escopo']['comum'] == {'rate': None, 'com_fs': 0}
+
+
+def test_escopo_corrompido_no_banco_cai_em_legacy(app, db, models, make_user, make_client):
+    admin_id = make_user(perfil='admin')
+    with app.app_context():
+        row_id = models._persistir_rag_trace(_trace_base(escopo_kb=['comum']))
+        row = models.AtlasRAGTrace.query.get(row_id)
+        row.escopo_kb = '{nao e json'
+        db.session.commit()
+
+    dados = make_client(admin_id).get('/api/atlas/observabilidade?dias=30').get_json()
+    assert dados['escopos']['legacy_unknown'] == 1
+    assert dados['escopos']['comum'] == 0
+
+
 # ── responder_atlas: o escopo default do helper de avaliação ────────────────
 
 def test_responder_atlas_sem_usuario_usa_apenas_a_base_comum(models, monkeypatch, stores):

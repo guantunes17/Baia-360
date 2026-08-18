@@ -118,8 +118,11 @@ class AtlasRAGTrace(db.Model):
     Escrita de forma assíncrona DEPOIS que o stream SSE termina (ver
     registrar_rag_trace), então não adiciona latência à resposta do usuário.
 
-    NOTA DE DEPLOY: tabela nova — db.create_all() a cria no próximo restart
-    do container (ver entrypoint.sh). Sem migração manual.
+    NOTA DE DEPLOY: esta nota dizia que db.create_all() criava a tabela no
+    restart do container e que não havia migração manual. Isso deixou de ser
+    verdade em ea3c7e95f47e: entrypoint.sh roda `alembic upgrade head` e nada
+    mais. Toda coluna nova aqui precisa de migração própria, senão o modelo
+    diverge do schema em produção e a primeira query quebra.
     """
     __tablename__ = 'atlas_rag_trace'
     __table_args__ = {'schema': 'atlas'}
@@ -175,6 +178,30 @@ class AtlasRAGTrace(db.Model):
     # mesmo corpus após reprocessamento parcial; sem isso não dá pra saber
     # qual lógica gerou qual score.
     eval_versao        = db.Column(db.Integer, nullable=True)
+
+    # Bases de conhecimento EFETIVAMENTE anexadas ao file_search neste turno
+    # (JSON array-as-text, mesma convenção de tools_usadas/chunks_json). Sinal
+    # cru; a interpretação é feita na leitura.
+    #   NULL                       não capturado — linhas anteriores a esta
+    #                              coluna. Nunca reconstruível: o escopo de um
+    #                              turno passado não está gravado em lugar
+    #                              nenhum. Segmentado como 'legacy_unknown'.
+    #   '[]'                       capturado, e NENHUM store estava
+    #                              configurado: o turno respondeu sem
+    #                              file_search.
+    #   '["comum"]'                só a base comum.
+    #   '["comum","restrita"]'     escopo ampliado.
+    #
+    # É o que foi ANEXADO, não o que a política concedeu: se escopo_para()
+    # devolveu ('comum','restrita') mas ATLAS_VECTOR_STORE_RESTRITA_ID estava
+    # vazia, aqui fica ["comum"]. A degradação silenciosa vira dado visível em
+    # vez de sumir.
+    #
+    # Combinado com zero_retrieval é o que resolve a ambiguidade que motivou a
+    # coluna: zero_retrieval=True com escopo ["comum"] significa "pode existir,
+    # estava fora do escopo deste usuário"; com ["comum","restrita"], significa
+    # "o documento realmente não foi encontrado".
+    escopo_kb          = db.Column(db.Text, nullable=True)
 
     # Higiene de trace (plano de integridade 2026-07-16, §4): antes desta
     # coluna, um turno resolvido pelo frontend gravava DUAS traces (a
@@ -758,6 +785,13 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
     # isso gravaria a mesma fabricação que este plano corrigiu na
     # reprocessagem (ver data_2026-07-16_reprocess_rag_traces.sql).
     tools_usadas     = trace_dict.get('tools_usadas') or []
+    # Deliberadamente SEM `or []`, ao contrário de tools_usadas acima: aqui a
+    # chave ausente e a lista vazia significam coisas diferentes e ambas são
+    # reais. Ausente = escopo não capturado (NULL). [] = capturado, e nenhum
+    # store estava configurado. Colapsar as duas gravaria '[]' como se fosse
+    # medição em linhas onde nada foi medido.
+    _escopo_kb       = trace_dict.get('escopo_kb')
+    escopo_kb        = json.dumps(_escopo_kb) if _escopo_kb is not None else None
     falhou           = bool(trace_dict.get('falhou', False))
     segmento         = derivar_segmento_rag(usou_file_search, tools_usadas, n_file_citations)
     # Turno falhado (stream morreu no meio, ex. rate limit interno — ver
@@ -783,6 +817,7 @@ def _persistir_rag_trace(trace_dict: dict) -> int:
         n_file_citations = n_file_citations,
         citation_coverage= n_file_citations > 0,
         tools_usadas     = json.dumps(tools_usadas, ensure_ascii=False),
+        escopo_kb        = escopo_kb,
         eval_versao      = EVAL_PIPELINE_VERSION,
         falhou           = falhou,
         erro_mensagem    = (trace_dict.get('erro_mensagem') or None),
@@ -2528,6 +2563,7 @@ def atlas_chat():
                                                 'chunks':           rag_chunks,
                                                 'n_file_citations': n_file_cit,
                                                 'tools_usadas':     _tools_usadas,
+                                                'escopo_kb':        _bases_efetivas,
                                                 'latencia_ms':      int((time.time() - _rag_t0) * 1000),
                                                 'tokens_in':        getattr(usage, 'input_tokens', None) if usage else None,
                                                 'tokens_out':       getattr(usage, 'output_tokens', None) if usage else None,
@@ -2603,6 +2639,14 @@ def atlas_chat():
                         'chunks':           [],
                         'n_file_citations': 0,
                         'tools_usadas':     _tools_tentadas,
+                        # Ao contrário de usou_file_search/chunks acima, este
+                        # não é inferido nem deixado vazio por precaução: o
+                        # escopo é propriedade do REQUEST, resolvido antes do
+                        # stream começar, então é conhecido com certeza mesmo
+                        # quando o turno morre no meio. É justamente o que
+                        # responde se um turno que falhou sequer tinha acesso
+                        # à base onde a resposta estaria.
+                        'escopo_kb':        _bases_efetivas,
                         'latencia_ms':      int((time.time() - _rag_t0) * 1000),
                         'tokens_in':        None,
                         'tokens_out':       None,
@@ -3101,10 +3145,48 @@ def atlas_observabilidade():
     # persistida (ver derivar_segmento_rag/§3 do plano). Sempre soma para
     # `total`. ─────────────────────────────────────────────────────────────
     _seg_rows = _janela(db.session.query(
-        AtlasRAGTrace.usou_file_search, AtlasRAGTrace.tools_usadas, AtlasRAGTrace.n_file_citations
+        AtlasRAGTrace.usou_file_search, AtlasRAGTrace.tools_usadas, AtlasRAGTrace.n_file_citations,
+        AtlasRAGTrace.escopo_kb, AtlasRAGTrace.zero_retrieval
     )).all()
+
+    # Segmentação por escopo de conhecimento. Sem ela, uma regressão na base
+    # comum ficaria mascarada pela média das duas, e — mais importante — não
+    # haveria como distinguir "zero retrieval porque o documento não existe" de
+    # "zero retrieval porque estava fora do escopo daquele usuário".
+    escopos = {'comum': 0, 'comum+restrita': 0, 'sem_base': 0, 'legacy_unknown': 0}
+    # Denominador próprio por escopo: um zero_retrieval_rate global some com a
+    # diferença entre os públicos, que é exatamente o que se quer observar
+    # depois de segregar.
+    zero_por_escopo = {'comum': {'zero': 0, 'com_fs': 0},
+                       'comum+restrita': {'zero': 0, 'com_fs': 0}}
+
     segmentos = {'rag_only': 0, 'tool_only': 0, 'hybrid': 0, 'no_retrieval': 0, 'legacy_unknown': 0}
-    for _fs, _tools_json, _n_cit in _seg_rows:
+    for _fs, _tools_json, _n_cit, _escopo_json, _zero in _seg_rows:
+        # Mesma disciplina de NULL de tools_usadas logo abaixo: escopo_kb NULL
+        # é "não capturado" (linha anterior à coluna), NUNCA 'comum'. Assumir
+        # 'comum' aqui inventaria, na leitura, um escopo que ninguém mediu.
+        if _escopo_json is None:
+            escopos['legacy_unknown'] += 1
+        else:
+            try:
+                _bases = json.loads(_escopo_json)
+            except (ValueError, TypeError):
+                _bases = None
+            if not isinstance(_bases, list):
+                escopos['legacy_unknown'] += 1
+            elif not _bases:
+                escopos['sem_base'] += 1
+            else:
+                _rotulo = '+'.join(_bases)
+                if _rotulo in escopos:
+                    escopos[_rotulo] += 1
+                    if _fs:
+                        zero_por_escopo[_rotulo]['com_fs'] += 1
+                        if _zero:
+                            zero_por_escopo[_rotulo]['zero'] += 1
+                else:
+                    escopos['legacy_unknown'] += 1
+
         # CUIDADO: `_tools_json is None` (coluna NULL — proveniência nunca
         # capturada) tem que chegar em derivar_segmento_rag como None, não
         # como '[]'. Colapsar os dois aqui reintroduziria, na leitura, a
@@ -3148,6 +3230,17 @@ def atlas_observabilidade():
         'mean_context_rel':     _avg(AtlasRAGTrace.eval_context_rel),
         'mean_context_rel_n':   _n(AtlasRAGTrace.eval_context_rel),
         'segmentos':            segmentos,
+        'escopos':              escopos,
+        # Taxa por escopo com o denominador exposto junto, mesmo padrão dos
+        # mean_*_n: uma taxa sobre 3 turnos não é comparável a uma sobre 300,
+        # e escondê-lo convidaria a ler ruído como regressão.
+        'zero_retrieval_por_escopo': {
+            _rot: {
+                'rate':   round(_v['zero'] / _v['com_fs'], 4) if _v['com_fs'] else None,
+                'com_fs': _v['com_fs'],
+            }
+            for _rot, _v in zero_por_escopo.items()
+        },
         'heartbeat': {
             'ultimo_trace_h_atras': round(idade_ultimo_h, 2) if idade_ultimo_h is not None else None,
             'traces_24h':           traces_24h,
