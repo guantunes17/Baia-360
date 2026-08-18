@@ -3595,54 +3595,73 @@ def atlas_ler_conversa(conv_id):
 # vez, e os ids vivem em .env.production — ver atlas_kb.store_id_da_base.
 
 
+def _listar_documentos_da_base(client, vs_id: str, base: str) -> list:
+    """Enumera os arquivos de UMA vector store, já rotulados com a base."""
+    todos_files = []
+    after = None
+    while True:
+        kwargs = {'vector_store_id': vs_id, 'limit': 100}
+        if after:
+            kwargs['after'] = after
+        page = client.vector_stores.files.list(**kwargs)
+        todos_files.extend(page.data)
+        if not page.has_more:
+            break
+        after = page.data[-1].id
+
+    resultado = []
+    for f in todos_files:
+        # Busca metadados do arquivo original
+        try:
+            file_info = client.files.retrieve(f.id)
+            nome = file_info.filename
+            tamanho = file_info.bytes
+            criado_em = file_info.created_at
+        except Exception:
+            nome = f.id
+            tamanho = 0
+            criado_em = 0
+        resultado.append({
+            'file_id':   f.id,
+            'base':      base,
+            'nome':      nome,
+            'tamanho':   tamanho,
+            'status':    f.status,
+            'criado_em': criado_em
+        })
+    return resultado
+
+
 @app.route('/api/atlas/base_conhecimento', methods=['GET'])
 @jwt_required()
 def base_conhecimento_listar():
-    """Lista todos os documentos indexados no Vector Store."""
+    """Lista os documentos indexados, de todas as bases configuradas."""
+    # Este GET era o único dos três sem checagem de admin, o que deixava
+    # qualquer usuário autenticado enumerar o nome de TODO documento indexado
+    # (a tela ser gated no frontend nunca foi uma barreira de autorização).
+    # Com a base restrita isso passaria a vazar exatamente os nomes que a
+    # segregação existe para esconder — segregar o retrieval e deixar a
+    # listagem aberta protegeria o conteúdo e entregaria o índice.
+    _admin = User.query.get(int(get_jwt_identity()))
+    if not _admin or _admin.perfil != 'admin':
+        return jsonify({'erro': 'Acesso negado'}), 403
+
     api_key = os.getenv('OPENAI_API_KEY', '').strip()
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
     try:
         client = OpenAI(api_key=api_key)
-        vs_id = atlas_kb.store_id_da_base(atlas_kb.BASE_COMUM)
-        if not vs_id:
-            return jsonify({'erro': 'Base de conhecimento não configurada no servidor '
-                                    '(ATLAS_VECTOR_STORE_COMUM_ID).'}), 503
-        # Paginar para buscar TODOS os arquivos (OpenAI retorna até 100 por página)
-        todos_files = []
-        after = None
-        while True:
-            kwargs = {'vector_store_id': vs_id, 'limit': 100}
-            if after:
-                kwargs['after'] = after
-            page = client.vector_stores.files.list(**kwargs)
-            todos_files.extend(page.data)
-            if not page.has_more:
-                break
-            after = page.data[-1].id
-        files_data = todos_files
-        resultado = []
-        for f in files_data:
-            # Busca metadados do arquivo original
-            try:
-                file_info = client.files.retrieve(f.id)
-                nome = file_info.filename
-                tamanho = file_info.bytes
-                criado_em = file_info.created_at
-            except Exception:
-                nome = f.id
-                tamanho = 0
-                criado_em = 0
-            resultado.append({
-                'file_id':   f.id,
-                'nome':      nome,
-                'tamanho':   tamanho,
-                'status':    f.status,
-                'criado_em': criado_em
-            })
+        bases = atlas_kb.bases_configuradas()
+        documentos = []
+        for base, vs_id in bases.items():
+            # Base sem store configurada não contribui documento algum e volta
+            # como '' em `bases`, para a UI conseguir dizer "não configurada"
+            # em vez de mostrar uma base vazia que parece existir.
+            if vs_id:
+                documentos.extend(_listar_documentos_da_base(client, vs_id, base))
         return jsonify({
-            'vector_store_id': vs_id,
-            'documentos': resultado
+            'bases':      bases,
+            'documentos': documentos,
         }), 200
     except Exception as e:
         traceback.print_exc()
@@ -3660,6 +3679,17 @@ def base_conhecimento_upload():
     if 'arquivo' not in request.files:
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
 
+    # Base de destino OBRIGATÓRIA e sem default. Um default significaria que
+    # um clique errado arquiva uma norma da ANVISA na base comum — vazamento
+    # silencioso — ou um POP na restrita, onde o público operacional não o
+    # encontra mais. E como o Vector Store não tem operação de mover, o
+    # conserto é deletar e reindexar. Errar aqui é caro; exigir a escolha é
+    # barato.
+    base = (request.form.get('base') or '').strip()
+    if base not in atlas_kb.BASES_VALIDAS:
+        return jsonify({'erro': 'Base de destino inválida ou ausente. '
+                                f'Use uma de: {", ".join(atlas_kb.BASES_VALIDAS)}.'}), 400
+
     arquivo = request.files['arquivo']
     nome = secure_filename(arquivo.filename or 'documento')
     ext = os.path.splitext(nome)[1].lower()
@@ -3672,11 +3702,11 @@ def base_conhecimento_upload():
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
 
-    vs_id = atlas_kb.store_id_da_base(atlas_kb.BASE_COMUM)
+    vs_id = atlas_kb.store_id_da_base(base)
     if not vs_id:
-        return jsonify({'erro': 'Base de conhecimento não configurada no servidor '
-                                '(ATLAS_VECTOR_STORE_COMUM_ID).'}), 503
+        return jsonify({'erro': f'Base "{base}" não configurada no servidor.'}), 503
 
+    tmp = None
     try:
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         arquivo.save(tmp.name)
@@ -3688,23 +3718,32 @@ def base_conhecimento_upload():
         with open(tmp.name, 'rb') as f:
             uploaded = client.files.create(file=(nome, f), purpose='assistants')
 
-        _deletar_temp(tmp.name)
-
-        # Adiciona ao Vector Store — a OpenAI indexa automaticamente
+        # Adiciona ao Vector Store — a OpenAI indexa automaticamente.
+        # `attributes` não participa de nenhuma decisão de acesso (a segregação
+        # é por store, justamente porque atributo esquecido falharia aberto) —
+        # é rótulo auditável no próprio objeto, útil para conferir a que base um
+        # arquivo pertence sem depender da store em que ele foi encontrado.
         client.vector_stores.files.create(
             vector_store_id=vs_id,
-            file_id=uploaded.id
+            file_id=uploaded.id,
+            attributes={'base': base},
         )
 
         return jsonify({
             'file_id': uploaded.id,
             'nome':    nome,
+            'base':    base,
             'status':  'indexando'
         }), 200
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({'erro': str(e)}), 500
+    finally:
+        # No finally, não só no caminho feliz: uma exceção entre o save e o
+        # attach deixava o temporário para trás em /tmp do container.
+        if tmp is not None:
+            _deletar_temp(tmp.name)
 
 
 @app.route('/api/atlas/base_conhecimento/<file_id>', methods=['DELETE'])
@@ -3715,18 +3754,40 @@ def base_conhecimento_deletar(file_id):
     if not _admin or _admin.perfil != 'admin':
         return jsonify({'erro': 'Acesso negado'}), 403
 
+    # Base explícita vinda da UI (a listagem já sabe a que base cada documento
+    # pertence). Ausente, tenta todas as configuradas: o arquivo vive em uma
+    # só, e o detach nas demais falha de forma inofensiva.
+    base = (request.args.get('base') or '').strip()
+    if base and base not in atlas_kb.BASES_VALIDAS:
+        return jsonify({'erro': f'Base inválida: {base}.'}), 400
+
     api_key = os.getenv('OPENAI_API_KEY', '').strip()
     if not api_key:
         return jsonify({'erro': 'OPENAI_API_KEY não configurada'}), 500
     try:
         client = OpenAI(api_key=api_key)
-        vs_id = atlas_kb.store_id_da_base(atlas_kb.BASE_COMUM)
-        if not vs_id:
-            return jsonify({'erro': 'Base de conhecimento não configurada no servidor '
-                                    '(ATLAS_VECTOR_STORE_COMUM_ID).'}), 503
-        # Remove do Vector Store
-        client.vector_stores.files.delete(vector_store_id=vs_id, file_id=file_id)
-        # Remove da Files API
+        bases = atlas_kb.bases_configuradas()
+        alvos = [bases[base]] if base else [v for v in bases.values() if v]
+        alvos = [v for v in alvos if v]
+        if not alvos:
+            return jsonify({'erro': 'Nenhuma base de conhecimento configurada no servidor.'}), 503
+
+        removido = False
+        for vs_id in alvos:
+            try:
+                client.vector_stores.files.delete(vector_store_id=vs_id, file_id=file_id)
+                removido = True
+            except Exception:
+                # Arquivo não pertence a esta store — esperado quando a base não
+                # foi informada e estamos varrendo as duas.
+                continue
+
+        if not removido:
+            return jsonify({'erro': 'Documento não encontrado nas bases configuradas.'}), 404
+
+        # Remove da Files API. Best-effort de propósito: o que importa para o
+        # retrieval é o detach acima; um órfão na Files API não é recuperável
+        # por busca e não justifica falhar a operação.
         try:
             client.files.delete(file_id)
         except Exception:

@@ -11,6 +11,7 @@ O teste mais importante do arquivo é test_adaptador_nunca_devolve_tool_so_restr
 ele afirma o invariante estrutural do desenho (a omissão só pode tirar acesso,
 nunca dar) em vez de conferir caso a caso.
 """
+import io
 import json
 
 import pytest
@@ -468,6 +469,50 @@ def test_dashboard_sem_traces_nao_divide_por_zero(app, db, models, make_user, ma
     dados = make_client(admin_id).get('/api/atlas/observabilidade?dias=30').get_json()
     assert dados['escopos'] == {'comum': 0, 'comum+restrita': 0, 'sem_base': 0, 'legacy_unknown': 0}
     assert dados['zero_retrieval_por_escopo']['comum'] == {'rate': None, 'com_fs': 0}
+
+
+def test_listagem_da_base_e_restrita_a_admin(app, models, make_user, make_client, stores):
+    """Este GET era o único dos três sem checagem de admin. Com a base
+    restrita, deixá-lo aberto entregaria o índice dos documentos que a
+    segregação existe para esconder — proteger o conteúdo e vazar os nomes."""
+    for perfil in ('operacional', 'analista', 'financeiro'):
+        uid = make_user(perfil=perfil)
+        resp = make_client(uid).get('/api/atlas/base_conhecimento')
+        assert resp.status_code == 403, f'perfil {perfil} não pode listar'
+
+
+def test_upload_exige_base_de_destino(app, models, make_user, make_client, stores):
+    """Sem default: um clique distraído não pode arquivar uma norma da ANVISA
+    na base comum, ainda mais sem operação de mover para desfazer."""
+    admin_id = make_user(perfil='admin')
+    cliente  = make_client(admin_id)
+
+    for corpo in ({'arquivo': (io.BytesIO(b'x'), 'a.txt')},
+                  {'arquivo': (io.BytesIO(b'x'), 'a.txt'), 'base': ''},
+                  {'arquivo': (io.BytesIO(b'x'), 'a.txt'), 'base': 'inventada'}):
+        resp = cliente.post('/api/atlas/base_conhecimento', data=corpo,
+                            content_type='multipart/form-data')
+        assert resp.status_code == 400, resp.get_json()
+
+
+def test_upload_de_nao_admin_e_negado(app, models, make_user, make_client, stores):
+    uid = make_user(perfil='operacional')
+    resp = make_client(uid).post(
+        '/api/atlas/base_conhecimento',
+        data={'arquivo': (io.BytesIO(b'x'), 'a.txt'), 'base': 'restrita'},
+        content_type='multipart/form-data')
+    assert resp.status_code == 403
+
+
+def test_upload_para_base_nao_configurada_devolve_503(app, models, make_user, make_client, stores):
+    """Degrada com erro explícito em vez de cair na outra base."""
+    stores(restrita='')
+    admin_id = make_user(perfil='admin')
+    resp = make_client(admin_id).post(
+        '/api/atlas/base_conhecimento',
+        data={'arquivo': (io.BytesIO(b'x'), 'a.txt'), 'base': 'restrita'},
+        content_type='multipart/form-data')
+    assert resp.status_code == 503
 
 
 def test_escopo_corrompido_no_banco_cai_em_legacy(app, db, models, make_user, make_client):
